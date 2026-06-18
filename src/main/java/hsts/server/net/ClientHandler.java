@@ -69,7 +69,7 @@ public class ClientHandler implements Runnable {
                     UpdateQuestionPayload payload = (UpdateQuestionPayload) request.getPayload();
                     yield Response.success(
                             "Question updated successfully",
-                            questionService.updateQuestion(payload.getQuestionId(), payload.getContent())
+                            questionService.updateQuestion(payload)
                     );
                 }
             };

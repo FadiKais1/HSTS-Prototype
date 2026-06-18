@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="hsts.client.boundary.QuestionBankPageController"
+            style="-fx-background-color: #f4f7fb;">
+
+    <center>
+        <ScrollPane fitToWidth="true" pannable="true"
+                    style="-fx-background: #f4f7fb; -fx-background-color: #f4f7fb;">
+            <VBox spacing="14">
+                <padding>
+                    <Insets top="18" right="18" bottom="18" left="18"/>
+                </padding>
+
+                <VBox spacing="4">
+                    <Label text="HSTS Exam Management System"
+                           style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <Label text="Question Bank Prototype - FXML Multiple Choice Editor"
+                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
+                    <Label text="Edit question attributes, status, illustration path, four answer options, and the correct answer number."
+                           wrapText="true"
+                           style="-fx-font-size: 13px; -fx-text-fill: #4b5563;"/>
+                </VBox>
+
+                <GridPane hgap="18" vgap="8"
+                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
+                    <padding>
+                        <Insets top="14" right="14" bottom="14" left="14"/>
+                    </padding>
+
+                    <Label text="Prototype Runtime Status"
+                           style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #111827;"
+                           GridPane.columnIndex="0" GridPane.rowIndex="0" GridPane.columnSpan="4"/>
+
+                    <Label text="Server:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                    <Label fx:id="serverStatusValue" text="-" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+
+                    <Label text="Database:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="1"/>
+                    <Label fx:id="databaseStatusValue" text="-" GridPane.columnIndex="3" GridPane.rowIndex="1"/>
+
+                    <Label text="Questions loaded:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+                    <Label fx:id="questionsCountValue" text="0" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+
+                    <Label text="Current action:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="2"/>
+                    <Label fx:id="currentActionValue" text="Ready" GridPane.columnIndex="3" GridPane.rowIndex="2"/>
+                </GridPane>
+
+                <HBox spacing="10">
+                    <Button text="1. Load Questions" onAction="#handleLoadQuestions"
+                            style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button text="2. Save Full Question Update" onAction="#handleUpdateQuestion"
+                            style="-fx-background-color: #059669; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button text="3. Re-read From Database" onAction="#handleRereadQuestion"
+                            style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button text="Clear Selection" onAction="#handleClearSelection"
+                            style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                </HBox>
+
+                <SplitPane dividerPositions="0.34">
+                    <VBox spacing="10"
+                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
+                        <padding>
+                            <Insets top="14" right="14" bottom="14" left="14"/>
+                        </padding>
+
+                        <Label text="Questions List"
+                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <Label text="Select a question. The full editable version appears on the right."
+                               wrapText="true"
+                               style="-fx-font-size: 12px; -fx-text-fill: #6b7280;"/>
+
+                        <TableView fx:id="tableView" prefHeight="430">
+                            <columns>
+                                <TableColumn fx:id="idColumn" text="ID" prefWidth="55"/>
+                                <TableColumn fx:id="topicColumn" text="Topic" prefWidth="130"/>
+                                <TableColumn fx:id="difficultyColumn" text="Difficulty" prefWidth="100"/>
+                                <TableColumn fx:id="statusColumn" text="Status" prefWidth="100"/>
+                            </columns>
+                        </TableView>
+                    </VBox>
+
+                    <VBox spacing="10"
+                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
+                        <padding>
+                            <Insets top="14" right="14" bottom="14" left="14"/>
+                        </padding>
+
+                        <Label text="Selected Question Editor"
+                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+
+                        <GridPane hgap="12" vgap="8">
+                            <Label text="Question ID:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                            <Label fx:id="selectedIdValue" text="-" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+
+                            <Label text="Type:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+                            <Label fx:id="selectedTypeValue" text="MULTIPLE_CHOICE" GridPane.columnIndex="3" GridPane.rowIndex="0"/>
+
+                            <Label text="Topic:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                            <TextField fx:id="topicField" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+
+                            <Label text="Difficulty:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="1"/>
+                            <ComboBox fx:id="difficultyComboBox" GridPane.columnIndex="3" GridPane.rowIndex="1"/>
+
+                            <Label text="Status:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+                            <ComboBox fx:id="statusComboBox" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+
+                            <Label text="Illustration path/URL:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+                            <TextField fx:id="illustrationPathField" GridPane.columnIndex="1" GridPane.rowIndex="3" GridPane.columnSpan="3"/>
+                        </GridPane>
+
+                        <Separator/>
+
+                        <Label text="Question Content:" style="-fx-font-weight: bold;"/>
+                        <TextArea fx:id="contentArea" prefRowCount="5" wrapText="true"/>
+
+                        <Separator/>
+
+                        <Label text="Answer Options - choose the correct answer"
+                               style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+
+                        <VBox spacing="8">
+                            <HBox spacing="10" alignment="CENTER_LEFT"
+                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
+                                <Label text="Option 1:" minWidth="70"/>
+                                <TextField fx:id="option1Field" HBox.hgrow="ALWAYS"/>
+                                <RadioButton fx:id="option1Radio" text="Correct"/>
+                            </HBox>
+
+                            <HBox spacing="10" alignment="CENTER_LEFT"
+                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
+                                <Label text="Option 2:" minWidth="70"/>
+                                <TextField fx:id="option2Field" HBox.hgrow="ALWAYS"/>
+                                <RadioButton fx:id="option2Radio" text="Correct"/>
+                            </HBox>
+
+                            <HBox spacing="10" alignment="CENTER_LEFT"
+                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
+                                <Label text="Option 3:" minWidth="70"/>
+                                <TextField fx:id="option3Field" HBox.hgrow="ALWAYS"/>
+                                <RadioButton fx:id="option3Radio" text="Correct"/>
+                            </HBox>
+
+                            <HBox spacing="10" alignment="CENTER_LEFT"
+                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
+                                <Label text="Option 4:" minWidth="70"/>
+                                <TextField fx:id="option4Field" HBox.hgrow="ALWAYS"/>
+                                <RadioButton fx:id="option4Radio" text="Correct"/>
+                            </HBox>
+                        </VBox>
+
+                        <Label text="Inactive questions stay in the database but should not be used in new exams."
+                               wrapText="true"
+                               style="-fx-background-color: #eff6ff; -fx-text-fill: #1d4ed8; -fx-font-size: 12px; -fx-padding: 8; -fx-background-radius: 8;"/>
+                    </VBox>
+                </SplitPane>
+
+                <VBox spacing="8"
+                      style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
+                    <padding>
+                        <Insets top="14" right="14" bottom="14" left="14"/>
+                    </padding>
+
+                    <Label text="Activity Log"
+                           style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <Label fx:id="statusLabel" text="Ready"
+                           style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
+                    <TextArea fx:id="activityLogArea" editable="false" wrapText="true" prefRowCount="5"
+                              style="-fx-font-family: Consolas; -fx-font-size: 12px; -fx-control-inner-background: #f8fafc;"/>
+                </VBox>
+
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

@@ -48,6 +48,30 @@ public class QuestionClientController {
         });
     }
 
+    public CompletableFuture<QuestionDTO> updateQuestion(QuestionDTO question) {
+        return CompletableFuture.supplyAsync(() -> {
+            UpdateQuestionPayload payload = new UpdateQuestionPayload(
+                    question.getQuestionId(),
+                    question.getContent(),
+                    question.getTopic(),
+                    question.getDifficulty(),
+                    question.getStatus(),
+                    question.getIllustrationPath(),
+                    question.getAnswerOption1(),
+                    question.getAnswerOption2(),
+                    question.getAnswerOption3(),
+                    question.getAnswerOption4(),
+                    question.getCorrectOptionNumber()
+            );
+
+            Response response = client.sendRequest(new Request(RequestType.UPDATE_QUESTION, payload));
+            if (!response.isSuccess()) {
+                throw new IllegalStateException(response.getMessage());
+            }
+            return (QuestionDTO) response.getPayload();
+        });
+    }
+
     @SuppressWarnings("unchecked")
     private List<QuestionDTO> castQuestionList(Object payload) {
         return (List<QuestionDTO>) payload;
