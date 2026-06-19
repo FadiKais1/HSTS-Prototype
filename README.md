@@ -1,59 +1,87 @@
-# HSTS Prototype - Exam Management System
+# HSTS Exam Management System - Part C Prototype
 
-## Project Overview
+## 1. Project Overview
 
 HSTS is a prototype for a school exam management system.
-The full system is designed as a three-tier architecture with:
 
-* Boundary layer: GUI screens used by teachers, students, coordinators, and principals.
-* Control layer: service classes that contain the business logic.
-* Entity layer: domain objects such as Question, Exam, ExamExecution, ExamSubmission, StudentAnswer, Grade, and Report.
+The full project is designed as a three-tier system:
 
-This repository contains the working prototype for Part C of the project.
-The prototype focuses on the Question Bank flow, because Part C requires a client-server application connected to a database, with a GUI that allows the user to display questions, edit a selected question, send the update request to the server, update the database, and read the updated question back.
+```text
+Boundary Layer  → GUI screens
+Control Layer   → business logic and services
+Entity Layer    → domain objects and database data
+```
 
-## Prototype Scope
+The complete system design includes teachers, students, coordinators, principals, exams, exam execution, grades, reports, notifications, and approvals.
+
+This repository contains the working implementation prototype for Part C.
+The prototype focuses on the Question Bank flow, because Part C requires a working client-server application connected to a database, with a GUI that allows the user to display questions, edit a selected question, send the update to the server, update the database, and read the updated question back.
+
+---
+
+## 2. What the Prototype Implements
 
 The prototype implements the following required flow:
 
-1. Start a server.
-2. Connect a JavaFX client to the server.
-3. Load questions from the database.
-4. Display the questions in a GUI table.
-5. Select a question.
-6. Edit the question data.
-7. Send an update request from the client to the server.
-8. Update the question in the database.
-9. Read the updated question again from the database.
-10. Display the updated question back in the GUI.
+```text
+Start MySQL Server
+        ↓
+Start Java server
+        ↓
+Start JavaFX client
+        ↓
+Load questions from MySQL database
+        ↓
+Display questions in the GUI
+        ↓
+Select a question
+        ↓
+Edit question details
+        ↓
+Send update request from client to server
+        ↓
+Server updates the MySQL database
+        ↓
+Server reads the updated question again
+        ↓
+Client displays the updated question
+```
 
-The prototype database contains at least six sample questions.
+The database contains at least six sample questions.
 
-## Main Features
+Each question in the prototype is a multiple-choice question with four answer options.
+
+---
+
+## 3. Main Prototype Features
 
 The current prototype supports:
 
 * Loading all questions from the database.
-* Selecting a question from the questions table.
+* Displaying questions in a JavaFX table.
+* Selecting a question from the table.
 * Editing the question content.
 * Editing the topic.
 * Editing the difficulty.
-* Editing the question status: ACTIVE or INACTIVE.
-* Adding or editing an illustration path or URL.
-* Editing four multiple-choice answer options.
-* Selecting the correct answer using radio buttons.
-* Saving the full updated question.
-* Re-reading the updated question from the database and displaying it again.
+* Editing the status: `ACTIVE` or `INACTIVE`.
+* Editing the illustration path or URL.
+* Editing four answer options.
+* Choosing the correct answer using radio buttons.
+* Sending the update request to the server.
+* Updating the question in MySQL.
+* Re-reading the updated question from MySQL.
+* Displaying the updated question back in the GUI.
 
-All questions in the prototype are multiple-choice questions with exactly four answer options.
+---
 
-## Technologies and Course Tools Used
+## 4. Tools and Technologies Used
 
-### JavaFX + FXML
+### 4.1 JavaFX + FXML
 
 The GUI is implemented using JavaFX and FXML.
 
-The FXML file defines the visual layout of the Question Bank screen, while the controller class handles user actions such as loading questions, selecting a question, saving updates, and re-reading from the database.
+FXML is used to define the layout of the Question Bank screen.
+The controller handles the user actions such as loading questions, selecting a question, saving updates, and re-reading the question from the database.
 
 Main files:
 
@@ -63,11 +91,13 @@ src/main/java/hsts/client/boundary/QuestionBankPage.java
 src/main/java/hsts/client/boundary/QuestionBankPageController.java
 ```
 
-### OCSF-style Client-Server Communication
+---
+
+### 4.2 OCSF Client-Server Communication
 
 The prototype uses OCSF-style client-server communication.
 
-The OCSF framework classes are included in:
+The OCSF framework classes are implemented inside the project:
 
 ```text
 src/main/java/hsts/ocsf/AbstractClient.java
@@ -75,7 +105,7 @@ src/main/java/hsts/ocsf/AbstractServer.java
 src/main/java/hsts/ocsf/ConnectionToClient.java
 ```
 
-The system-specific client and server extend these OCSF classes:
+The application-specific client and server extend these OCSF classes:
 
 ```text
 src/main/java/hsts/client/net/HSTSClient.java
@@ -86,11 +116,14 @@ src/main/java/hsts/server/net/HSTSServer.java
 
 `HSTSServer` extends `AbstractServer`.
 
-The client sends `Request` objects to the server, and the server returns `Response` objects back to the client.
+The client sends a `Request` object to the server.
+The server handles the request and returns a `Response` object to the client.
 
-### DTO and Request/Response Objects
+---
 
-The prototype uses DTO and request-response objects to transfer data between the client and server.
+### 4.3 DTO and Request/Response Objects
+
+The prototype uses DTOs and request-response objects to transfer data between the client and the server.
 
 Main files:
 
@@ -103,37 +136,54 @@ src/main/java/hsts/common/QuestionDTO.java
 src/main/java/hsts/common/UpdateQuestionPayload.java
 ```
 
-`QuestionDTO` is used to transfer question data to the client without exposing the internal database access logic.
+Purpose:
 
-`UpdateQuestionPayload` is used when the client sends an update request to the server.
+```text
+Request              → sent from client to server
+Response             → sent from server to client
+QuestionDTO          → transfers question data to the client
+UpdateQuestionPayload → transfers edited question data to the server
+```
 
-### JDBC / SQLite Database
+---
 
-The prototype uses SQLite as a lightweight local database.
+### 4.4 MySQL Server + JDBC
 
-The database is initialized automatically when the server starts.
+The prototype uses MySQL Server as the database engine.
+
+The Java server connects to MySQL using JDBC.
 
 Main database files:
 
 ```text
-src/main/java/hsts/server/repository/DatabaseInitializer.java
 src/main/java/hsts/server/repository/DatabaseConnection.java
 src/main/java/hsts/server/repository/DatabaseController.java
+src/main/java/hsts/server/repository/DatabaseInitializer.java
 src/main/java/hsts/server/repository/QuestionRepository.java
 database/init.sql
 ```
 
-The database file is generated locally under:
+The database name is:
 
 ```text
-data/hsts_prototype.db
+hsts_prototype
 ```
 
-This generated database file should not be committed to GitHub.
+The table used by the prototype is:
 
-## Architecture Flow
+```text
+questions
+```
 
-The main prototype flow is:
+The database is initialized automatically when the Java server starts.
+If the table does not exist, the server creates it.
+If the table is empty, the server inserts the sample questions.
+
+---
+
+## 5. Current Architecture Flow
+
+The runtime flow of the prototype is:
 
 ```text
 question-bank-page.fxml
@@ -152,52 +202,64 @@ QuestionService
         ↓
 QuestionRepository
         ↓
-DatabaseController / DatabaseConnection
+DatabaseController
         ↓
-SQLite database
+DatabaseConnection
+        ↓
+MySQL Server / hsts_prototype database
         ↓
 Response
         ↓
 HSTSClient
+        ↓
+QuestionClientController
         ↓
 QuestionBankPageController
         ↓
 GUI updates
 ```
 
-## Detailed Update Flow
+---
+
+## 6. Detailed Question Update Flow
 
 When the user updates a question, the flow is:
 
 ```text
-Teacher selects a question in the GUI
+User selects a question in the GUI
         ↓
-QuestionBankPageController displays the editable fields
+QuestionBankPageController displays the selected question fields
         ↓
-Teacher edits content, topic, difficulty, status, illustration path, answer options, and correct answer
+User edits content, topic, difficulty, status, illustration path, answer options, and correct answer
         ↓
-Teacher clicks "Save Full Question Update"
+User clicks "Save Full Question Update"
         ↓
-QuestionBankPageController creates a QuestionDTO
+QuestionBankPageController creates an updated QuestionDTO
         ↓
 QuestionClientController creates an UpdateQuestionPayload
         ↓
-HSTSClient sends a Request to HSTSServer
+HSTSClient sends a Request to the server
         ↓
-HSTSServer receives the request and delegates it to QuestionService
+HSTSServer receives the Request
         ↓
-QuestionService validates the update
+HSTSServer sends the request to QuestionService
         ↓
-QuestionRepository updates the questions table
+QuestionService validates and prepares the update
+        ↓
+QuestionRepository updates the questions table in MySQL
         ↓
 QuestionRepository reads the updated question again
         ↓
 HSTSServer returns a Response with the updated QuestionDTO
         ↓
-The client displays the updated question in the GUI
+HSTSClient receives the Response
+        ↓
+QuestionBankPageController updates the GUI
 ```
 
-## Project Structure
+---
+
+## 7. Project Structure
 
 ```text
 HSTS_Prototype_Skeleton/
@@ -248,20 +310,260 @@ HSTS_Prototype_Skeleton/
 │   └── question-bank-page.fxml
 │
 ├── pom.xml
-└── README.md
+├── README.md
+├── run-server.bat
+├── run-client.bat
+├── run-server.sh
+└── run-client.sh
 ```
 
-## How to Run the Prototype
+---
 
-### 1. Open PowerShell in the project folder
+# 8. Full Run Guide - From Zero to Running the Prototype
+
+This section explains how to run the project on a new computer starting from cloning the GitHub repository.
+
+---
+
+## Step 0 - Required Software Checklist
+
+Before running the project, make sure the computer has:
+
+```text
+Java JDK 17 or newer
+Apache Maven
+Git
+MySQL Server 8.x
+MySQL Command Line Client or MySQL Workbench
+VS Code or IntelliJ IDEA
+```
+
+---
+
+## Step 1 - Check Java
+
+Open PowerShell and run:
 
 ```powershell
-cd "C:\Users\Fadi Kais\Desktop\HSTS_Prototype_Skeleton\HSTS_Prototype_Skeleton"
+java -version
 ```
 
-### 2. Start the server
+Expected result:
+
+```text
+java version "17..."
+```
+
+or a newer Java version.
+
+Then check the Java compiler:
+
+```powershell
+javac -version
+```
+
+Expected result:
+
+```text
+javac 17...
+```
+
+If Java is missing, install JDK 17 or newer.
+
+---
+
+## Step 2 - Check Maven
 
 Run:
+
+```powershell
+mvn -version
+```
+
+Expected result:
+
+```text
+Apache Maven ...
+Java version: 17...
+```
+
+If Maven is missing, install Maven and make sure it is added to the system PATH.
+
+---
+
+## Step 3 - Check Git
+
+Run:
+
+```powershell
+git --version
+```
+
+Expected result:
+
+```text
+git version ...
+```
+
+If Git is missing, install Git for Windows.
+
+---
+
+## Step 4 - Check MySQL
+
+Try:
+
+```powershell
+mysql --version
+```
+
+If this works, MySQL is available from PowerShell.
+
+If this command does not work, MySQL may still be installed but not added to PATH. In that case, use the full path:
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" --version
+```
+
+You can also open:
+
+```text
+MySQL 8.0 Command Line Client
+```
+
+from the Windows Start Menu.
+
+---
+
+## Step 5 - Clone the Repository
+
+Choose a folder where you want to place the project, for example Desktop:
+
+```powershell
+cd Desktop
+```
+
+Clone the repository:
+
+```powershell
+git clone https://github.com/FadiKais1/HSTS-Prototype.git
+```
+
+Enter the project folder:
+
+```powershell
+cd HSTS-Prototype
+```
+
+If the repository folder name is different, enter the folder that contains `pom.xml`.
+
+---
+
+## Step 6 - Create the MySQL Database
+
+Open MySQL Command Line Client or run MySQL from PowerShell:
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p
+```
+
+Enter your MySQL root password.
+
+Inside MySQL, run:
+
+```sql
+CREATE DATABASE IF NOT EXISTS hsts_prototype;
+USE hsts_prototype;
+SHOW DATABASES;
+```
+
+You should see:
+
+```text
+hsts_prototype
+```
+
+Then exit:
+
+```sql
+exit;
+```
+
+---
+
+## Step 7 - Set MySQL Credentials for the Java Server
+
+The project does not store the MySQL password inside the code.
+
+Before running the server, set the MySQL credentials in PowerShell.
+
+In the same PowerShell terminal where you will run the server, run:
+
+```powershell
+$env:HSTS_DB_USER="root"
+$env:HSTS_DB_PASSWORD="YOUR_MYSQL_PASSWORD"
+```
+
+Replace `YOUR_MYSQL_PASSWORD` with your actual MySQL password.
+
+Example:
+
+```powershell
+$env:HSTS_DB_USER="root"
+$env:HSTS_DB_PASSWORD="123456"
+```
+
+Do not commit or share your real password.
+
+If your password contains special characters, use single quotes:
+
+```powershell
+$env:HSTS_DB_PASSWORD='your_password_here'
+```
+
+Optional custom database URL:
+
+```powershell
+$env:HSTS_DB_URL="jdbc:mysql://localhost:3306/hsts_prototype?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+```
+
+Usually this is not needed because the default URL already points to `localhost:3306/hsts_prototype`.
+
+---
+
+## Step 8 - Compile the Project
+
+From the project root folder, run:
+
+```powershell
+mvn -q clean compile
+```
+
+If compilation succeeds, there will be no error message.
+
+If there is an error, read the first error line carefully. Common problems are:
+
+```text
+Java version is too old
+Maven is not installed
+MySQL dependency did not download
+Wrong folder, not inside the folder that contains pom.xml
+```
+
+---
+
+## Step 9 - Start the Server
+
+In PowerShell, make sure you are still inside the project folder.
+
+Make sure the MySQL password variable is set:
+
+```powershell
+$env:HSTS_DB_USER="root"
+$env:HSTS_DB_PASSWORD="YOUR_MYSQL_PASSWORD"
+```
+
+Then start the server:
 
 ```powershell
 mvn -q compile exec:java "-Dexec.mainClass=hsts.server.MainServer"
@@ -275,17 +577,43 @@ HSTS OCSF server started on port 5555
 
 Keep this terminal open.
 
-If you get:
+If you see:
+
+```text
+Access denied for user 'root'@'localhost' (using password: NO)
+```
+
+it means you forgot to set the password environment variable in this PowerShell terminal.
+
+Set it again:
+
+```powershell
+$env:HSTS_DB_PASSWORD="YOUR_MYSQL_PASSWORD"
+```
+
+Then run the server again.
+
+If you see:
 
 ```text
 Address already in use: bind
 ```
 
-it means the server is already running on port 5555. Either use the existing server terminal or stop it with `Ctrl + C`.
+it means the server is already running on port 5555. Stop the old server using `Ctrl + C`, or close the old server terminal.
 
-### 3. Start the client
+---
 
-Open a second PowerShell terminal in the same project folder and run:
+## Step 10 - Start the Client
+
+Open a second PowerShell terminal.
+
+Go to the project folder again:
+
+```powershell
+cd path\to\HSTS-Prototype
+```
+
+Run the client:
 
 ```powershell
 mvn -q javafx:run
@@ -293,56 +621,218 @@ mvn -q javafx:run
 
 The JavaFX Question Bank screen should open.
 
-## How to Use the Prototype
+The client does not need the MySQL password because only the server connects to the database.
 
-1. Click `Load Questions`.
-2. Select a question from the table.
-3. Edit the question content or attributes.
-4. Change the status to `ACTIVE` or `INACTIVE`.
-5. Edit the illustration path or URL.
-6. Edit the four answer options.
-7. Select the correct answer radio button.
-8. Click `Save Full Question Update`.
-9. The system updates the database and re-reads the updated question.
-10. The updated values are displayed again in the GUI.
+---
 
-## Database Notes
+## Step 11 - Test the Prototype
 
-The local SQLite database is generated automatically.
-
-If old data causes problems after schema changes, stop the server and delete:
+In the GUI:
 
 ```text
-data/hsts_prototype.db
+1. Click "Load Questions".
+2. Select a question from the table.
+3. Edit the question content, topic, difficulty, status, illustration path, or answer options.
+4. Choose the correct answer.
+5. Click "Save Full Question Update".
+6. Click "Re-read From Database".
+7. Confirm that the updated data appears in the GUI.
+```
+
+---
+
+## Step 12 - Verify the Update in MySQL
+
+Open MySQL Command Line Client again:
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p
+```
+
+Then run:
+
+```sql
+USE hsts_prototype;
+
+SELECT question_id, content, topic, difficulty, status
+FROM questions;
+```
+
+You should see the questions stored in MySQL.
+
+After editing a question from the GUI, run the same query again and confirm that the updated data appears.
+
+---
+
+# 9. Useful Commands
+
+## Compile
+
+```powershell
+mvn -q clean compile
+```
+
+## Run server
+
+```powershell
+$env:HSTS_DB_USER="root"
+$env:HSTS_DB_PASSWORD="YOUR_MYSQL_PASSWORD"
+mvn -q compile exec:java "-Dexec.mainClass=hsts.server.MainServer"
+```
+
+## Run client
+
+```powershell
+mvn -q javafx:run
+```
+
+## MySQL login
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" -u root -p
+```
+
+## Check database content
+
+```sql
+USE hsts_prototype;
+
+SELECT question_id, content, topic, difficulty, status
+FROM questions;
+```
+
+---
+
+# 10. Troubleshooting
+
+## Problem: `mysql` is not recognized
+
+Use the full path:
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" --version
+```
+
+or open MySQL Command Line Client from the Start Menu.
+
+---
+
+## Problem: `Access denied ... using password: NO`
+
+The server tried to connect to MySQL without a password.
+
+Fix:
+
+```powershell
+$env:HSTS_DB_USER="root"
+$env:HSTS_DB_PASSWORD="YOUR_MYSQL_PASSWORD"
 ```
 
 Then run the server again.
-The database will be recreated automatically with the required questions.
 
-Do not commit the generated database file.
+---
 
-## Git Notes
+## Problem: `Access denied ... using password: YES`
 
-Before committing, check the status:
+The server used a password, but it is wrong.
 
-```powershell
-git status
+Fix:
+
+```text
+Use the same password that works in MySQL Command Line Client.
 ```
 
-Add project source changes:
+Then set it again:
+
+```powershell
+$env:HSTS_DB_PASSWORD="correct_password_here"
+```
+
+---
+
+## Problem: `Unknown database 'hsts_prototype'`
+
+Create the database:
+
+```sql
+CREATE DATABASE IF NOT EXISTS hsts_prototype;
+```
+
+Then run the server again.
+
+---
+
+## Problem: `Address already in use: bind`
+
+The server port is already used.
+
+Fix:
+
+```text
+Stop the previous server with Ctrl + C.
+```
+
+Or find the process:
+
+```powershell
+netstat -ano | findstr :5555
+```
+
+Then stop it:
+
+```powershell
+taskkill /PID <PID_NUMBER> /F
+```
+
+---
+
+## Problem: GUI still says SQLite
+
+This means the GUI label was not updated.
+Search for old text:
+
+```powershell
+Get-ChildItem -Path src\main -Recurse -File | Select-String -Pattern "SQLite"
+```
+
+Replace:
+
+```text
+Server-side SQLite database
+```
+
+with:
+
+```text
+MySQL Server database
+```
+
+Then compile and run again.
+
+---
+
+# 11. Git Commands for Submitting Changes
+
+Check changed files:
+
+```powershell
+git status --short
+```
+
+Add relevant source files:
 
 ```powershell
 git add pom.xml
-git add src/main/java
-git add src/main/resources
 git add database/init.sql
 git add README.md
+git add src/main/java
+git add src/main/resources
 ```
 
 Commit:
 
 ```powershell
-git commit -m "Update README and document FXML OCSF question editing prototype"
+git commit -m "Update prototype to use OCSF and MySQL database"
 ```
 
 Push:
@@ -351,7 +841,7 @@ Push:
 git push
 ```
 
-Confirm everything is pushed:
+Check final status:
 
 ```powershell
 git status
@@ -366,33 +856,40 @@ Your branch is up to date with 'origin/main'.
 nothing to commit, working tree clean
 ```
 
-## What This Prototype Demonstrates
+---
 
-This prototype demonstrates the technical requirement of Part C:
+# 12. What This Prototype Demonstrates
 
-* A working JavaFX GUI.
-* A client application.
-* A server application.
+This prototype demonstrates the Part C technical implementation:
+
+* JavaFX GUI.
+* FXML layout.
+* Client application.
+* Server application.
 * OCSF-style client-server communication.
 * Request and Response transfer objects.
-* A persistent database with a questions table.
-* At least six questions.
+* MySQL database connection using JDBC.
+* Server-side database initialization.
+* Questions table with at least six questions.
 * Editing a selected question.
-* Updating the database through the server.
+* Updating the question through the server.
 * Reading the updated question back from the database.
-* Displaying the updated result to the user.
+* Displaying the updated result in the GUI.
 
-## What Is Not Implemented in the Prototype
+---
 
-The full project design includes many additional use cases, such as:
+# 13. What Is Not Implemented in This Prototype
+
+The full project design includes additional flows, including:
 
 * Building full exams.
-* Approving exams.
-* Executing exams by students.
+* Automatic exam generation.
+* Exam approval by coordinator.
+* Student exam execution.
 * Saving student answers.
 * Submitting exams.
 * Grading.
 * Reports.
 * Notifications.
 
-These flows are represented in the full system design and diagrams, but the working Part C prototype focuses on the required question-bank update flow.
+These flows are represented in the full system design and diagrams, but the working Part C prototype focuses on the required Question Bank update flow.
