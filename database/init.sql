@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS questions (
     correct_option_number INTEGER
 );
 
+
 INSERT INTO questions (question_id, content, topic, type, difficulty, status, illustration_path,
     answer_option_1, answer_option_2, answer_option_3, answer_option_4, correct_option_number) VALUES
 (1, 'What is 2 + 2?', 'Algebra', 'MULTIPLE_CHOICE', 'EASY', 'ACTIVE', '', '3', '4', '5', '6', 2),
