@@ -1,6 +1,7 @@
 package hsts.server.repository;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -18,24 +19,26 @@ public class DatabaseInitializer {
     private void createQuestionsTable() {
         String sql = """
                 CREATE TABLE IF NOT EXISTS questions (
-                    question_id INTEGER PRIMARY KEY,
+                    question_id INT PRIMARY KEY,
                     content TEXT NOT NULL,
-                    topic TEXT,
-                    type TEXT,
-                    difficulty TEXT,
-                    status TEXT,
+                    topic VARCHAR(100),
+                    type VARCHAR(50),
+                    difficulty VARCHAR(50),
+                    status VARCHAR(50),
                     illustration_path TEXT,
                     answer_option_1 TEXT,
                     answer_option_2 TEXT,
                     answer_option_3 TEXT,
                     answer_option_4 TEXT,
-                    correct_option_number INTEGER
+                    correct_option_number INT
                 )
                 """;
 
         try (Connection connection = DatabaseConnection.getConnection();
              Statement statement = connection.createStatement()) {
+
             statement.execute(sql);
+
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to create questions table", e);
         }
@@ -48,25 +51,34 @@ public class DatabaseInitializer {
             addColumnIfMissing(connection, "answer_option_2", "TEXT");
             addColumnIfMissing(connection, "answer_option_3", "TEXT");
             addColumnIfMissing(connection, "answer_option_4", "TEXT");
-            addColumnIfMissing(connection, "correct_option_number", "INTEGER");
+            addColumnIfMissing(connection, "correct_option_number", "INT");
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to migrate questions table", e);
         }
     }
 
     private void addColumnIfMissing(Connection connection, String columnName, String columnType) throws SQLException {
-        String checkSql = "PRAGMA table_info(questions)";
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(checkSql)) {
-            while (resultSet.next()) {
-                if (columnName.equalsIgnoreCase(resultSet.getString("name"))) {
-                    return;
-                }
-            }
+        if (columnExists(connection, columnName)) {
+            return;
         }
 
+        String sql = "ALTER TABLE questions ADD COLUMN " + columnName + " " + columnType;
+
         try (Statement statement = connection.createStatement()) {
-            statement.execute("ALTER TABLE questions ADD COLUMN " + columnName + " " + columnType);
+            statement.execute(sql);
+        }
+    }
+
+    private boolean columnExists(Connection connection, String columnName) throws SQLException {
+        DatabaseMetaData metaData = connection.getMetaData();
+
+        try (ResultSet resultSet = metaData.getColumns(
+                connection.getCatalog(),
+                null,
+                "questions",
+                columnName
+        )) {
+            return resultSet.next();
         }
     }
 
@@ -78,6 +90,7 @@ public class DatabaseInitializer {
              ResultSet resultSet = countStatement.executeQuery(countSql)) {
 
             int count = resultSet.next() ? resultSet.getInt(1) : 0;
+
             if (count > 0) {
                 return;
             }
@@ -98,8 +111,20 @@ public class DatabaseInitializer {
                                 String status, String illustrationPath, String option1, String option2,
                                 String option3, String option4, int correctOptionNumber) throws SQLException {
         String sql = """
-                INSERT INTO questions (question_id, content, topic, type, difficulty, status, illustration_path,
-                    answer_option_1, answer_option_2, answer_option_3, answer_option_4, correct_option_number)
+                INSERT INTO questions (
+                    question_id,
+                    content,
+                    topic,
+                    type,
+                    difficulty,
+                    status,
+                    illustration_path,
+                    answer_option_1,
+                    answer_option_2,
+                    answer_option_3,
+                    answer_option_4,
+                    correct_option_number
+                )
                 VALUES (?, ?, ?, 'MULTIPLE_CHOICE', ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
@@ -115,6 +140,7 @@ public class DatabaseInitializer {
             statement.setString(9, option3);
             statement.setString(10, option4);
             statement.setInt(11, correctOptionNumber);
+
             statement.executeUpdate();
         }
     }
@@ -122,12 +148,14 @@ public class DatabaseInitializer {
     private void normalizeExistingQuestions() {
         try (Connection connection = DatabaseConnection.getConnection()) {
             updateBaseColumns(connection);
+
             applyDefaultOptions(connection, 1, "3", "4", "5", "6", 2);
             applyDefaultOptions(connection, 2, "x = 2", "x = 4", "x = 5", "x = 20", 2);
             applyDefaultOptions(connection, 3, "x", "2x", "x^2", "2", 2);
             applyDefaultOptions(connection, 4, "Rome", "Paris", "Madrid", "Berlin", 2);
             applyDefaultOptions(connection, 5, "Encapsulation", "Inheritance", "Polymorphism", "Compilation", 3);
             applyDefaultOptions(connection, 6, "A unique identifier", "A duplicated field", "A table name", "A query result", 1);
+
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to normalize existing questions", e);
         }
@@ -146,6 +174,7 @@ public class DatabaseInitializer {
                         ELSE 1
                     END
                 """;
+
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.executeUpdate();
         }
@@ -155,13 +184,29 @@ public class DatabaseInitializer {
                                      String option3, String option4, int correctOptionNumber) throws SQLException {
         String sql = """
                 UPDATE questions
-                SET answer_option_1 = CASE WHEN answer_option_1 IS NULL OR answer_option_1 = '' THEN ? ELSE answer_option_1 END,
-                    answer_option_2 = CASE WHEN answer_option_2 IS NULL OR answer_option_2 = '' THEN ? ELSE answer_option_2 END,
-                    answer_option_3 = CASE WHEN answer_option_3 IS NULL OR answer_option_3 = '' THEN ? ELSE answer_option_3 END,
-                    answer_option_4 = CASE WHEN answer_option_4 IS NULL OR answer_option_4 = '' THEN ? ELSE answer_option_4 END,
-                    correct_option_number = CASE WHEN correct_option_number IS NULL OR correct_option_number NOT BETWEEN 1 AND 4 THEN ? ELSE correct_option_number END
+                SET answer_option_1 = CASE
+                        WHEN answer_option_1 IS NULL OR answer_option_1 = '' THEN ?
+                        ELSE answer_option_1
+                    END,
+                    answer_option_2 = CASE
+                        WHEN answer_option_2 IS NULL OR answer_option_2 = '' THEN ?
+                        ELSE answer_option_2
+                    END,
+                    answer_option_3 = CASE
+                        WHEN answer_option_3 IS NULL OR answer_option_3 = '' THEN ?
+                        ELSE answer_option_3
+                    END,
+                    answer_option_4 = CASE
+                        WHEN answer_option_4 IS NULL OR answer_option_4 = '' THEN ?
+                        ELSE answer_option_4
+                    END,
+                    correct_option_number = CASE
+                        WHEN correct_option_number IS NULL OR correct_option_number NOT BETWEEN 1 AND 4 THEN ?
+                        ELSE correct_option_number
+                    END
                 WHERE question_id = ?
                 """;
+
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, option1);
             statement.setString(2, option2);
@@ -169,6 +214,7 @@ public class DatabaseInitializer {
             statement.setString(4, option4);
             statement.setInt(5, correctOptionNumber);
             statement.setInt(6, id);
+
             statement.executeUpdate();
         }
     }

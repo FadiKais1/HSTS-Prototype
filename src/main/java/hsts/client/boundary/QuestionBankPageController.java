@@ -384,7 +384,7 @@ public class QuestionBankPageController {
     private void updateConnectionLabels() {
         if (isConnected()) {
             serverStatusValue.setText("Connected to " + SERVER_HOST + ":" + SERVER_PORT);
-            databaseStatusValue.setText("Server-side SQLite database");
+            databaseStatusValue.setText("MySQL Server database");
             questionsCountValue.setText("0");
             currentActionValue.setText("Ready");
         } else {
