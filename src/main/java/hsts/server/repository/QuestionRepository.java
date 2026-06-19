@@ -16,11 +16,21 @@ public class QuestionRepository {
             answer_option_1, answer_option_2, answer_option_3, answer_option_4, correct_option_number
             """;
 
+    private final DatabaseController databaseController;
+
+    public QuestionRepository() {
+        this(new DatabaseController());
+    }
+
+    public QuestionRepository(DatabaseController databaseController) {
+        this.databaseController = databaseController;
+    }
+
     public List<Question> findAll() {
         String sql = "SELECT " + QUESTION_COLUMNS + " FROM questions ORDER BY question_id";
         List<Question> questions = new ArrayList<>();
 
-        try (Connection connection = DatabaseConnection.getConnection();
+        try (Connection connection = databaseController.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet resultSet = statement.executeQuery()) {
 
@@ -29,6 +39,7 @@ public class QuestionRepository {
             }
 
             return questions;
+
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load questions", e);
         }
@@ -37,7 +48,7 @@ public class QuestionRepository {
     public Optional<Question> findById(int questionId) {
         String sql = "SELECT " + QUESTION_COLUMNS + " FROM questions WHERE question_id = ?";
 
-        try (Connection connection = DatabaseConnection.getConnection();
+        try (Connection connection = databaseController.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setInt(1, questionId);
@@ -46,8 +57,10 @@ public class QuestionRepository {
                 if (resultSet.next()) {
                     return Optional.of(mapRowToQuestion(resultSet));
                 }
+
                 return Optional.empty();
             }
+
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load question by id", e);
         }
@@ -56,12 +69,21 @@ public class QuestionRepository {
     public boolean updateQuestion(Question question) {
         String sql = """
                 UPDATE questions
-                SET content = ?, topic = ?, type = 'MULTIPLE_CHOICE', difficulty = ?, status = ?, illustration_path = ?,
-                    answer_option_1 = ?, answer_option_2 = ?, answer_option_3 = ?, answer_option_4 = ?, correct_option_number = ?
+                SET content = ?,
+                    topic = ?,
+                    type = 'MULTIPLE_CHOICE',
+                    difficulty = ?,
+                    status = ?,
+                    illustration_path = ?,
+                    answer_option_1 = ?,
+                    answer_option_2 = ?,
+                    answer_option_3 = ?,
+                    answer_option_4 = ?,
+                    correct_option_number = ?
                 WHERE question_id = ?
                 """;
 
-        try (Connection connection = DatabaseConnection.getConnection();
+        try (Connection connection = databaseController.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setString(1, question.getContent());
@@ -78,6 +100,7 @@ public class QuestionRepository {
 
             int updatedRows = statement.executeUpdate();
             return updatedRows == 1;
+
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to update question", e);
         }
@@ -86,7 +109,7 @@ public class QuestionRepository {
     public boolean updateQuestionContent(int questionId, String newContent) {
         String sql = "UPDATE questions SET content = ? WHERE question_id = ?";
 
-        try (Connection connection = DatabaseConnection.getConnection();
+        try (Connection connection = databaseController.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setString(1, newContent);
@@ -94,6 +117,7 @@ public class QuestionRepository {
 
             int updatedRows = statement.executeUpdate();
             return updatedRows == 1;
+
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to update question", e);
         }
