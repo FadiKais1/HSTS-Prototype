@@ -6,6 +6,9 @@ public class QuestionDTO implements Serializable {
     private static final long serialVersionUID = 2L;
 
     private int questionId;
+    private int courseId;
+    private int subjectId;
+    private int versionNo;
     private String content;
     private String topic;
     private String type;
@@ -25,7 +28,18 @@ public class QuestionDTO implements Serializable {
     public QuestionDTO(int questionId, String content, String topic, String type, String difficulty, String status,
                        String illustrationPath, String answerOption1, String answerOption2, String answerOption3,
                        String answerOption4, int correctOptionNumber) {
+        this(questionId, content, topic, type, difficulty, status, illustrationPath,
+                answerOption1, answerOption2, answerOption3, answerOption4,
+                correctOptionNumber, 0, 0, 1);
+    }
+
+    public QuestionDTO(int questionId, String content, String topic, String type, String difficulty, String status,
+                       String illustrationPath, String answerOption1, String answerOption2, String answerOption3,
+                       String answerOption4, int correctOptionNumber, int courseId, int subjectId, int versionNo) {
         this.questionId = questionId;
+        this.courseId = courseId;
+        this.subjectId = subjectId;
+        this.versionNo = versionNo;
         this.content = content;
         this.topic = topic;
         this.type = type;
@@ -41,6 +55,9 @@ public class QuestionDTO implements Serializable {
 
     public int getQuestionId() { return questionId; }
     public void setQuestionId(int questionId) { this.questionId = questionId; }
+    public int getCourseId() { return courseId; }
+    public int getSubjectId() { return subjectId; }
+    public int getVersionNo() { return versionNo; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
     public String getTopic() { return topic; }
