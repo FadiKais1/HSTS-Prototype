@@ -3,6 +3,7 @@ package hsts.client.boundary;
 import hsts.client.net.Client;
 import hsts.common.type.DifficultyLevel;
 import hsts.server.entity.Course;
+import hsts.server.entity.Exam;
 import hsts.server.entity.Teacher;
 
 import java.util.List;
@@ -12,6 +13,7 @@ public class ExamBuilderPage {
     private Teacher currentTeacher;
     private Course selectedCourse;
     private List selectedQuestions;
+    private Exam exam;
 
     public void chooseManualExam(int examId) {
         throw new UnsupportedOperationException(
