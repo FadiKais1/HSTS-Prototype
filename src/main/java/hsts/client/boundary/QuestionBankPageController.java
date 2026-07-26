@@ -20,16 +20,16 @@ import javafx.scene.control.ToggleGroup;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 
 public class QuestionBankPageController {
-    private static final String SERVER_HOST = "localhost";
-    private static final int SERVER_PORT = 5555;
     private static final String FIXED_TYPE = "MULTIPLE_CHOICE";
 
     private final ObservableList<QuestionDTO> questions = FXCollections.observableArrayList();
 
     private QuestionClientController questionClientController;
     private Client client;
+    private Runnable backHandler;
 
     @FXML private TableView<QuestionDTO> tableView;
     @FXML private TableColumn<QuestionDTO, Number> idColumn;
@@ -70,20 +70,20 @@ public class QuestionBankPageController {
         setupComboBoxes();
         setupCorrectAnswerRadios();
         setupTable();
-
-        connectToServer();
         updateConnectionLabels();
+        setStatus("Waiting for authenticated client.");
+        setCurrentAction("Waiting for configuration");
+        addLog("Question Bank controls initialized.");
+    }
 
-        addLog("FXML client GUI started.");
+    public void configure(Client client, Runnable backHandler) {
+        this.client = Objects.requireNonNull(client);
+        this.backHandler = Objects.requireNonNull(backHandler);
+        this.questionClientController = new QuestionClientController(client);
 
-        if (isConnected()) {
-            addLog("Connected to server at " + SERVER_HOST + ":" + SERVER_PORT + ".");
-            loadQuestions();
-        } else {
-            setStatus("Cannot connect to server. Start the server first.");
-            setCurrentAction("Waiting for server");
-            addLog("Server connection failed. Start the server and reopen the client.");
-        }
+        updateConnectionLabels();
+        addLog("Using authenticated connection to " + client.getHost() + ":" + client.getPort() + ".");
+        loadQuestions();
     }
 
     private void setupComboBoxes() {
@@ -156,13 +156,17 @@ public class QuestionBankPageController {
         clearSelection();
     }
 
-    private void connectToServer() {
+    @FXML
+    private void handleBack() {
+        if (backHandler == null) {
+            setStatus("Back navigation is unavailable.");
+            return;
+        }
+
         try {
-            client = new Client(SERVER_HOST, SERVER_PORT);
-            questionClientController = new QuestionClientController(client);
-        } catch (Exception e) {
-            client = null;
-            questionClientController = null;
+            backHandler.run();
+        } catch (RuntimeException exception) {
+            setStatus("Unable to return to dashboard.");
         }
     }
 
@@ -383,7 +387,7 @@ public class QuestionBankPageController {
 
     private void updateConnectionLabels() {
         if (isConnected()) {
-            serverStatusValue.setText("Connected to " + SERVER_HOST + ":" + SERVER_PORT);
+            serverStatusValue.setText("Connected to " + client.getHost() + ":" + client.getPort());
             databaseStatusValue.setText("MySQL Server database");
             questionsCountValue.setText("0");
             currentActionValue.setText("Ready");
@@ -396,7 +400,7 @@ public class QuestionBankPageController {
     }
 
     private boolean isConnected() {
-        return questionClientController != null;
+        return client != null && client.isConnected() && questionClientController != null;
     }
 
     private void setStatus(String message) {
@@ -447,8 +451,8 @@ public class QuestionBankPageController {
     }
 
     public void close() throws Exception {
-        if (client != null) {
-            client.close();
-        }
+        questionClientController = null;
+        client = null;
+        backHandler = null;
     }
 }

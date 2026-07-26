@@ -16,15 +16,19 @@
                     <Insets top="18" right="18" bottom="18" left="18"/>
                 </padding>
 
-                <VBox spacing="4">
-                    <Label text="HSTS Exam Management System"
-                           style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-                    <Label text="Question Bank Prototype - FXML Multiple Choice Editor"
-                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
-                    <Label text="Edit question attributes, status, illustration path, four answer options, and the correct answer number."
-                           wrapText="true"
-                           style="-fx-font-size: 13px; -fx-text-fill: #4b5563;"/>
-                </VBox>
+                <HBox alignment="CENTER_LEFT" spacing="14">
+                    <VBox spacing="4" HBox.hgrow="ALWAYS">
+                        <Label text="HSTS Exam Management System"
+                               style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <Label text="Question Bank Prototype - FXML Multiple Choice Editor"
+                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
+                        <Label text="Edit question attributes, status, illustration path, four answer options, and the correct answer number."
+                               wrapText="true"
+                               style="-fx-font-size: 13px; -fx-text-fill: #4b5563;"/>
+                    </VBox>
+                    <Button text="Back to Dashboard" onAction="#handleBack"
+                            style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                </HBox>
 
                 <GridPane hgap="18" vgap="8"
                           style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
