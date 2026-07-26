@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="hsts.client.boundary.PrincipalDashboard"
+            prefWidth="1000" prefHeight="680"
+            style="-fx-background-color: #f4f7fb;">
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="16"
+              style="-fx-background-color: white; -fx-border-color: transparent transparent #dbe3ef transparent;">
+            <padding><Insets top="18" right="26" bottom="18" left="26"/></padding>
+            <VBox spacing="4">
+                <Label fx:id="welcomeLabel" text="Welcome"
+                       style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                <Label fx:id="roleLabel" text="PRINCIPAL"
+                       style="-fx-text-fill: #2563eb; -fx-font-weight: bold;"/>
+            </VBox>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button fx:id="logoutButton" text="Log Out" onAction="#handleLogout"
+                    style="-fx-background-color: #e5e7eb; -fx-background-radius: 8; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 16;"/>
+        </HBox>
+    </top>
+    <center>
+        <StackPane>
+            <padding><Insets top="34" right="34" bottom="34" left="34"/></padding>
+            <VBox alignment="TOP_LEFT" spacing="16" maxWidth="660"
+                  style="-fx-background-color: white; -fx-background-radius: 16; -fx-border-color: #dbe3ef; -fx-border-radius: 16; -fx-padding: 30;">
+                <Label text="Principal Dashboard"
+                       style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                <Label text="Reporting and review features will become available as Assignment 3 implementation continues."
+                       wrapText="true" style="-fx-text-fill: #6b7280;"/>
+                <Label fx:id="errorLabel" text="" managed="false" visible="false"
+                       wrapText="true" maxWidth="Infinity"
+                       style="-fx-background-color: #fef2f2; -fx-background-radius: 8; -fx-text-fill: #b91c1c; -fx-padding: 9;"/>
+                <Button text="Reports" disable="true" maxWidth="Infinity" prefHeight="46"/>
+                <Button text="Questions" disable="true" maxWidth="Infinity" prefHeight="46"/>
+                <Button text="Exams" disable="true" maxWidth="Infinity" prefHeight="46"/>
+                <Button text="Results" disable="true" maxWidth="Infinity" prefHeight="46"/>
+            </VBox>
+        </StackPane>
+    </center>
+</BorderPane>
