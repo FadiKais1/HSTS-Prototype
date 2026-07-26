@@ -22,19 +22,33 @@ public class Client extends AbstractClient {
     // COMPATIBILITY-ONLY: Preserves the working HSTSClient constructor and connection behavior.
     public Client(String host, int port) throws IOException {
         super(host, port);
+        this.host = host;
+        this.port = port;
         openConnection();
     }
 
     public void connect() {
-        throw new UnsupportedOperationException(
-                "Not implemented in Assignment 2 skeleton"
-        );
+        if (isConnected()) {
+            return;
+        }
+
+        try {
+            openConnection();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to connect to server", e);
+        }
     }
 
     public void disconnect() {
-        throw new UnsupportedOperationException(
-                "Not implemented in Assignment 2 skeleton"
-        );
+        if (!isConnected()) {
+            return;
+        }
+
+        try {
+            closeConnection();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to disconnect from server", e);
+        }
     }
 
     // COMPATIBILITY-ONLY: Approved return-type correction for the working client API.
@@ -61,16 +75,14 @@ public class Client extends AbstractClient {
     }
 
     public void handleResponse(Response response) {
-        throw new UnsupportedOperationException(
-                "Not implemented in Assignment 2 skeleton"
-        );
+        responseQueue.offer(response);
     }
 
     // COMPATIBILITY-ONLY: OCSF delivers raw server messages through this callback.
     @Override
     protected void handleMessageFromServer(Object message) {
         if (message instanceof Response response) {
-            responseQueue.offer(response);
+            handleResponse(response);
         } else {
             responseQueue.offer(Response.error("Invalid response type from server"));
         }
@@ -79,12 +91,14 @@ public class Client extends AbstractClient {
     // COMPATIBILITY-ONLY: Preserves HSTSClient's connection notification behavior.
     @Override
     protected void connectionEstablished() {
+        connected = true;
         System.out.println("Connected to HSTS server");
     }
 
     // COMPATIBILITY-ONLY: Preserves HSTSClient's disconnection notification behavior.
     @Override
     protected void connectionClosed() {
+        connected = false;
         System.out.println("Disconnected from HSTS server");
     }
 
