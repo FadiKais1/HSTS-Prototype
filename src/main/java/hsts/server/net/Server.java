@@ -48,9 +48,7 @@ public class Server extends AbstractServer {
     }
 
     public Response receiveRequest(Request request) {
-        throw new UnsupportedOperationException(
-                "Not implemented in Assignment 2 skeleton"
-        );
+        return handleRequest(request);
     }
 
     public Response handleRequest(Request request) {
@@ -117,7 +115,13 @@ public class Server extends AbstractServer {
 
     @Override
     protected void serverStarted() {
+        running = true;
         System.out.println("HSTS OCSF server started on port " + getPort());
+    }
+
+    @Override
+    protected void serverStopped() {
+        running = false;
     }
 
     @Override
@@ -137,6 +141,7 @@ public class Server extends AbstractServer {
 
     @Override
     protected void serverClosed() {
+        running = false;
         System.out.println("HSTS OCSF server closed");
     }
 }
