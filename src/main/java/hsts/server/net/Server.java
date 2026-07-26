@@ -1,5 +1,7 @@
 package hsts.server.net;
 
+import hsts.common.LoginRequestPayload;
+import hsts.common.LoginResult;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
@@ -17,6 +19,9 @@ import hsts.server.control.ReportService;
 import java.io.IOException;
 
 public class Server extends AbstractServer {
+    private static final String AUTHENTICATED_USER_ID = "hsts.auth.userId";
+    private static final String AUTHENTICATED_SESSION_ID = "hsts.auth.sessionId";
+
     private int port;
     private boolean running;
 
@@ -29,10 +34,11 @@ public class Server extends AbstractServer {
     private NotificationService notificationService;
     private CourseBotService courseBotService;
 
-    public Server(int port, ExamManagementService examManagementService) {
+    public Server(int port, ExamManagementService examManagementService, AuthService authService) {
         super(port);
         this.port = port;
         this.examManagementService = examManagementService;
+        this.authService = authService;
     }
 
     public void startServer() {
@@ -76,6 +82,18 @@ public class Server extends AbstractServer {
                             examManagementService.updateQuestion(payload)
                     );
                 }
+
+                case LOGIN -> {
+                    if (!(request.getPayload() instanceof LoginRequestPayload payload)) {
+                        throw new IllegalArgumentException("Login request data is required");
+                    }
+                    yield Response.success(
+                            "Login successful",
+                            authService.login(payload)
+                    );
+                }
+
+                case LOGOUT -> Response.error("Connection context required");
             };
 
         } catch (Exception e) {
@@ -100,8 +118,79 @@ public class Server extends AbstractServer {
             return;
         }
 
-        response = handleRequest(request);
+        if (request.getType() == RequestType.LOGIN) {
+            if (isAuthenticated(client)) {
+                response = Response.error("User is already logged in");
+            } else {
+                response = handleRequest(request);
+                if (response.isSuccess() && response.getPayload() instanceof LoginResult loginResult) {
+                    bindAuthentication(client, loginResult);
+                }
+            }
+        } else if (!isAuthenticated(client)) {
+            response = Response.error("Authentication required");
+        } else if (request.getType() == RequestType.LOGOUT) {
+            response = logout(client);
+        } else {
+            response = handleRequest(request);
+        }
         sendResponse(client, response);
+    }
+
+    private void bindAuthentication(ConnectionToClient client, LoginResult loginResult) {
+        client.setInfo(AUTHENTICATED_USER_ID, loginResult.getUserId());
+        client.setInfo(AUTHENTICATED_SESSION_ID, loginResult.getSessionId());
+    }
+
+    private boolean isAuthenticated(ConnectionToClient client) {
+        Object userId = client.getInfo(AUTHENTICATED_USER_ID);
+        Object sessionId = client.getInfo(AUTHENTICATED_SESSION_ID);
+
+        if (userId instanceof Integer authenticatedUserId
+                && sessionId instanceof String authenticatedSessionId) {
+            if (authService.isSessionActive(authenticatedUserId, authenticatedSessionId)) {
+                return true;
+            }
+
+            clearAuthentication(client);
+        }
+
+        return false;
+    }
+
+    private Response logout(ConnectionToClient client) {
+        int userId = (Integer) client.getInfo(AUTHENTICATED_USER_ID);
+        String sessionId = (String) client.getInfo(AUTHENTICATED_SESSION_ID);
+
+        try {
+            authService.logout(userId, sessionId);
+            return Response.success("Logout successful", null);
+        } catch (Exception exception) {
+            return Response.error(exception.getMessage());
+        } finally {
+            clearAuthentication(client);
+        }
+    }
+
+    private void clearAuthentication(ConnectionToClient client) {
+        client.setInfo(AUTHENTICATED_USER_ID, null);
+        client.setInfo(AUTHENTICATED_SESSION_ID, null);
+    }
+
+    private void cleanupAuthentication(ConnectionToClient client) {
+        Object userId = client.getInfo(AUTHENTICATED_USER_ID);
+        Object sessionId = client.getInfo(AUTHENTICATED_SESSION_ID);
+
+        try {
+            if (userId instanceof Integer authenticatedUserId
+                    && sessionId instanceof String authenticatedSessionId) {
+                authService.logout(authenticatedUserId, authenticatedSessionId);
+            }
+        } catch (Exception exception) {
+            System.out.println("Failed to clean up client authentication");
+        } finally {
+            clearAuthentication(client);
+        }
     }
 
     // COMPATIBILITY-ONLY: OCSF response delivery requires a target client connection.
@@ -131,6 +220,7 @@ public class Server extends AbstractServer {
 
     @Override
     protected void clientDisconnected(ConnectionToClient client) {
+        cleanupAuthentication(client);
         System.out.println("Client disconnected: " + client);
     }
 

@@ -78,6 +78,10 @@ public class AuthService {
         }
     }
 
+    public boolean isSessionActive(int userId, String sessionId) {
+        return sessionId != null && sessionId.equals(activeSessions.get(userId));
+    }
+
     private AuthenticatedSession authenticateAndOpenSession(String email, String password) {
         if (isBlank(email) || isBlank(password)) {
             throw new IllegalArgumentException("Email and password are required");

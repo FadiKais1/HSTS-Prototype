@@ -149,6 +149,24 @@ public class AuthServiceTest {
     }
 
     @Test
+    public void sessionQueryTracksLoginAndGuardedLogoutWithoutMutation() {
+        AuthService service = serviceWithUser(activeUser());
+        LoginResult loginResult = service.login(new LoginRequestPayload(
+                "student@hsts.local",
+                PASSWORD
+        ));
+
+        assertTrue(service.isSessionActive(loginResult.getUserId(), loginResult.getSessionId()));
+        assertFalse(service.isSessionActive(loginResult.getUserId(), null));
+        assertFalse(service.isSessionActive(loginResult.getUserId(), "wrong-session-id"));
+        assertTrue(service.isSessionActive(loginResult.getUserId(), loginResult.getSessionId()));
+
+        service.logout(loginResult.getUserId(), loginResult.getSessionId());
+
+        assertFalse(service.isSessionActive(loginResult.getUserId(), loginResult.getSessionId()));
+    }
+
+    @Test
     public void validateCredentialsCreatesNoSession() {
         AuthService service = serviceWithUser(activeUser());
 
@@ -171,12 +189,16 @@ public class AuthServiceTest {
     public void manualBlockUpdatesStatusAndReleasesSession() {
         InMemoryUserRepository repository = new InMemoryUserRepository(activeUser());
         AuthService service = new AuthService(repository);
-        service.login("student@hsts.local", PASSWORD);
+        LoginResult loginResult = service.login(new LoginRequestPayload(
+                "student@hsts.local",
+                PASSWORD
+        ));
 
         service.blockLogin(1001);
 
         assertEquals(UserStatus.BLOCKED, repository.getUser(1001).getStatus());
         assertEquals(1, repository.getStatusUpdateCalls());
+        assertFalse(service.isSessionActive(1001, loginResult.getSessionId()));
 
         repository.updateStatus(1001, UserStatus.ACTIVE);
         assertEquals(1001, service.login("student@hsts.local", PASSWORD).getUserId());
