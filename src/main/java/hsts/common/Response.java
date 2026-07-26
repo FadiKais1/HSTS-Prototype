@@ -5,6 +5,7 @@ import java.io.Serializable;
 public class Response implements Serializable {
     private static final long serialVersionUID = 1L;
 
+    private int requestId;
     private final ResponseStatus status;
     private final String message;
     private final Object payload;
