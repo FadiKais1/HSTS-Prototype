@@ -14,6 +14,77 @@ public class DatabaseInitializer {
         migrateQuestionsTable();
         seedQuestionsIfEmpty();
         normalizeExistingQuestions();
+        createUsersTable();
+        seedUsers();
+    }
+
+    private void createUsersTable() {
+        String sql = """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INT PRIMARY KEY,
+                    full_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(254) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL UNIQUE,
+                    password_hash VARCHAR(255) NOT NULL,
+                    role VARCHAR(20) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                    CONSTRAINT chk_users_role CHECK (role IN ('STUDENT', 'TEACHER', 'COORDINATOR', 'PRINCIPAL')),
+                    CONSTRAINT chk_users_status CHECK (status IN ('ACTIVE', 'BLOCKED'))
+                )
+                """;
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             Statement statement = connection.createStatement()) {
+
+            statement.execute(sql);
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to create users table", e);
+        }
+    }
+
+    private void seedUsers() {
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            insertUser(connection, 1001, "Development Student", "student@hsts.local",
+                    "pbkdf2-sha256$210000$s1m+ODv+3/GRzPDxDWDQIQ==$UfEw3AfJ9R+QhlHzQZizsg+AkTubQtLzfpWhIVGxAxw=",
+                    "STUDENT", "ACTIVE");
+            insertUser(connection, 1002, "Development Teacher", "teacher@hsts.local",
+                    "pbkdf2-sha256$210000$GYtRfi/rORWe6PUx0pZRHQ==$aNGS1rjaQfcQ7QiCVmcJlqh1FuBsStSykbPeq8NXE98=",
+                    "TEACHER", "ACTIVE");
+            insertUser(connection, 1003, "Development Coordinator", "coordinator@hsts.local",
+                    "pbkdf2-sha256$210000$z2td5VTlfecXVbzKsSNoNg==$6IRrphVP1zQ7OPFzc75VefR6BoE5DuS+7sAkuketFts=",
+                    "COORDINATOR", "ACTIVE");
+            insertUser(connection, 1004, "Development Principal", "principal@hsts.local",
+                    "pbkdf2-sha256$210000$A9ZKGvD4BYtl7WgvJLOp7Q==$AN9mwp3khV/y69zCc8C539V4DVrtqEcdJ3TlolRQW10=",
+                    "PRINCIPAL", "ACTIVE");
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to seed users table", e);
+        }
+    }
+
+    private void insertUser(Connection connection, int userId, String fullName, String email,
+                            String passwordHash, String role, String status) throws SQLException {
+        String sql = """
+                INSERT IGNORE INTO users (
+                    user_id,
+                    full_name,
+                    email,
+                    password_hash,
+                    role,
+                    status
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, userId);
+            statement.setString(2, fullName);
+            statement.setString(3, email);
+            statement.setString(4, passwordHash);
+            statement.setString(5, role);
+            statement.setString(6, status);
+
+            statement.executeUpdate();
+        }
     }
 
     private void createQuestionsTable() {

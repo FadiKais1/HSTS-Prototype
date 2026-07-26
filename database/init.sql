@@ -2,6 +2,30 @@ CREATE DATABASE IF NOT EXISTS hsts_prototype;
 
 USE hsts_prototype;
 
+CREATE TABLE IF NOT EXISTS users (
+    user_id INT PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    email VARCHAR(254) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT chk_users_role CHECK (role IN ('STUDENT', 'TEACHER', 'COORDINATOR', 'PRINCIPAL')),
+    CONSTRAINT chk_users_status CHECK (status IN ('ACTIVE', 'BLOCKED'))
+);
+
+INSERT IGNORE INTO users (
+    user_id,
+    full_name,
+    email,
+    password_hash,
+    role,
+    status
+) VALUES
+(1001, 'Development Student', 'student@hsts.local', 'pbkdf2-sha256$210000$s1m+ODv+3/GRzPDxDWDQIQ==$UfEw3AfJ9R+QhlHzQZizsg+AkTubQtLzfpWhIVGxAxw=', 'STUDENT', 'ACTIVE'),
+(1002, 'Development Teacher', 'teacher@hsts.local', 'pbkdf2-sha256$210000$GYtRfi/rORWe6PUx0pZRHQ==$aNGS1rjaQfcQ7QiCVmcJlqh1FuBsStSykbPeq8NXE98=', 'TEACHER', 'ACTIVE'),
+(1003, 'Development Coordinator', 'coordinator@hsts.local', 'pbkdf2-sha256$210000$z2td5VTlfecXVbzKsSNoNg==$6IRrphVP1zQ7OPFzc75VefR6BoE5DuS+7sAkuketFts=', 'COORDINATOR', 'ACTIVE'),
+(1004, 'Development Principal', 'principal@hsts.local', 'pbkdf2-sha256$210000$A9ZKGvD4BYtl7WgvJLOp7Q==$AN9mwp3khV/y69zCc8C539V4DVrtqEcdJ3TlolRQW10=', 'PRINCIPAL', 'ACTIVE');
+
 CREATE TABLE IF NOT EXISTS questions (
     question_id INT PRIMARY KEY,
     content TEXT NOT NULL,
