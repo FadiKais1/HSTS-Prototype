@@ -1,7 +1,7 @@
 package hsts.client.boundary;
 
 import hsts.client.control.QuestionClientController;
-import hsts.client.net.HSTSClient;
+import hsts.client.net.Client;
 import hsts.common.QuestionDTO;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
@@ -29,7 +29,7 @@ public class QuestionBankPageController {
     private final ObservableList<QuestionDTO> questions = FXCollections.observableArrayList();
 
     private QuestionClientController questionClientController;
-    private HSTSClient client;
+    private Client client;
 
     @FXML private TableView<QuestionDTO> tableView;
     @FXML private TableColumn<QuestionDTO, Number> idColumn;
@@ -158,7 +158,7 @@ public class QuestionBankPageController {
 
     private void connectToServer() {
         try {
-            client = new HSTSClient(SERVER_HOST, SERVER_PORT);
+            client = new Client(SERVER_HOST, SERVER_PORT);
             questionClientController = new QuestionClientController(client);
         } catch (Exception e) {
             client = null;

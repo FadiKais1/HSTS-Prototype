@@ -1,6 +1,6 @@
 package hsts.client.control;
 
-import hsts.client.net.HSTSClient;
+import hsts.client.net.Client;
 import hsts.common.QuestionDTO;
 import hsts.common.Request;
 import hsts.common.RequestType;
@@ -11,9 +11,9 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public class QuestionClientController {
-    private final HSTSClient client;
+    private final Client client;
 
-    public QuestionClientController(HSTSClient client) {
+    public QuestionClientController(Client client) {
         this.client = client;
     }
 
