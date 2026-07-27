@@ -9,15 +9,27 @@ import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.type.ExecutionStatus;
+import hsts.common.type.DifficultyLevel;
+import hsts.common.type.ExamStatus;
+import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
 import hsts.common.type.SubmissionStatus;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Coordinator;
+import hsts.server.entity.Exam;
+import hsts.server.entity.ExamExecution;
+import hsts.server.entity.ExamQuestion;
+import hsts.server.entity.ExamSubmission;
 import hsts.server.entity.Principal;
+import hsts.server.entity.Question;
 import hsts.server.entity.Student;
+import hsts.server.entity.StudentAnswer;
 import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 import hsts.server.repository.ExamExecutionRepository;
+import hsts.server.repository.ExamRepository;
 import hsts.server.repository.ExamSubmissionRepository;
 import hsts.server.repository.StudentEnrollmentRepository;
 import hsts.server.repository.StudentProfileRepository;
@@ -26,6 +38,7 @@ import hsts.server.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,12 +60,29 @@ final class ExamExecutionServiceTestSupport {
                                         RecordingEnrollmentRepository enrollments,
                                         RecordingProfileRepository profiles,
                                         RecordingUserRepository users) {
+        return service(
+                executions,
+                submissions,
+                enrollments,
+                profiles,
+                users,
+                new RecordingExamRepository()
+        );
+    }
+
+    static ExamExecutionService service(RecordingExecutionRepository executions,
+                                        RecordingSubmissionRepository submissions,
+                                        RecordingEnrollmentRepository enrollments,
+                                        RecordingProfileRepository profiles,
+                                        RecordingUserRepository users,
+                                        RecordingExamRepository exams) {
         return new ExamExecutionService(
                 executions,
                 submissions,
                 enrollments,
                 profiles,
                 users,
+                exams,
                 CLOCK
         );
     }
@@ -137,6 +167,111 @@ final class ExamExecutionServiceTestSupport {
         );
     }
 
+    static ExamExecution execution(ExecutionStatus status,
+                                   LocalDateTime opening,
+                                   LocalDateTime closing) {
+        LocalDateTime created = opening.minusDays(1);
+        LocalDateTime closed = status == ExecutionStatus.CLOSED ? closing : null;
+        LocalDateTime updated = closed == null ? created : closed;
+        return ExamExecution.rehydrate(
+                81,
+                "A1B2",
+                40,
+                3,
+                opening,
+                closing,
+                75,
+                status,
+                1002,
+                created,
+                closed,
+                null,
+                null,
+                List.of(),
+                0,
+                0,
+                0,
+                updated,
+                List.of()
+        );
+    }
+
+    static ExamSubmission submission(int studentUserId,
+                                     List<StudentAnswer> answers) {
+        LocalDateTime started = NOW.minusMinutes(5);
+        return ExamSubmission.rehydrate(
+                501,
+                81,
+                40,
+                3,
+                studentUserId,
+                started,
+                null,
+                SubmissionStatus.IN_PROGRESS,
+                75,
+                0,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                started,
+                started,
+                answers
+        );
+    }
+
+    static Exam exactExam() {
+        LocalDateTime created = NOW.minusDays(5);
+        Question question = Question.rehydrate(
+                17,
+                "Historical question",
+                QuestionType.MULTIPLE_CHOICE,
+                DifficultyLevel.HARD,
+                QuestionStatus.INACTIVE,
+                created,
+                created,
+                "Algebra",
+                "",
+                List.of(
+                        new AnswerOption(1, "One", false),
+                        new AnswerOption(2, "Two", false),
+                        new AnswerOption(3, "Three", true),
+                        new AnswerOption(4, "Four", false)
+                )
+        );
+        return Exam.rehydrate(
+                40,
+                "EX1234",
+                7,
+                1002,
+                3,
+                "Approved Midterm",
+                75,
+                "Teacher notes",
+                "Read carefully",
+                ExamStatus.APPROVED,
+                created,
+                NOW.minusDays(2),
+                NOW.minusDays(3),
+                1003,
+                NOW.minusDays(2),
+                null,
+                List.of(new ExamQuestion(
+                        17,
+                        4,
+                        1,
+                        new BigDecimal("100.00"),
+                        question
+                ))
+        );
+    }
+
     static final class RecordingUserRepository extends UserRepository {
         private final Map<Integer, User> users = new LinkedHashMap<>();
         RuntimeException findFailure;
@@ -168,17 +303,25 @@ final class ExamExecutionServiceTestSupport {
     static final class RecordingExecutionRepository extends ExamExecutionRepository {
         int createdId = 81;
         int createCalls;
+        int scheduleCalls;
         int listCalls;
         int detailCalls;
         int codeCalls;
+        int entityCodeCalls;
+        int entityStudentCalls;
         int lastManagerId;
         int lastExecutionId;
         int lastStudentId;
         String lastCode;
         ScheduleExamExecutionPayload lastSchedulePayload;
+        int lastExamId;
+        int lastExamVersionNo;
+        LocalDateTime lastOpeningTime;
+        LocalDateTime lastClosingTime;
         List<ExamExecutionSummaryDTO> summaries = new ArrayList<>();
         ExamExecutionSummaryDTO detail;
         ExamExecutionPreviewDTO preview;
+        ExamExecution executionEntity;
         RuntimeException failure;
 
         @Override
@@ -188,6 +331,22 @@ final class ExamExecutionServiceTestSupport {
             lastManagerId = authenticatedManagerId;
             lastSchedulePayload = payload;
             return createdId;
+        }
+
+        @Override
+        public ExamExecution schedule(int authenticatedUserId, int examId,
+                                      int examVersionNo, LocalDateTime openingTime,
+                                      LocalDateTime closingTime) {
+            scheduleCalls++;
+            failIfConfigured();
+            lastManagerId = authenticatedUserId;
+            lastExamId = examId;
+            lastExamVersionNo = examVersionNo;
+            lastOpeningTime = openingTime;
+            lastClosingTime = closingTime;
+            return executionEntity == null
+                    ? execution(ExecutionStatus.SCHEDULED, openingTime, closingTime)
+                    : executionEntity;
         }
 
         @Override
@@ -222,8 +381,49 @@ final class ExamExecutionServiceTestSupport {
             return Optional.ofNullable(preview);
         }
 
+        @Override
+        public Optional<ExamExecution> findEntityByCodeForStudent(
+                int authenticatedStudentId,
+                String executionCode
+        ) {
+            entityCodeCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentId;
+            lastCode = executionCode;
+            return Optional.ofNullable(executionEntity != null
+                    ? executionEntity
+                    : entityFromPreview());
+        }
+
+        @Override
+        public Optional<ExamExecution> findEntityForStudent(
+                int authenticatedStudentUserId,
+                int executionId
+        ) {
+            entityStudentCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastExecutionId = executionId;
+            return Optional.ofNullable(executionEntity != null
+                    ? executionEntity
+                    : execution(
+                            ExecutionStatus.OPEN,
+                            NOW.minusMinutes(1),
+                            NOW.plusHours(1)
+                    ));
+        }
+
         int totalCalls() {
-            return createCalls + listCalls + detailCalls + codeCalls;
+            return createCalls + scheduleCalls + listCalls + detailCalls
+                    + codeCalls + entityCodeCalls + entityStudentCalls;
+        }
+
+        private ExamExecution entityFromPreview() {
+            return preview == null ? null : execution(
+                    preview.getStatus(),
+                    preview.getOpeningTime(),
+                    preview.getClosingTime()
+            );
         }
 
         private void failIfConfigured() {
@@ -241,18 +441,28 @@ final class ExamExecutionServiceTestSupport {
         List<Integer> expiredIds = new ArrayList<>();
         final Map<Integer, Boolean> autoResults = new LinkedHashMap<>();
         int startCalls;
+        int legacyStartCalls;
         int activeCalls;
+        int activeEntityCalls;
+        int managerEntityCalls;
         int saveCalls;
+        int persistAnswerCalls;
         int submitCalls;
         int expiredCalls;
         int autoCalls;
         int extensionCalls;
+        int persistExtensionCalls;
         int lastStudentId;
         int lastManagerId;
         int lastExecutionId;
         int lastSubmissionId;
         SaveExamAnswerPayload lastAnswerPayload;
         ExtendSubmissionTimePayload lastExtensionPayload;
+        ExamExecution lastExecutionEntity;
+        ExamSubmission lastSubmissionEntity;
+        StudentAnswer lastAnswerEntity;
+        int lastAddedMinutes;
+        String lastReason;
         LocalDateTime lastTime;
         final List<LocalDateTime> autoTimes = new ArrayList<>();
         boolean activePresent = true;
@@ -262,12 +472,27 @@ final class ExamExecutionServiceTestSupport {
         @Override
         public ExamAttemptDTO startOrResume(int authenticatedStudentId, int executionId,
                                             LocalDateTime now) {
-            startCalls++;
+            legacyStartCalls++;
             failIfConfigured();
             lastStudentId = authenticatedStudentId;
             lastExecutionId = executionId;
             lastTime = now;
             return attempt;
+        }
+
+        @Override
+        public ExamSubmission startOrResume(int authenticatedStudentUserId,
+                                            ExamExecution execution,
+                                            LocalDateTime currentTime) {
+            startCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastExecutionId = execution.getExecutionId();
+            lastExecutionEntity = execution;
+            lastTime = currentTime;
+            return lastSubmissionEntity == null
+                    ? submission(authenticatedStudentUserId, List.of())
+                    : lastSubmissionEntity;
         }
 
         @Override
@@ -283,6 +508,38 @@ final class ExamExecutionServiceTestSupport {
         }
 
         @Override
+        public Optional<ExamSubmission> findActiveEntityForStudent(
+                int authenticatedStudentUserId,
+                int submissionId
+        ) {
+            activeEntityCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastSubmissionId = submissionId;
+            return activePresent
+                    ? Optional.of(lastSubmissionEntity == null
+                            ? submission(authenticatedStudentUserId, List.of())
+                            : lastSubmissionEntity)
+                    : Optional.empty();
+        }
+
+        @Override
+        public Optional<ExamSubmission> findEntityForManager(
+                int authenticatedManagerUserId,
+                int submissionId
+        ) {
+            managerEntityCalls++;
+            failIfConfigured();
+            lastManagerId = authenticatedManagerUserId;
+            lastSubmissionId = submissionId;
+            return extensionResult
+                    ? Optional.of(lastSubmissionEntity == null
+                            ? submission(1001, List.of())
+                            : lastSubmissionEntity)
+                    : Optional.empty();
+        }
+
+        @Override
         public StudentAnswerDTO saveAnswer(int authenticatedStudentId,
                                            SaveExamAnswerPayload payload,
                                            LocalDateTime now) {
@@ -292,6 +549,22 @@ final class ExamExecutionServiceTestSupport {
             lastAnswerPayload = payload;
             lastTime = now;
             return answer;
+        }
+
+        @Override
+        public ExamSubmission persistAnswer(
+                int authenticatedStudentUserId,
+                ExamSubmission submission,
+                StudentAnswer answer,
+                LocalDateTime currentTime
+        ) {
+            persistAnswerCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastSubmissionEntity = submission;
+            lastAnswerEntity = answer;
+            lastTime = currentTime;
+            return submission;
         }
 
         @Override
@@ -334,15 +607,54 @@ final class ExamExecutionServiceTestSupport {
             return extensionResult;
         }
 
+        @Override
+        public ExamSubmission persistExtension(
+                int authenticatedManagerUserId,
+                ExamSubmission submission,
+                int addedMinutes,
+                String reason,
+                LocalDateTime currentTime
+        ) {
+            persistExtensionCalls++;
+            failIfConfigured();
+            lastManagerId = authenticatedManagerUserId;
+            lastSubmissionEntity = submission;
+            lastAddedMinutes = addedMinutes;
+            lastReason = reason;
+            lastTime = currentTime;
+            return submission;
+        }
+
         int totalCalls() {
-            return startCalls + activeCalls + saveCalls + submitCalls
-                    + expiredCalls + autoCalls + extensionCalls;
+            return startCalls + legacyStartCalls + activeCalls + activeEntityCalls
+                    + managerEntityCalls + saveCalls + persistAnswerCalls
+                    + submitCalls + expiredCalls + autoCalls + extensionCalls
+                    + persistExtensionCalls;
         }
 
         private void failIfConfigured() {
             if (failure != null) {
                 throw failure;
             }
+        }
+    }
+
+    static final class RecordingExamRepository extends ExamRepository {
+        Exam exact = exactExam();
+        int exactCalls;
+        int lastExamId;
+        int lastVersionNo;
+        RuntimeException failure;
+
+        @Override
+        public Optional<Exam> findEntityVersion(int examId, int versionNo) {
+            exactCalls++;
+            if (failure != null) {
+                throw failure;
+            }
+            lastExamId = examId;
+            lastVersionNo = versionNo;
+            return Optional.ofNullable(exact);
         }
     }
 

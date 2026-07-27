@@ -35,7 +35,8 @@ public class MainServerWiringTest {
         assertTrue(normalized.contains(
                 "new ExamExecutionService( examExecutionRepository, "
                         + "examSubmissionRepository, studentEnrollmentRepository, "
-                        + "studentProfileRepository, userRepository, Clock.systemUTC() )"
+                        + "studentProfileRepository, userRepository, examRepository, "
+                        + "Clock.systemUTC() )"
         ));
         assertTrue(normalized.contains(
                 "new Server( port, examManagementService, authService, "

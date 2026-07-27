@@ -163,6 +163,7 @@ public class ExamExecutionServiceManagerTest {
                 "Execution opening time cannot be in the past");
 
         assertEquals(0, fixture.executions.createCalls);
+        assertEquals(0, fixture.executions.scheduleCalls);
         assertEquals(0, fixture.executions.detailCalls);
     }
 
@@ -178,9 +179,13 @@ public class ExamExecutionServiceManagerTest {
         ExamExecutionSummaryDTO actual = fixture.service.scheduleExecution(401, payload);
 
         assertSame(expected, actual);
-        assertSame(payload, fixture.executions.lastSchedulePayload);
         assertEquals(401, fixture.executions.lastManagerId);
-        assertEquals(1, fixture.executions.createCalls);
+        assertEquals(40, fixture.executions.lastExamId);
+        assertEquals(3, fixture.executions.lastExamVersionNo);
+        assertEquals(NOW, fixture.executions.lastOpeningTime);
+        assertEquals(NOW.plusHours(2), fixture.executions.lastClosingTime);
+        assertEquals(0, fixture.executions.createCalls);
+        assertEquals(1, fixture.executions.scheduleCalls);
         assertEquals(1, fixture.executions.detailCalls);
         assertEquals(81, fixture.executions.lastExecutionId);
     }
@@ -229,10 +234,16 @@ public class ExamExecutionServiceManagerTest {
                 new ExtendSubmissionTimePayload(501, 15, "  Approved need  ")
         ));
         assertEquals(601, fixture.submissions.lastManagerId);
-        assertEquals(501, fixture.submissions.lastExtensionPayload.getSubmissionId());
-        assertEquals(15, fixture.submissions.lastExtensionPayload.getExtraMinutes());
-        assertEquals("Approved need", fixture.submissions.lastExtensionPayload.getReason());
+        assertEquals(501, fixture.submissions.lastSubmissionId);
+        assertEquals(15, fixture.submissions.lastAddedMinutes);
+        assertEquals("Approved need", fixture.submissions.lastReason);
         assertEquals(NOW, fixture.submissions.lastTime);
+        assertEquals(15, fixture.submissions.lastSubmissionEntity.getExtraMinutes());
+        assertEquals("Approved need",
+                fixture.submissions.lastSubmissionEntity.getExtensionReason());
+        assertEquals(1, fixture.submissions.managerEntityCalls);
+        assertEquals(1, fixture.submissions.persistExtensionCalls);
+        assertEquals(0, fixture.submissions.extensionCalls);
 
         fixture.submissions.extensionResult = false;
         IllegalArgumentException missing = assertThrows(

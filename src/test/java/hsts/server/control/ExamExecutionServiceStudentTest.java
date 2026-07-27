@@ -30,6 +30,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class ExamExecutionServiceStudentTest {
     @Test
@@ -82,6 +83,8 @@ public class ExamExecutionServiceStudentTest {
         assertSame(expected, actual);
         assertEquals(901, fixture.executions.lastStudentId);
         assertEquals("A1B2", fixture.executions.lastCode);
+        assertEquals(1, fixture.executions.entityCodeCalls);
+        assertEquals(1, fixture.executions.codeCalls);
     }
 
     @Test
@@ -102,7 +105,8 @@ public class ExamExecutionServiceStudentTest {
 
         assertCodeFailure(fixture.service, new ExecutionCodePayload("A1B2"),
                 IllegalStateException.class, "Execution not available");
-        assertEquals(1, fixture.executions.codeCalls);
+        assertEquals(1, fixture.executions.entityCodeCalls);
+        assertEquals(0, fixture.executions.codeCalls);
     }
 
     @Test
@@ -141,10 +145,14 @@ public class ExamExecutionServiceStudentTest {
     public void identityValidationDoesNotLeakAndStartUsesAuthenticatedStudentAndClock() {
         Fixture fixture = studentFixture(1001);
 
-        IllegalArgumentException missing = assertThrows(
-                IllegalArgumentException.class,
-                () -> fixture.service.startOrResumeExam(1001, null)
-        );
+        IllegalArgumentException missing;
+        try {
+            fixture.service.startOrResumeExam(1001, null);
+            fail("Expected missing attempt data to be rejected");
+            return;
+        } catch (IllegalArgumentException exception) {
+            missing = exception;
+        }
         assertEquals("Exam attempt data is missing", missing.getMessage());
 
         IllegalArgumentException blank = assertThrows(
@@ -168,6 +176,7 @@ public class ExamExecutionServiceStudentTest {
         assertTrue(!mismatch.getMessage().contains(secretConfirmation));
         assertEquals(secretConfirmation, fixture.profiles.lastConfirmation);
         assertEquals(0, fixture.submissions.startCalls);
+        assertEquals(0, fixture.submissions.legacyStartCalls);
 
         fixture.profiles.matches = true;
         ExamAttemptDTO expected = attempt(SubmissionStatus.IN_PROGRESS);
@@ -180,6 +189,10 @@ public class ExamExecutionServiceStudentTest {
         assertEquals(1001, fixture.submissions.lastStudentId);
         assertEquals(81, fixture.submissions.lastExecutionId);
         assertEquals(NOW, fixture.submissions.lastTime);
+        assertEquals(2, fixture.executions.entityStudentCalls);
+        assertEquals(1, fixture.submissions.startCalls);
+        assertEquals(0, fixture.submissions.legacyStartCalls);
+        assertEquals(1, fixture.submissions.activeCalls);
     }
 
     @Test
@@ -194,13 +207,26 @@ public class ExamExecutionServiceStudentTest {
         assertEquals(1101, fixture.submissions.lastStudentId);
         assertEquals(501, fixture.submissions.lastSubmissionId);
         assertEquals(NOW, fixture.submissions.lastTime);
+        assertEquals(1, fixture.submissions.activeEntityCalls);
+        assertEquals(1, fixture.submissions.activeCalls);
 
         SaveExamAnswerPayload answerPayload = new SaveExamAnswerPayload(501, 17, 4);
-        StudentAnswerDTO expectedAnswer = fixture.submissions.answer;
-        assertSame(expectedAnswer, fixture.service.saveAnswer(1101, answerPayload));
-        assertSame(answerPayload, fixture.submissions.lastAnswerPayload);
+        StudentAnswerDTO saved = fixture.service.saveAnswer(1101, answerPayload);
+        assertEquals(17, saved.getQuestionId());
+        assertEquals(Integer.valueOf(4), saved.getSelectedOptionNumber());
+        assertEquals(NOW, saved.getUpdatedAt());
         assertEquals(1101, fixture.submissions.lastStudentId);
         assertEquals(NOW, fixture.submissions.lastTime);
+        assertEquals(2, fixture.submissions.activeEntityCalls);
+        assertEquals(1, fixture.submissions.persistAnswerCalls);
+        assertEquals(0, fixture.submissions.saveCalls);
+        assertEquals(17, fixture.submissions.lastAnswerEntity.getQuestionId());
+        assertEquals(4, fixture.submissions.lastAnswerEntity.getQuestionVersionNo());
+        assertEquals(4, fixture.submissions.lastAnswerEntity.getSelectedOptionNumber());
+        assertTrue(!fixture.submissions.lastAnswerEntity.isGraded());
+        assertEquals(1, fixture.exams.exactCalls);
+        assertEquals(40, fixture.exams.lastExamId);
+        assertEquals(3, fixture.exams.lastVersionNo);
 
         ExamAttemptDTO submitted = attempt(SubmissionStatus.SUBMITTED);
         fixture.submissions.attempt = submitted;
@@ -240,6 +266,75 @@ public class ExamExecutionServiceStudentTest {
     }
 
     @Test
+    public void answerSavingRejectsMissingExactExamUnknownQuestionAndInvalidOption() {
+        Fixture fixture = studentFixture(1251);
+
+        fixture.exams.exact = null;
+        IllegalArgumentException missingExam = assertThrows(
+                IllegalArgumentException.class,
+                () -> fixture.service.saveAnswer(
+                        1251, new SaveExamAnswerPayload(501, 17, 2)
+                )
+        );
+        assertEquals("Question not found in exam: 17", missingExam.getMessage());
+
+        fixture.exams.exact = ExamExecutionServiceTestSupport.exactExam();
+        IllegalArgumentException unknownQuestion = assertThrows(
+                IllegalArgumentException.class,
+                () -> fixture.service.saveAnswer(
+                        1251, new SaveExamAnswerPayload(501, 99, 2)
+                )
+        );
+        assertEquals("Question not found in exam: 99", unknownQuestion.getMessage());
+
+        IllegalArgumentException invalidOption = assertThrows(
+                IllegalArgumentException.class,
+                () -> fixture.service.saveAnswer(
+                        1251, new SaveExamAnswerPayload(501, 17, 5)
+                )
+        );
+        assertEquals("Invalid answer option", invalidOption.getMessage());
+        assertEquals(0, fixture.submissions.persistAnswerCalls);
+        assertEquals(0, fixture.submissions.saveCalls);
+    }
+
+    @Test
+    public void compatibilityConstructorRequiresExamRepositoryOnlyForAnswerSaving() {
+        Fixture fixture = studentFixture(1261);
+        ExamExecutionService compatibilityService = new ExamExecutionService(
+                fixture.executions,
+                fixture.submissions,
+                new ExamExecutionServiceTestSupport.RecordingEnrollmentRepository(),
+                fixture.profiles,
+                new ExamExecutionServiceTestSupport.RecordingUserRepository(
+                        user(1261, UserRole.STUDENT, UserStatus.ACTIVE)
+                ),
+                ExamExecutionServiceTestSupport.CLOCK
+        );
+        ExamExecutionPreviewDTO preview = preview(
+                ExecutionStatus.OPEN,
+                NOW.minusMinutes(1),
+                NOW.plusMinutes(30),
+                false
+        );
+        fixture.executions.preview = preview;
+
+        assertSame(
+                preview,
+                compatibilityService.validateExecutionCode(
+                        1261, new ExecutionCodePayload("A1B2")
+                )
+        );
+        IllegalStateException missingRepository = assertThrows(
+                IllegalStateException.class,
+                () -> compatibilityService.saveAnswer(
+                        1261, new SaveExamAnswerPayload(501, 17, 2)
+                )
+        );
+        assertEquals("Exam repository is not configured", missingRepository.getMessage());
+    }
+
+    @Test
     public void repositoryFailuresPropagateUnchanged() {
         Fixture fixture = studentFixture(1301);
         RuntimeException executionFailure = new IllegalStateException("execution failure");
@@ -254,12 +349,17 @@ public class ExamExecutionServiceStudentTest {
         RuntimeException profileFailure = new IllegalStateException("profile failure");
         fixture.executions.failure = null;
         fixture.profiles.failure = profileFailure;
-        assertSame(profileFailure, assertThrows(
-                RuntimeException.class,
-                () -> fixture.service.startOrResumeExam(
-                        1301, new StartExamPayload(81, "confirmation")
-                )
-        ));
+        RuntimeException propagatedProfileFailure;
+        try {
+            fixture.service.startOrResumeExam(
+                    1301, new StartExamPayload(81, "confirmation")
+            );
+            fail("Expected profile repository failure to propagate");
+            return;
+        } catch (RuntimeException exception) {
+            propagatedProfileFailure = exception;
+        }
+        assertSame(profileFailure, propagatedProfileFailure);
 
         RuntimeException submissionFailure = new IllegalStateException("submission failure");
         fixture.profiles.failure = null;
@@ -352,6 +452,8 @@ public class ExamExecutionServiceStudentTest {
                 new ExamExecutionServiceTestSupport.RecordingSubmissionRepository();
         ExamExecutionServiceTestSupport.RecordingProfileRepository profiles =
                 new ExamExecutionServiceTestSupport.RecordingProfileRepository();
+        ExamExecutionServiceTestSupport.RecordingExamRepository exams =
+                new ExamExecutionServiceTestSupport.RecordingExamRepository();
         ExamExecutionServiceTestSupport.RecordingUserRepository users =
                 new ExamExecutionServiceTestSupport.RecordingUserRepository(
                         user(studentId, UserRole.STUDENT, UserStatus.ACTIVE)
@@ -362,11 +464,13 @@ public class ExamExecutionServiceStudentTest {
                         submissions,
                         new ExamExecutionServiceTestSupport.RecordingEnrollmentRepository(),
                         profiles,
-                        users
+                        users,
+                        exams
                 ),
                 executions,
                 submissions,
-                profiles
+                profiles,
+                exams
         );
     }
 
@@ -375,17 +479,20 @@ public class ExamExecutionServiceStudentTest {
         private final ExamExecutionServiceTestSupport.RecordingExecutionRepository executions;
         private final ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions;
         private final ExamExecutionServiceTestSupport.RecordingProfileRepository profiles;
+        private final ExamExecutionServiceTestSupport.RecordingExamRepository exams;
 
         private Fixture(
                 ExamExecutionService service,
                 ExamExecutionServiceTestSupport.RecordingExecutionRepository executions,
                 ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions,
-                ExamExecutionServiceTestSupport.RecordingProfileRepository profiles
+                ExamExecutionServiceTestSupport.RecordingProfileRepository profiles,
+                ExamExecutionServiceTestSupport.RecordingExamRepository exams
         ) {
             this.service = service;
             this.executions = executions;
             this.submissions = submissions;
             this.profiles = profiles;
+            this.exams = exams;
         }
     }
 }

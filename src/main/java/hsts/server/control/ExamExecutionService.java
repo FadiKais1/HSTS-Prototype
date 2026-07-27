@@ -14,9 +14,12 @@ import hsts.common.type.ExecutionStatus;
 import hsts.common.type.UserRole;
 import hsts.server.entity.Exam;
 import hsts.server.entity.ExamExecution;
+import hsts.server.entity.ExamQuestion;
 import hsts.server.entity.ExamSubmission;
+import hsts.server.entity.StudentAnswer;
 import hsts.server.entity.User;
 import hsts.server.repository.ExamExecutionRepository;
+import hsts.server.repository.ExamRepository;
 import hsts.server.repository.ExamSubmissionRepository;
 import hsts.server.repository.StudentEnrollmentRepository;
 import hsts.server.repository.StudentProfileRepository;
@@ -32,6 +35,7 @@ public class ExamExecutionService {
 
     private final ExamExecutionRepository examExecutionRepository;
     private final ExamSubmissionRepository examSubmissionRepository;
+    private final ExamRepository examRepository;
     private final StudentEnrollmentRepository studentEnrollmentRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final UserRepository userRepository;
@@ -39,7 +43,7 @@ public class ExamExecutionService {
 
     // COMPATIBILITY-ONLY: Preserves legacy skeleton construction.
     public ExamExecutionService() {
-        this(null, null, null, null, null, Clock.systemUTC());
+        this(null, null, null, null, null, null, Clock.systemUTC());
     }
 
     public ExamExecutionService(
@@ -55,6 +59,7 @@ public class ExamExecutionService {
                 studentEnrollmentRepository,
                 studentProfileRepository,
                 userRepository,
+                null,
                 Clock.systemUTC()
         );
     }
@@ -67,8 +72,29 @@ public class ExamExecutionService {
             UserRepository userRepository,
             Clock clock
     ) {
+        this(
+                examExecutionRepository,
+                examSubmissionRepository,
+                studentEnrollmentRepository,
+                studentProfileRepository,
+                userRepository,
+                null,
+                clock
+        );
+    }
+
+    public ExamExecutionService(
+            ExamExecutionRepository examExecutionRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            StudentEnrollmentRepository studentEnrollmentRepository,
+            StudentProfileRepository studentProfileRepository,
+            UserRepository userRepository,
+            ExamRepository examRepository,
+            Clock clock
+    ) {
         this.examExecutionRepository = examExecutionRepository;
         this.examSubmissionRepository = examSubmissionRepository;
+        this.examRepository = examRepository;
         this.studentEnrollmentRepository = studentEnrollmentRepository;
         this.studentProfileRepository = studentProfileRepository;
         this.userRepository = userRepository;
@@ -98,12 +124,18 @@ public class ExamExecutionService {
             throw new IllegalArgumentException("Execution opening time cannot be in the past");
         }
 
-        int executionId = examExecutionRepository.create(authenticatedManagerId, payload);
+        ExamExecution execution = examExecutionRepository.schedule(
+                authenticatedManagerId,
+                payload.getExamId(),
+                payload.getExamVersionNo(),
+                payload.getOpeningTime(),
+                payload.getClosingTime()
+        );
         return examExecutionRepository.findByIdForManager(
                 authenticatedManagerId,
-                executionId
+                execution.getExecutionId()
         ).orElseThrow(() -> new IllegalArgumentException(
-                "Execution not found: " + executionId
+                "Execution not found: " + execution.getExecutionId()
         ));
     }
 
@@ -142,18 +174,23 @@ public class ExamExecutionService {
             throw new IllegalArgumentException("Invalid execution code");
         }
 
-        ExamExecutionPreviewDTO preview = examExecutionRepository.findByCodeForStudent(
+        ExamExecution execution = examExecutionRepository.findEntityByCodeForStudent(
                 authenticatedStudentId,
                 normalizedCode
         ).orElseThrow(() -> new IllegalStateException("Execution not available"));
         LocalDateTime currentTime = currentTime();
-        if (preview.getStatus() == ExecutionStatus.CLOSED) {
+        ExecutionStatus currentStatus = execution.statusAt(currentTime);
+        if (execution.getStatus() == ExecutionStatus.CLOSED) {
             throw new IllegalStateException("Exam is closed");
         }
-        if (currentTime.isBefore(preview.getOpeningTime())) {
+        if (currentStatus == ExecutionStatus.SCHEDULED) {
             throw new IllegalStateException("Exam is not open yet");
         }
-        if (!currentTime.isBefore(preview.getClosingTime()) && !preview.isResumable()) {
+        ExamExecutionPreviewDTO preview = examExecutionRepository.findByCodeForStudent(
+                authenticatedStudentId,
+                normalizedCode
+        ).orElseThrow(() -> new IllegalStateException("Execution not available"));
+        if (currentStatus == ExecutionStatus.CLOSED && !preview.isResumable()) {
             throw new IllegalStateException("Exam is closed");
         }
         return preview;
@@ -169,6 +206,10 @@ public class ExamExecutionService {
         if (isBlank(payload.getIdentityConfirmation())) {
             throw new IllegalArgumentException("Identity confirmation is required");
         }
+        ExamExecution execution = examExecutionRepository.findEntityForStudent(
+                authenticatedStudentId,
+                payload.getExecutionId()
+        ).orElseThrow(() -> new IllegalStateException("Execution not available"));
         if (!studentProfileRepository.matchesIdentity(
                 authenticatedStudentId,
                 payload.getIdentityConfirmation()
@@ -176,11 +217,22 @@ public class ExamExecutionService {
             throw new IllegalArgumentException("Invalid identity confirmation");
         }
 
-        return examSubmissionRepository.startOrResume(
+        LocalDateTime currentTime = currentTime();
+        if (execution.statusAt(currentTime) == ExecutionStatus.SCHEDULED) {
+            throw new IllegalStateException("Execution not available");
+        }
+        ExamSubmission submission = examSubmissionRepository.startOrResume(
                 authenticatedStudentId,
-                payload.getExecutionId(),
-                currentTime()
+                execution,
+                currentTime
         );
+        return examSubmissionRepository.findActiveForStudent(
+                authenticatedStudentId,
+                submission.getSubmissionId(),
+                currentTime
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Exam attempt not found: " + submission.getSubmissionId()
+        ));
     }
 
     public ExamAttemptDTO getActiveAttempt(int authenticatedStudentId,
@@ -190,10 +242,22 @@ public class ExamExecutionService {
         if (payload == null) {
             throw new IllegalArgumentException("Submission data is missing");
         }
+        ExamSubmission submission = examSubmissionRepository.findActiveEntityForStudent(
+                authenticatedStudentId,
+                payload.getSubmissionId()
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Exam attempt not found: " + payload.getSubmissionId()
+        ));
+        LocalDateTime currentTime = currentTime();
+        if (!submission.isEditable(currentTime)) {
+            throw new IllegalArgumentException(
+                    "Exam attempt not found: " + payload.getSubmissionId()
+            );
+        }
         return examSubmissionRepository.findActiveForStudent(
                 authenticatedStudentId,
-                payload.getSubmissionId(),
-                currentTime()
+                submission.getSubmissionId(),
+                currentTime
         ).orElseThrow(() -> new IllegalArgumentException(
                 "Exam attempt not found: " + payload.getSubmissionId()
         ));
@@ -206,10 +270,67 @@ public class ExamExecutionService {
         if (payload == null) {
             throw new IllegalArgumentException("Answer data is missing");
         }
-        return examSubmissionRepository.saveAnswer(
+        requireExamRepository();
+        ExamSubmission submission = examSubmissionRepository
+                .findActiveEntityForStudent(
+                        authenticatedStudentId,
+                        payload.getSubmissionId()
+                ).orElseThrow(() -> new IllegalArgumentException(
+                        "Exam attempt not found: " + payload.getSubmissionId()
+                ));
+        Exam exam = examRepository.findEntityVersion(
+                submission.getExamId(),
+                submission.getExamVersionNo()
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Question not found in exam: " + payload.getQuestionId()
+        ));
+        if (exam.getExamId() != submission.getExamId()
+                || exam.getCurrentVersionNo() != submission.getExamVersionNo()) {
+            throw new IllegalStateException(
+                    "Exam version does not match the submission"
+            );
+        }
+        ExamQuestion examQuestion = exam.getExamQuestions().stream()
+                .filter(candidate -> candidate.getQuestionId()
+                        == payload.getQuestionId())
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Question not found in exam: " + payload.getQuestionId()
+                ));
+        boolean validOption = examQuestion.getQuestion().getAnswerOptions().stream()
+                .anyMatch(option -> option.getOptionId()
+                        == payload.getSelectedOptionNumber());
+        if (!validOption) {
+            throw new IllegalArgumentException("Invalid answer option");
+        }
+
+        LocalDateTime currentTime = currentTime();
+        submission.saveAnswer(
+                payload.getQuestionId(),
+                examQuestion.getQuestionVersionNo(),
+                payload.getSelectedOptionNumber(),
+                currentTime
+        );
+        StudentAnswer answer = findAnswer(
+                submission,
+                payload.getQuestionId(),
+                examQuestion.getQuestionVersionNo()
+        );
+        ExamSubmission persisted = examSubmissionRepository.persistAnswer(
                 authenticatedStudentId,
-                payload,
-                currentTime()
+                submission,
+                answer,
+                currentTime
+        );
+        StudentAnswer persistedAnswer = findAnswer(
+                persisted,
+                payload.getQuestionId(),
+                examQuestion.getQuestionVersionNo()
+        );
+        return new StudentAnswerDTO(
+                persistedAnswer.getQuestionId(),
+                persistedAnswer.getSelectedOptionNumber(),
+                persistedAnswer.getUpdatedAt()
         );
     }
 
@@ -255,21 +376,32 @@ public class ExamExecutionService {
             throw new IllegalArgumentException("Extension reason is required");
         }
 
-        ExtendSubmissionTimePayload normalizedPayload = new ExtendSubmissionTimePayload(
-                payload.getSubmissionId(),
-                payload.getExtraMinutes(),
-                payload.getReason().trim()
-        );
-        boolean extended = examSubmissionRepository.extendTime(
+        String normalizedReason = payload.getReason().trim();
+        ExamSubmission submission = examSubmissionRepository.findEntityForManager(
                 authenticatedManagerId,
-                normalizedPayload,
-                currentTime()
-        );
-        if (!extended) {
+                payload.getSubmissionId()
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Exam attempt not found: " + payload.getSubmissionId()
+        ));
+        if (submission.getStatus()
+                != hsts.common.type.SubmissionStatus.IN_PROGRESS) {
             throw new IllegalArgumentException(
                     "Exam attempt not found: " + payload.getSubmissionId()
             );
         }
+        LocalDateTime currentTime = currentTime();
+        submission.extendTime(
+                payload.getExtraMinutes(),
+                normalizedReason,
+                currentTime
+        );
+        examSubmissionRepository.persistExtension(
+                authenticatedManagerId,
+                submission,
+                payload.getExtraMinutes(),
+                normalizedReason,
+                currentTime
+        );
         return true;
     }
 
@@ -361,6 +493,23 @@ public class ExamExecutionService {
                     "Exam execution dependencies are not configured"
             );
         }
+    }
+
+    private void requireExamRepository() {
+        if (examRepository == null) {
+            throw new IllegalStateException("Exam repository is not configured");
+        }
+    }
+
+    private StudentAnswer findAnswer(ExamSubmission submission, int questionId,
+                                     int questionVersionNo) {
+        return submission.getStudentAnswers().stream()
+                .filter(answer -> answer.getQuestionId() == questionId
+                        && answer.getQuestionVersionNo() == questionVersionNo)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Saved answer could not be reloaded: " + questionId
+                ));
     }
 
     private LocalDateTime currentTime() {

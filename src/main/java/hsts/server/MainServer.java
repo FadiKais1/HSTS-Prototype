@@ -48,6 +48,7 @@ public class MainServer {
                 studentEnrollmentRepository,
                 studentProfileRepository,
                 userRepository,
+                examRepository,
                 Clock.systemUTC()
         );
 
