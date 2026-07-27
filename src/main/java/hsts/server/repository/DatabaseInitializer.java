@@ -223,6 +223,8 @@ public class DatabaseInitializer {
             migrateExecutionSchemaColumns(connection);
             backfillExecutionUpdatedAt(connection);
             normalizeExecutionUpdatedAtColumn(connection);
+            backfillSubmissionTimestamps(connection);
+            normalizeSubmissionTimestampColumns(connection);
             createExecutionSchemaIndexesAndConstraints(connection);
             insertExecutionCompatibilityData(connection);
         } catch (SQLException | RuntimeException e) {
@@ -337,6 +339,9 @@ public class DatabaseInitializer {
                     student_user_id INT NOT NULL,
                     started_at DATETIME NOT NULL,
                     submitted_at DATETIME NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
                     status VARCHAR(32) NOT NULL,
                     allocated_duration_minutes INT NOT NULL,
                     extra_minutes INT NOT NULL DEFAULT 0,
@@ -513,6 +518,8 @@ public class DatabaseInitializer {
         addColumnIfMissing(connection, "exam_submissions", "student_user_id", "INT NOT NULL");
         addColumnIfMissing(connection, "exam_submissions", "started_at", "DATETIME NOT NULL");
         addColumnIfMissing(connection, "exam_submissions", "submitted_at", "DATETIME NULL");
+        addColumnIfMissing(connection, "exam_submissions", "created_at", "TIMESTAMP NULL");
+        addColumnIfMissing(connection, "exam_submissions", "updated_at", "TIMESTAMP NULL");
         addColumnIfMissing(connection, "exam_submissions", "status", "VARCHAR(32) NOT NULL");
         addColumnIfMissing(connection, "exam_submissions", "allocated_duration_minutes",
                 "INT NOT NULL");
@@ -627,6 +634,135 @@ public class DatabaseInitializer {
                     && defaultValue.toUpperCase(Locale.ROOT).startsWith("CURRENT_TIMESTAMP")
                     && extra != null
                     && extra.toLowerCase(Locale.ROOT).contains("on update current_timestamp");
+        }
+    }
+
+    private void backfillSubmissionTimestamps(Connection connection) throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        boolean transactionStarted = false;
+        Throwable migrationFailure = null;
+
+        try {
+            connection.setAutoCommit(false);
+            transactionStarted = true;
+            // COMPATIBILITY-ONLY: Legacy rows have no complete timestamp history.
+            // The approved baseline retains the best available lifecycle timestamps.
+            executeUpdate(connection, """
+                    UPDATE exam_submissions
+                    SET created_at = COALESCE(
+                        started_at,
+                        submitted_at,
+                        CURRENT_TIMESTAMP
+                    ),
+                        updated_at = updated_at
+                    WHERE created_at IS NULL
+                    """);
+            executeUpdate(connection, """
+                    UPDATE exam_submissions
+                    SET updated_at = GREATEST(
+                        created_at,
+                        COALESCE(
+                            submitted_at,
+                            started_at,
+                            created_at,
+                            CURRENT_TIMESTAMP
+                        )
+                    )
+                    WHERE updated_at IS NULL
+                    """);
+            validateSubmissionTimestampOrdering(connection);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            migrationFailure = e;
+            if (transactionStarted) {
+                rollbackWithSuppressed(connection, e);
+            }
+            throw e;
+        } finally {
+            restoreAutoCommit(connection, originalAutoCommit, migrationFailure);
+        }
+    }
+
+    private void validateSubmissionTimestampOrdering(Connection connection)
+            throws SQLException {
+        String sql = """
+                SELECT submission_id
+                FROM exam_submissions
+                WHERE updated_at < created_at
+                LIMIT 1
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+            if (resultSet.next()) {
+                throw new SQLException(
+                        "Existing submission timestamps have invalid ordering"
+                );
+            }
+        }
+    }
+
+    private void normalizeSubmissionTimestampColumns(Connection connection)
+            throws SQLException {
+        if (!submissionTimestampDefinitionIsRequired(
+                connection,
+                "created_at",
+                false
+        )) {
+            executeSchemaStatement(connection, """
+                    ALTER TABLE exam_submissions
+                    MODIFY COLUMN created_at TIMESTAMP NOT NULL
+                        DEFAULT CURRENT_TIMESTAMP
+                    """);
+        }
+
+        if (!submissionTimestampDefinitionIsRequired(
+                connection,
+                "updated_at",
+                true
+        )) {
+            executeSchemaStatement(connection, """
+                    ALTER TABLE exam_submissions
+                    MODIFY COLUMN updated_at TIMESTAMP NOT NULL
+                        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    """);
+        }
+    }
+
+    private boolean submissionTimestampDefinitionIsRequired(
+            Connection connection,
+            String columnName,
+            boolean onUpdateRequired
+    ) throws SQLException {
+        String sql = """
+                SELECT DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'exam_submissions'
+                  AND COLUMN_NAME = ?
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, columnName);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return false;
+                }
+
+                String dataType = resultSet.getString("DATA_TYPE");
+                String nullable = resultSet.getString("IS_NULLABLE");
+                String defaultValue = resultSet.getString("COLUMN_DEFAULT");
+                String extra = resultSet.getString("EXTRA");
+                boolean hasOnUpdate = extra != null
+                        && extra.toLowerCase(Locale.ROOT)
+                        .contains("on update current_timestamp");
+                return "timestamp".equalsIgnoreCase(dataType)
+                        && "NO".equalsIgnoreCase(nullable)
+                        && defaultValue != null
+                        && defaultValue.toUpperCase(Locale.ROOT)
+                        .startsWith("CURRENT_TIMESTAMP")
+                        && hasOnUpdate == onUpdateRequired;
+            }
         }
     }
 

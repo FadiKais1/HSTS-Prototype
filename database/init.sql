@@ -277,6 +277,9 @@ CREATE TABLE IF NOT EXISTS exam_submissions (
     student_user_id INT NOT NULL,
     started_at DATETIME NOT NULL,
     submitted_at DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
     status VARCHAR(32) NOT NULL,
     allocated_duration_minutes INT NOT NULL,
     extra_minutes INT NOT NULL DEFAULT 0,
