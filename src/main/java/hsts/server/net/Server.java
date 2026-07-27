@@ -2,7 +2,9 @@ package hsts.server.net;
 
 import hsts.common.CreateExamPayload;
 import hsts.common.CreateQuestionPayload;
+import hsts.common.ExecutionCodePayload;
 import hsts.common.ExamVersionPayload;
+import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
@@ -12,6 +14,10 @@ import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.RejectExamPayload;
 import hsts.common.Response;
+import hsts.common.SaveExamAnswerPayload;
+import hsts.common.ScheduleExamExecutionPayload;
+import hsts.common.StartExamPayload;
+import hsts.common.SubmissionIdPayload;
 import hsts.common.UpdateExamPayload;
 import hsts.common.UpdateQuestionPayload;
 import hsts.ocsf.AbstractServer;
@@ -25,10 +31,14 @@ import hsts.server.control.NotificationService;
 import hsts.server.control.ReportService;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Server extends AbstractServer {
     private static final String AUTHENTICATED_USER_ID = "hsts.auth.userId";
     private static final String AUTHENTICATED_SESSION_ID = "hsts.auth.sessionId";
+    private static final long AUTO_SUBMISSION_PERIOD_SECONDS = 1L;
 
     private int port;
     private boolean running;
@@ -42,11 +52,21 @@ public class Server extends AbstractServer {
     private NotificationService notificationService;
     private CourseBotService courseBotService;
 
+    // COMPATIBILITY-ONLY: Runs internal automatic submission while the server is active.
+    private ScheduledExecutorService autoSubmissionScheduler;
+
     public Server(int port, ExamManagementService examManagementService, AuthService authService) {
+        this(port, examManagementService, authService, null);
+    }
+
+    public Server(int port, ExamManagementService examManagementService,
+                  AuthService authService,
+                  ExamExecutionService examExecutionService) {
         super(port);
         this.port = port;
         this.examManagementService = examManagementService;
         this.authService = authService;
+        this.examExecutionService = examExecutionService;
     }
 
     public void startServer() {
@@ -317,6 +337,111 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case SCHEDULE_EXAM_EXECUTION -> {
+                    if (!(request.getPayload()
+                            instanceof ScheduleExamExecutionPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Execution scheduling data is missing"
+                        );
+                    }
+                    yield Response.success(
+                            "Exam execution scheduled successfully",
+                            requireExamExecutionService().scheduleExecution(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case LIST_MY_EXAM_EXECUTIONS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Exam executions loaded successfully",
+                            requireExamExecutionService().getMyExecutions(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case VALIDATE_EXECUTION_CODE -> {
+                    if (!(request.getPayload() instanceof ExecutionCodePayload payload)) {
+                        throw new IllegalArgumentException("Execution code is required");
+                    }
+                    yield Response.success(
+                            "Execution code validated successfully",
+                            requireExamExecutionService().validateExecutionCode(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case START_EXAM_ATTEMPT -> {
+                    if (!(request.getPayload() instanceof StartExamPayload payload)) {
+                        throw new IllegalArgumentException("Exam attempt data is missing");
+                    }
+                    yield Response.success(
+                            "Exam attempt started successfully",
+                            requireExamExecutionService().startOrResumeExam(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case GET_ACTIVE_EXAM_ATTEMPT -> {
+                    if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
+                        throw new IllegalArgumentException("Submission data is missing");
+                    }
+                    yield Response.success(
+                            "Exam attempt loaded successfully",
+                            requireExamExecutionService().getActiveAttempt(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case SAVE_EXAM_ANSWER -> {
+                    if (!(request.getPayload() instanceof SaveExamAnswerPayload payload)) {
+                        throw new IllegalArgumentException("Answer data is missing");
+                    }
+                    yield Response.success(
+                            "Answer saved successfully",
+                            requireExamExecutionService().saveAnswer(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case SUBMIT_EXAM_ATTEMPT -> {
+                    if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
+                        throw new IllegalArgumentException("Submission data is missing");
+                    }
+                    yield Response.success(
+                            "Exam submitted successfully",
+                            requireExamExecutionService().submitExam(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case EXTEND_SUBMISSION_TIME -> {
+                    if (!(request.getPayload()
+                            instanceof ExtendSubmissionTimePayload payload)) {
+                        throw new IllegalArgumentException("Time extension data is missing");
+                    }
+                    yield Response.success(
+                            "Exam time extended successfully",
+                            requireExamExecutionService().extendStudentTime(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
@@ -386,6 +511,15 @@ public class Server extends AbstractServer {
         }
     }
 
+    private ExamExecutionService requireExamExecutionService() {
+        if (examExecutionService == null) {
+            throw new IllegalStateException(
+                    "Exam execution service is not configured"
+            );
+        }
+        return examExecutionService;
+    }
+
     private boolean isAuthenticated(ConnectionToClient client) {
         Object userId = client.getInfo(AUTHENTICATED_USER_ID);
         Object sessionId = client.getInfo(AUTHENTICATED_SESSION_ID);
@@ -449,12 +583,14 @@ public class Server extends AbstractServer {
     @Override
     protected void serverStarted() {
         running = true;
+        startAutoSubmissionScheduler();
         System.out.println("HSTS OCSF server started on port " + getPort());
     }
 
     @Override
     protected void serverStopped() {
         running = false;
+        stopAutoSubmissionScheduler();
     }
 
     @Override
@@ -476,6 +612,46 @@ public class Server extends AbstractServer {
     @Override
     protected void serverClosed() {
         running = false;
+        stopAutoSubmissionScheduler();
         System.out.println("HSTS OCSF server closed");
+    }
+
+    void runAutoSubmissionCycle() {
+        if (examExecutionService == null) {
+            return;
+        }
+        try {
+            examExecutionService.autoSubmitExpired();
+        } catch (RuntimeException exception) {
+            System.out.println("Automatic exam submission cycle failed");
+        }
+    }
+
+    private synchronized void startAutoSubmissionScheduler() {
+        if (examExecutionService == null
+                || (autoSubmissionScheduler != null
+                && !autoSubmissionScheduler.isShutdown())) {
+            return;
+        }
+
+        autoSubmissionScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "hsts-auto-exam-submission");
+            thread.setDaemon(true);
+            return thread;
+        });
+        autoSubmissionScheduler.scheduleAtFixedRate(
+                this::runAutoSubmissionCycle,
+                AUTO_SUBMISSION_PERIOD_SECONDS,
+                AUTO_SUBMISSION_PERIOD_SECONDS,
+                TimeUnit.SECONDS
+        );
+    }
+
+    private synchronized void stopAutoSubmissionScheduler() {
+        if (autoSubmissionScheduler == null) {
+            return;
+        }
+        autoSubmissionScheduler.shutdownNow();
+        autoSubmissionScheduler = null;
     }
 }
