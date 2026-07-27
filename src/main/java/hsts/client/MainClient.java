@@ -4,6 +4,7 @@ import hsts.client.boundary.LoginPage;
 import hsts.client.boundary.ApprovalRequestsPage;
 import hsts.client.boundary.ExamBuilderPage;
 import hsts.client.boundary.ExamSchedulingPage;
+import hsts.client.boundary.ExamExecutionPage;
 import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.StudentDashboard;
@@ -139,7 +140,13 @@ public class MainClient extends Application {
                 "/hsts/client/boundary/student-dashboard.fxml",
                 "HSTS Exam Management System - Student Dashboard"
         );
-        dashboard.configure(stage, client, loginResult, this::logout);
+        dashboard.configure(
+                stage,
+                client,
+                loginResult,
+                this::logout,
+                () -> showExamExecution(loginResult)
+        );
     }
 
     private void showTeacherDashboard(LoginResult loginResult) throws IOException {
@@ -259,6 +266,41 @@ public class MainClient extends Application {
     private void returnToTeacherDashboard(LoginResult loginResult) {
         try {
             showTeacherDashboard(loginResult);
+        } catch (IOException | RuntimeException exception) {
+            cleanupAfterNavigationFailure();
+        }
+    }
+
+    private void showExamExecution(LoginResult loginResult) {
+        if (loginResult == null || loginResult.getRole() != UserRole.STUDENT) {
+            showNavigationError("Exam access is available only to students");
+            return;
+        }
+        try {
+            ExamExecutionPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/exam-execution-page.fxml",
+                    "HSTS Exam Management System - Student Exam"
+            );
+            controller.configure(
+                    stage,
+                    client,
+                    loginResult,
+                    () -> returnToStudentDashboard(loginResult)
+            );
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showStudentDashboard(loginResult);
+                showNavigationError("Unable to open exam access");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void returnToStudentDashboard(LoginResult loginResult) {
+        try {
+            showStudentDashboard(loginResult);
         } catch (IOException | RuntimeException exception) {
             cleanupAfterNavigationFailure();
         }

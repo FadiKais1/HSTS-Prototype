@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.RadioButton?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="hsts.client.boundary.ExamExecutionPage"
+            prefWidth="1180" prefHeight="760"
+            style="-fx-background-color: #f4f7fb;">
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="16"
+              style="-fx-background-color: white; -fx-border-color: transparent transparent #dbe3ef transparent;">
+            <padding><Insets top="16" right="24" bottom="16" left="24"/></padding>
+            <VBox spacing="3">
+                <Label text="Student Exam"
+                       style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                <HBox spacing="8">
+                    <Label fx:id="userLabel" text="Student" style="-fx-text-fill: #4b5563;"/>
+                    <Label text="|" style="-fx-text-fill: #9ca3af;"/>
+                    <Label fx:id="roleLabel" text="STUDENT"
+                           style="-fx-text-fill: #2563eb; -fx-font-weight: bold;"/>
+                </HBox>
+            </VBox>
+            <Region HBox.hgrow="ALWAYS"/>
+            <ProgressIndicator fx:id="busyIndicator" prefWidth="26" prefHeight="26"
+                               visible="false" managed="false"/>
+            <Button fx:id="backButton" text="Back" onAction="#handleBack"
+                    style="-fx-background-color: #e5e7eb; -fx-background-radius: 8; -fx-font-weight: bold; -fx-padding: 9 18;"/>
+        </HBox>
+    </top>
+    <center>
+        <ScrollPane fitToWidth="true" style="-fx-background-color: transparent; -fx-background: transparent;">
+            <content>
+                <VBox spacing="18" maxWidth="1080">
+                    <padding><Insets top="26" right="30" bottom="30" left="30"/></padding>
+
+                    <Label fx:id="feedbackLabel" text="Enter the four-character execution code."
+                           wrapText="true" maxWidth="Infinity"
+                           style="-fx-background-color: #eff6ff; -fx-background-radius: 9; -fx-text-fill: #1e40af; -fx-padding: 11;"/>
+
+                    <VBox fx:id="entryPane" spacing="18"
+                          style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 24;">
+                        <Label text="Enter an exam execution"
+                               style="-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <Label text="Validate the code first. Questions remain hidden until identity confirmation succeeds."
+                               wrapText="true" style="-fx-text-fill: #6b7280;"/>
+                        <HBox spacing="10" alignment="CENTER_LEFT">
+                            <TextField fx:id="executionCodeField" promptText="Four-character code"
+                                       prefWidth="240" onAction="#handleValidateCode"
+                                       style="-fx-font-size: 16px; -fx-font-weight: bold;"/>
+                            <Button fx:id="validateButton" text="Validate" onAction="#handleValidateCode"
+                                    style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-background-radius: 8; -fx-font-weight: bold;"/>
+                        </HBox>
+
+                        <VBox fx:id="previewPane" spacing="8" visible="false" managed="false"
+                              style="-fx-background-color: #f8fafc; -fx-background-radius: 10; -fx-border-color: #dbe3ef; -fx-border-radius: 10; -fx-padding: 16;">
+                            <Label text="Validated exam" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+                            <Label fx:id="previewExamTitleLabel" wrapText="true"
+                                   style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                            <HBox spacing="8"><Label text="Course:"/><Label fx:id="previewCourseLabel"/></HBox>
+                            <HBox spacing="8"><Label text="Window:"/><Label fx:id="previewWindowLabel"/></HBox>
+                            <HBox spacing="8"><Label text="Duration:"/><Label fx:id="previewDurationLabel"/></HBox>
+                            <HBox spacing="8"><Label text="Status:"/><Label fx:id="previewStatusLabel" style="-fx-font-weight: bold;"/></HBox>
+                            <Separator/>
+                            <Label text="Confirm your identity to start or resume"
+                                   style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+                            <PasswordField fx:id="identityField" promptText="Identity number"
+                                           maxWidth="360" onAction="#handleStartExam"/>
+                            <Button fx:id="startButton" text="Start / Resume Exam" onAction="#handleStartExam"
+                                    maxWidth="360"
+                                    style="-fx-background-color: #15803d; -fx-text-fill: white; -fx-background-radius: 8; -fx-font-weight: bold; -fx-padding: 10;"/>
+                        </VBox>
+                    </VBox>
+
+                    <VBox fx:id="attemptPane" spacing="16" visible="false" managed="false">
+                        <HBox spacing="16" alignment="CENTER_LEFT"
+                              style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 20;">
+                            <VBox spacing="4" HBox.hgrow="ALWAYS">
+                                <Label fx:id="examTitleLabel" text="Exam"
+                                       style="-fx-font-size: 21px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <Label fx:id="attemptDetailsLabel" style="-fx-text-fill: #6b7280;"/>
+                                <Label fx:id="instructionsLabel" wrapText="true" style="-fx-text-fill: #374151;"/>
+                            </VBox>
+                            <VBox alignment="CENTER_RIGHT" spacing="4">
+                                <Label text="Status" style="-fx-text-fill: #6b7280;"/>
+                                <Label fx:id="submissionStatusLabel" text="IN_PROGRESS"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
+                                <Label text="Time remaining" style="-fx-text-fill: #6b7280;"/>
+                                <Label fx:id="countdownLabel" text="00:00:00"
+                                       style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #b45309;"/>
+                            </VBox>
+                        </HBox>
+
+                        <HBox spacing="16" alignment="TOP_LEFT">
+                            <VBox spacing="10" prefWidth="245"
+                                  style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 16;">
+                                <Label text="Questions" style="-fx-font-size: 17px; -fx-font-weight: bold;"/>
+                                <Label fx:id="progressLabel" text="0 of 0 answered" style="-fx-text-fill: #4b5563;"/>
+                                <ListView fx:id="questionListView" prefHeight="390"/>
+                            </VBox>
+
+                            <VBox spacing="14" HBox.hgrow="ALWAYS"
+                                  style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 22;">
+                                <Label fx:id="questionPositionLabel" text="Question"
+                                       style="-fx-text-fill: #2563eb; -fx-font-weight: bold;"/>
+                                <Label fx:id="questionTextLabel" wrapText="true"
+                                       style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <Label fx:id="questionDetailsLabel" style="-fx-text-fill: #6b7280;"/>
+                                <Separator/>
+                                <RadioButton fx:id="option1Radio" wrapText="true" maxWidth="Infinity"/>
+                                <RadioButton fx:id="option2Radio" wrapText="true" maxWidth="Infinity"/>
+                                <RadioButton fx:id="option3Radio" wrapText="true" maxWidth="Infinity"/>
+                                <RadioButton fx:id="option4Radio" wrapText="true" maxWidth="Infinity"/>
+                                <Label fx:id="saveStatusLabel" wrapText="true" style="-fx-text-fill: #4b5563;"/>
+                                <Region VBox.vgrow="ALWAYS"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Button fx:id="previousButton" text="Previous" onAction="#handlePreviousQuestion"/>
+                                    <Button fx:id="nextButton" text="Next" onAction="#handleNextQuestion"/>
+                                    <Region HBox.hgrow="ALWAYS"/>
+                                    <Button fx:id="refreshButton" text="Refresh" onAction="#handleRefreshAttempt"/>
+                                    <Button fx:id="submitButton" text="Submit Exam" onAction="#handleSubmitExam"
+                                            style="-fx-background-color: #dc2626; -fx-text-fill: white; -fx-background-radius: 8; -fx-font-weight: bold;"/>
+                                </HBox>
+                            </VBox>
+                        </HBox>
+                    </VBox>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </center>
+</BorderPane>

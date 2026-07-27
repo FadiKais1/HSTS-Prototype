@@ -2,6 +2,7 @@ package hsts.client.boundary;
 
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
+import hsts.common.type.UserRole;
 import hsts.server.entity.Student;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
@@ -27,16 +28,26 @@ public class StudentDashboard {
     private Label errorLabel;
     @FXML
     private Button logoutButton;
+    @FXML
+    private Button examExecutionButton;
     private Runnable logoutHandler;
+    private Runnable examExecutionHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
+        configure(stage, client, loginResult, logoutHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable examExecutionHandler) {
         this.stage = Objects.requireNonNull(stage);
         this.client = Objects.requireNonNull(client);
         this.loginResult = Objects.requireNonNull(loginResult);
         this.logoutHandler = Objects.requireNonNull(logoutHandler);
+        this.examExecutionHandler = examExecutionHandler;
 
         displayIdentity();
         showError("");
+        updateActionState();
     }
 
     @FXML
@@ -63,6 +74,24 @@ public class StudentDashboard {
         }
     }
 
+    @FXML
+    private void handleExamExecution() {
+        if (loginResult == null || loginResult.getRole() != UserRole.STUDENT) {
+            showError("Exam access is available only to students");
+            return;
+        }
+        if (examExecutionHandler == null) {
+            showError("Exam access is unavailable");
+            return;
+        }
+
+        try {
+            examExecutionHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Unable to open exam access");
+        }
+    }
+
     private void displayIdentity() {
         if (welcomeLabel != null) {
             welcomeLabel.setText("Welcome, " + loginResult.getFullName());
@@ -78,6 +107,16 @@ public class StudentDashboard {
             errorLabel.setText(message == null ? "" : message);
             errorLabel.setManaged(hasMessage);
             errorLabel.setVisible(hasMessage);
+        }
+    }
+
+    private void updateActionState() {
+        if (examExecutionButton != null) {
+            boolean student = loginResult != null
+                    && loginResult.getRole() == UserRole.STUDENT;
+            examExecutionButton.setVisible(student);
+            examExecutionButton.setManaged(student);
+            examExecutionButton.setDisable(!student || examExecutionHandler == null);
         }
     }
 
