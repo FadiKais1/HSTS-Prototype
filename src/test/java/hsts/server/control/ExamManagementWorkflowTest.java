@@ -327,7 +327,7 @@ public class ExamManagementWorkflowTest {
         assertNull(draft.getReviewedByUserId());
         assertNull(draft.getReviewedAt());
         assertNull(draft.getRejectionReason());
-        assertEquals(0, exams.getPayloadUpdateCalls());
+        assertEquals(1, exams.getUpdateCalls());
     }
 
     @Test
@@ -432,7 +432,7 @@ public class ExamManagementWorkflowTest {
         assertEquals("", normalized.getTeacherNotes());
         assertEquals("Read carefully", normalized.getStudentInstructions());
         assertEquals(LocalDateTime.of(2026, 7, 1, 10, 0), normalized.getCreatedAt());
-        assertEquals(0, exams.getPayloadUpdateCalls());
+        assertEquals(1, exams.getUpdateCalls());
 
         List<ExamQuestion> normalizedQuestions = normalized.getExamQuestions();
         assertEquals(2, normalizedQuestions.size());
@@ -792,7 +792,6 @@ public class ExamManagementWorkflowTest {
         private boolean approveResult = true;
         private boolean rejectResult = true;
         private int updateCalls;
-        private int payloadUpdateCalls;
         private int submitCalls;
         private int approveCalls;
         private int rejectCalls;
@@ -863,13 +862,6 @@ public class ExamManagementWorkflowTest {
                 throw updateFailure;
             }
             return expectedVersionNo + 1;
-        }
-
-        @Override
-        public int updateWithNewVersion(int authenticatedUserId,
-                                        UpdateExamPayload payload) {
-            payloadUpdateCalls++;
-            throw new AssertionError("Payload repository update must not be used");
         }
 
         @Override
@@ -964,7 +956,6 @@ public class ExamManagementWorkflowTest {
         private int getLastUpdateUserId() { return lastUpdateUserId; }
         private int getLastUpdateExpectedVersion() { return lastUpdateExpectedVersion; }
         private Exam getLastUpdateExam() { return lastUpdateExam; }
-        private int getPayloadUpdateCalls() { return payloadUpdateCalls; }
         private int getLastSubmitUserId() { return lastSubmitUserId; }
         private int getLastSubmitExamId() { return lastSubmitExamId; }
         private int getLastSubmitExpectedVersion() { return lastSubmitExpectedVersion; }

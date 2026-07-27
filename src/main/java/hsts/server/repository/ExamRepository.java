@@ -1,11 +1,8 @@
 package hsts.server.repository;
 
-import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionDTO;
-import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
-import hsts.common.UpdateExamPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.ExamStatus;
 import hsts.common.type.QuestionStatus;
@@ -498,17 +495,6 @@ public class ExamRepository {
         }
     }
 
-    public int create(int authenticatedUserId, CreateExamPayload payload) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Exam creation data is missing");
-        }
-        return createExam(
-                authenticatedUserId,
-                payload.getCourseId(),
-                examVersionData(payload, LocalDateTime.now())
-        );
-    }
-
     public int create(int authenticatedUserId, Exam exam) {
         if (exam == null) {
             throw new IllegalArgumentException("Exam creation data is missing");
@@ -518,20 +504,6 @@ public class ExamRepository {
                 authenticatedUserId,
                 exam.getCourseId(),
                 examVersionData(exam)
-        );
-    }
-
-    public int updateWithNewVersion(int authenticatedUserId, UpdateExamPayload payload) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Exam update data is missing");
-        }
-        return updateExamVersion(
-                authenticatedUserId,
-                payload.getExamId(),
-                payload.getExpectedVersionNo(),
-                0,
-                0,
-                examVersionData(payload, LocalDateTime.now())
         );
     }
 
@@ -551,17 +523,6 @@ public class ExamRepository {
         );
     }
 
-    public boolean submitForApproval(int authenticatedUserId, int examId,
-                                     int expectedVersionNo) {
-        return persistSubmission(
-                authenticatedUserId,
-                examId,
-                expectedVersionNo,
-                0,
-                LocalDateTime.now()
-        );
-    }
-
     public boolean persistSubmissionForApproval(int authenticatedUserId, Exam exam) {
         requireWorkflowExam(authenticatedUserId, exam, ExamStatus.PENDING_APPROVAL);
         if (exam.getSubmittedAt() == null) {
@@ -576,17 +537,6 @@ public class ExamRepository {
         );
     }
 
-    public boolean approve(int authenticatedCoordinatorId, int examId,
-                           int expectedVersionNo) {
-        return persistApproval(
-                authenticatedCoordinatorId,
-                examId,
-                expectedVersionNo,
-                0,
-                LocalDateTime.now()
-        );
-    }
-
     public boolean persistApproval(int authenticatedUserId, Exam exam) {
         requireReviewedWorkflowExam(authenticatedUserId, exam, ExamStatus.APPROVED);
         return persistApproval(
@@ -595,18 +545,6 @@ public class ExamRepository {
                 exam.getCurrentVersionNo(),
                 exam.getCourseId(),
                 exam.getReviewedAt()
-        );
-    }
-
-    public boolean reject(int authenticatedCoordinatorId, int examId,
-                          int expectedVersionNo, String reason) {
-        return persistRejection(
-                authenticatedCoordinatorId,
-                examId,
-                expectedVersionNo,
-                0,
-                reason,
-                LocalDateTime.now()
         );
     }
 
@@ -1395,66 +1333,6 @@ public class ExamRepository {
                 throw new SQLException("Exam current version update did not affect exactly one row");
             }
         }
-    }
-
-    private ExamVersionPersistenceData examVersionData(CreateExamPayload payload,
-                                                        LocalDateTime createdAt) {
-        List<ExamQuestionPersistenceData> questions = new ArrayList<>();
-        BigDecimal totalScore = BigDecimal.ZERO;
-        for (ExamQuestionSelectionPayload question : payload.getQuestions()) {
-            BigDecimal score = BigDecimal.valueOf(question.getScore());
-            questions.add(new ExamQuestionPersistenceData(
-                    question.getQuestionId(),
-                    question.getQuestionVersionNo(),
-                    question.getOrderNumber(),
-                    score
-            ));
-            totalScore = totalScore.add(score);
-        }
-        return new ExamVersionPersistenceData(
-                payload.getTitle(),
-                payload.getDurationMinutes(),
-                payload.getTeacherNotes(),
-                payload.getStudentInstructions(),
-                totalScore,
-                ExamStatus.DRAFT,
-                createdAt,
-                null,
-                null,
-                null,
-                null,
-                questions
-        );
-    }
-
-    private ExamVersionPersistenceData examVersionData(UpdateExamPayload payload,
-                                                        LocalDateTime createdAt) {
-        List<ExamQuestionPersistenceData> questions = new ArrayList<>();
-        BigDecimal totalScore = BigDecimal.ZERO;
-        for (ExamQuestionSelectionPayload question : payload.getQuestions()) {
-            BigDecimal score = BigDecimal.valueOf(question.getScore());
-            questions.add(new ExamQuestionPersistenceData(
-                    question.getQuestionId(),
-                    question.getQuestionVersionNo(),
-                    question.getOrderNumber(),
-                    score
-            ));
-            totalScore = totalScore.add(score);
-        }
-        return new ExamVersionPersistenceData(
-                payload.getTitle(),
-                payload.getDurationMinutes(),
-                payload.getTeacherNotes(),
-                payload.getStudentInstructions(),
-                totalScore,
-                ExamStatus.DRAFT,
-                createdAt,
-                null,
-                null,
-                null,
-                null,
-                questions
-        );
     }
 
     private ExamVersionPersistenceData examVersionData(Exam exam) {

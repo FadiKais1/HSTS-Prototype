@@ -1,7 +1,8 @@
 package hsts.server.repository;
 
-import hsts.common.CreateExamPayload;
-import hsts.common.ExamQuestionSelectionPayload;
+import hsts.server.entity.Exam;
+import hsts.server.entity.ExamQuestion;
+import hsts.server.entity.Question;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -27,13 +28,13 @@ public class ExamRepositoryCreateTest {
     private static final String POINTER_MARKER = "UPDATE exams SET current_version_no = 1";
 
     @Test
-    public void nullPayloadFailsBeforeObtainingConnection() {
+    public void nullExamFailsBeforeObtainingConnection() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamRepository(database).create(1002, (CreateExamPayload) null)
+                () -> new ExamRepository(database).create(1002, (Exam) null)
         );
 
         assertEquals("Exam creation data is missing", thrown.getMessage());
@@ -46,9 +47,9 @@ public class ExamRepositoryCreateTest {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController(false);
         SuccessfulPlans plans = successfulPlans(database, 45);
-        CreateExamPayload payload = payload();
+        Exam exam = exam();
 
-        int examId = new ExamRepository(database).create(1002, payload);
+        int examId = new ExamRepository(database).create(1002, exam);
 
         assertEquals(45, examId);
         assertEquals(1, database.connectionRequests);
@@ -59,9 +60,9 @@ public class ExamRepositoryCreateTest {
 
         assertEquals(Map.of(1, 1002, 2, 7), plans.course.queryExecutions.get(0));
         assertEquals(2, plans.question.queryExecutions.size());
-        assertEquals(Map.of(1, 1002, 2, 4, 3, 17, 4, 7, 5, 4),
-                plans.question.queryExecutions.get(0));
         assertEquals(Map.of(1, 1002, 2, 2, 3, 18, 4, 7, 5, 2),
+                plans.question.queryExecutions.get(0));
+        assertEquals(Map.of(1, 1002, 2, 4, 3, 17, 4, 7, 5, 4),
                 plans.question.queryExecutions.get(1));
 
         String courseSql = normalized(plans.course.sql);
@@ -101,10 +102,10 @@ public class ExamRepositoryCreateTest {
         }
 
         assertEquals(2, plans.selection.updateExecutions.size());
-        assertSelection(plans.selection.updateExecutions.get(0), 45, 1, 2, 17, 4,
-                new BigDecimal("0.1"));
-        assertSelection(plans.selection.updateExecutions.get(1), 45, 1, 1, 18, 2,
+        assertSelection(plans.selection.updateExecutions.get(0), 45, 1, 1, 18, 2,
                 new BigDecimal("99.9"));
+        assertSelection(plans.selection.updateExecutions.get(1), 45, 1, 2, 17, 4,
+                new BigDecimal("0.1"));
         assertEquals(Map.of(1, 45), plans.pointer.updateExecutions.get(0));
 
         assertAppearsInOrder(database.events,
@@ -128,7 +129,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamRepository(database).create(1002, payload())
+                () -> new ExamRepository(database).create(1002, exam())
         );
 
         assertEquals("Course is not assigned to user: 7", thrown.getMessage());
@@ -147,10 +148,10 @@ public class ExamRepositoryCreateTest {
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamRepository(database).create(1002, payload())
+                () -> new ExamRepository(database).create(1002, exam())
         );
 
-        assertEquals("Question unavailable for exam: 17", thrown.getMessage());
+        assertEquals("Question unavailable for exam: 18", thrown.getMessage());
         assertEquals(1, database.rollbackCount);
         assertEquals(0, database.commitCount);
         assertTrue(database.plans.stream().allMatch(plan -> plan.updateExecutions.isEmpty()));
@@ -176,7 +177,7 @@ public class ExamRepositoryCreateTest {
         Deque<String> codes = new ArrayDeque<>(List.of("AAAAAA", "BBBBBB"));
 
         int examId = new ExamRepository(database, codes::removeFirst)
-                .create(1002, payload());
+                .create(1002, exam());
 
         assertEquals(77, examId);
         assertEquals(2, plans.exam.updateExecutions.size());
@@ -196,7 +197,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(database, () -> "ABC123").create(1002, payload())
+                () -> new ExamRepository(database, () -> "ABC123").create(1002, exam())
         );
 
         assertEquals("Failed to create exam", thrown.getMessage());
@@ -215,7 +216,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(database, () -> "ABC123").create(1002, payload())
+                () -> new ExamRepository(database, () -> "ABC123").create(1002, exam())
         );
 
         assertEquals("Failed to create exam", thrown.getMessage());
@@ -254,7 +255,7 @@ public class ExamRepositoryCreateTest {
             IllegalStateException thrown = assertThrows(
                     IllegalStateException.class,
                     () -> new ExamRepository(database, () -> "ABC123")
-                            .create(1002, payload())
+                            .create(1002, exam())
             );
 
             assertSame(failure, thrown.getCause());
@@ -276,7 +277,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamRepository(database).create(1002, payload())
+                () -> new ExamRepository(database).create(1002, exam())
         );
 
         assertEquals("Course is not assigned to user: 7", thrown.getMessage());
@@ -298,7 +299,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(database).create(1002, payload())
+                () -> new ExamRepository(database).create(1002, exam())
         );
 
         assertEquals("Failed to create exam", thrown.getMessage());
@@ -329,17 +330,43 @@ public class ExamRepositoryCreateTest {
         return plans;
     }
 
-    private static CreateExamPayload payload() {
-        return new CreateExamPayload(
+    private static Exam exam() {
+        return Exam.createDraft(
                 7,
+                1002,
                 "Midterm",
                 90,
                 "Teacher only",
                 "Read carefully",
                 List.of(
-                        new ExamQuestionSelectionPayload(17, 4, 2, 0.1),
-                        new ExamQuestionSelectionPayload(18, 2, 1, 99.9)
+                        selection(17, 4, 2, "0.1"),
+                        selection(18, 2, 1, "99.9")
                 )
+        );
+    }
+
+    private static ExamQuestion selection(int questionId, int versionNo,
+                                          int orderNumber, String score) {
+        Question question = new Question(
+                questionId,
+                "Question " + questionId,
+                "Algebra",
+                "MULTIPLE_CHOICE",
+                "HARD",
+                "ACTIVE",
+                "image.png",
+                "One",
+                "Two",
+                "Three",
+                "Four",
+                3
+        );
+        return new ExamQuestion(
+                questionId,
+                versionNo,
+                orderNumber,
+                new BigDecimal(score),
+                question
         );
     }
 

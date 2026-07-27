@@ -1,12 +1,14 @@
 package hsts.server.repository;
 
-import hsts.common.ExamQuestionSelectionPayload;
-import hsts.common.UpdateExamPayload;
 import hsts.common.type.ExamStatus;
+import hsts.server.entity.Exam;
+import hsts.server.entity.ExamQuestion;
+import hsts.server.entity.Question;
 import org.junit.Test;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -25,12 +27,13 @@ public class ExamRepositoryVersionedUpdateTest {
     private static final String POINTER_MARKER = "SET current_version_no = ?";
 
     @Test
-    public void nullPayloadFailsBeforeOpeningConnection() {
+    public void nullExamFailsBeforeOpeningConnection() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database = database();
 
         IllegalArgumentException failure = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamRepository(database).updateWithNewVersion(1002, null)
+                () -> new ExamRepository(database)
+                        .updateWithNewVersion(1002, 45, 4, null)
         );
 
         assertEquals("Exam update data is missing", failure.getMessage());
@@ -48,10 +51,10 @@ public class ExamRepositoryVersionedUpdateTest {
                             originalAutoCommit
                     );
             UpdatePlans plans = successfulUpdatePlans(database, status);
-            UpdateExamPayload payload = payload(4);
+            Exam proposed = proposedExam(4);
 
             int versionNo = new ExamRepository(database)
-                    .updateWithNewVersion(1002, payload);
+                    .updateWithNewVersion(1002, 45, 4, proposed);
 
             assertEquals(5, versionNo);
             assertEquals(1, database.connectionRequests);
@@ -70,9 +73,9 @@ public class ExamRepositoryVersionedUpdateTest {
             assertTrue(lockSql.contains("FOR UPDATE"));
 
             assertEquals(2, plans.question.queryExecutions.size());
-            assertEquals(Map.of(1, 1002, 2, 4, 3, 17, 4, 7, 5, 4),
-                    plans.question.queryExecutions.get(0));
             assertEquals(Map.of(1, 1002, 2, 2, 3, 18, 4, 7, 5, 2),
+                    plans.question.queryExecutions.get(0));
+            assertEquals(Map.of(1, 1002, 2, 4, 3, 17, 4, 7, 5, 4),
                     plans.question.queryExecutions.get(1));
 
             Map<Integer, Object> version = plans.version.updateExecutions.get(0);
@@ -93,10 +96,10 @@ public class ExamRepositoryVersionedUpdateTest {
             }
 
             assertEquals(2, plans.selection.updateExecutions.size());
-            assertSelection(plans.selection.updateExecutions.get(0), 45, 5, 2, 17, 4,
-                    new BigDecimal("0.1"));
-            assertSelection(plans.selection.updateExecutions.get(1), 45, 5, 1, 18, 2,
+            assertSelection(plans.selection.updateExecutions.get(0), 45, 5, 1, 18, 2,
                     new BigDecimal("99.9"));
+            assertSelection(plans.selection.updateExecutions.get(1), 45, 5, 2, 17, 4,
+                    new BigDecimal("0.1"));
             assertEquals(Map.of(1, 5, 2, 45, 3, 4),
                     plans.pointer.updateExecutions.get(0));
 
@@ -122,7 +125,7 @@ public class ExamRepositoryVersionedUpdateTest {
         IllegalArgumentException missing = assertThrows(
                 IllegalArgumentException.class,
                 () -> new ExamRepository(missingDatabase)
-                        .updateWithNewVersion(1002, payload(4))
+                        .updateWithNewVersion(1002, 45, 4, proposedExam(4))
         );
         assertEquals("Exam not found: 45", missing.getMessage());
         assertDomainRollback(missingDatabase);
@@ -133,7 +136,7 @@ public class ExamRepositoryVersionedUpdateTest {
         IllegalStateException stale = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamRepository(staleDatabase)
-                        .updateWithNewVersion(1002, payload(4))
+                        .updateWithNewVersion(1002, 45, 4, proposedExam(4))
         );
         assertEquals("Exam version conflict", stale.getMessage());
         assertDomainRollback(staleDatabase);
@@ -144,7 +147,7 @@ public class ExamRepositoryVersionedUpdateTest {
         IllegalStateException pending = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamRepository(pendingDatabase)
-                        .updateWithNewVersion(1002, payload(4))
+                        .updateWithNewVersion(1002, 45, 4, proposedExam(4))
         );
         assertEquals("Pending exam cannot be edited", pending.getMessage());
         assertDomainRollback(pendingDatabase);
@@ -160,10 +163,10 @@ public class ExamRepositoryVersionedUpdateTest {
         IllegalArgumentException failure = assertThrows(
                 IllegalArgumentException.class,
                 () -> new ExamRepository(database)
-                        .updateWithNewVersion(1002, payload(4))
+                        .updateWithNewVersion(1002, 45, 4, proposedExam(4))
         );
 
-        assertEquals("Question unavailable for exam: 17", failure.getMessage());
+        assertEquals("Question unavailable for exam: 18", failure.getMessage());
         assertDomainRollback(database);
         assertTrue(database.plans.stream()
                 .allMatch(plan -> plan.updateExecutions.isEmpty()));
@@ -179,7 +182,7 @@ public class ExamRepositoryVersionedUpdateTest {
         IllegalStateException failure = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamRepository(database)
-                        .updateWithNewVersion(1002, payload(4))
+                        .updateWithNewVersion(1002, 45, 4, proposedExam(4))
         );
 
         assertEquals("Exam version conflict", failure.getMessage());
@@ -201,7 +204,7 @@ public class ExamRepositoryVersionedUpdateTest {
         IllegalStateException failure = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamRepository(database)
-                        .updateWithNewVersion(1002, payload(4))
+                        .updateWithNewVersion(1002, 45, 4, proposedExam(4))
         );
 
         assertEquals("Failed to update exam version", failure.getMessage());
@@ -240,18 +243,54 @@ public class ExamRepositoryVersionedUpdateTest {
         );
     }
 
-    private static UpdateExamPayload payload(int expectedVersionNo) {
-        return new UpdateExamPayload(
+    private static Exam proposedExam(int expectedVersionNo) {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 8, 0);
+        return Exam.rehydrate(
                 45,
-                expectedVersionNo,
+                "ABC123",
+                7,
+                1002,
+                expectedVersionNo + 1,
                 "Updated midterm",
                 120,
                 "New notes",
                 "New instructions",
+                ExamStatus.DRAFT,
+                createdAt,
+                createdAt.plusDays(expectedVersionNo + 1L),
+                null,
+                null,
+                null,
+                null,
                 List.of(
-                        new ExamQuestionSelectionPayload(17, 4, 2, 0.1),
-                        new ExamQuestionSelectionPayload(18, 2, 1, 99.9)
+                        selection(17, 4, 2, "0.1"),
+                        selection(18, 2, 1, "99.9")
                 )
+        );
+    }
+
+    private static ExamQuestion selection(int questionId, int versionNo,
+                                          int orderNumber, String score) {
+        Question question = new Question(
+                questionId,
+                "Question " + questionId,
+                "Algebra",
+                "MULTIPLE_CHOICE",
+                "HARD",
+                "ACTIVE",
+                "image.png",
+                "One",
+                "Two",
+                "Three",
+                "Four",
+                3
+        );
+        return new ExamQuestion(
+                questionId,
+                versionNo,
+                orderNumber,
+                new BigDecimal(score),
+                question
         );
     }
 

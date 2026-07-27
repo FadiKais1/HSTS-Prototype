@@ -1,8 +1,12 @@
 package hsts.server.repository;
 
 import hsts.common.type.ExamStatus;
+import hsts.server.entity.Exam;
+import hsts.server.entity.ExamQuestion;
+import hsts.server.entity.Question;
 import org.junit.Test;
 
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,8 +34,9 @@ public class ExamRepositoryWorkflowTransitionTest {
         ExamRepositoryJdbcTestSupport.StatementPlan submit = database.plan(SUBMIT_MARKER)
                 .updateResults(1);
 
+        Exam exam = submittedExam(45, 1002, 3);
         boolean submitted = new ExamRepository(database)
-                .submitForApproval(1002, 45, 3);
+                .persistSubmissionForApproval(1002, exam);
 
         assertTrue(submitted);
         assertTransactionSucceeded(database);
@@ -62,8 +67,9 @@ public class ExamRepositoryWorkflowTransitionTest {
         ExamRepositoryJdbcTestSupport.StatementPlan approve = database.plan(APPROVE_MARKER)
                 .updateResults(1);
 
+        Exam exam = approvedExam(55, coordinatorId, 4, coordinatorId);
         boolean approved = new ExamRepository(database)
-                .approve(coordinatorId, 55, 4);
+                .persistApproval(coordinatorId, exam);
 
         assertTrue(approved);
         assertTransactionSucceeded(database);
@@ -88,7 +94,7 @@ public class ExamRepositoryWorkflowTransitionTest {
     }
 
     @Test
-    public void rejectPreservesReasonUnchangedAndOnlyUpdatesReviewFields() {
+    public void rejectPersistsTrimmedReasonAndOnlyUpdatesReviewFields() {
         int coordinatorId = 1003;
         String reason = "  Needs clearer instructions  ";
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database = database();
@@ -97,8 +103,9 @@ public class ExamRepositoryWorkflowTransitionTest {
         ExamRepositoryJdbcTestSupport.StatementPlan reject = database.plan(REJECT_MARKER)
                 .updateResults(1);
 
+        Exam exam = rejectedExam(65, 1002, 6, coordinatorId, reason);
         boolean rejected = new ExamRepository(database)
-                .reject(coordinatorId, 65, 6, reason);
+                .persistRejection(coordinatorId, exam);
 
         assertTrue(rejected);
         assertTransactionSucceeded(database);
@@ -106,7 +113,7 @@ public class ExamRepositoryWorkflowTransitionTest {
         assertEquals("REJECTED", parameters.get(1));
         assertEquals(coordinatorId, parameters.get(2));
         assertTrue(parameters.get(3) instanceof LocalDateTime);
-        assertSame(reason, parameters.get(4));
+        assertEquals("Needs clearer instructions", parameters.get(4));
         assertEquals(65, parameters.get(5));
         assertEquals(6, parameters.get(6));
         assertFalse(normalized(reject.sql).contains("SUBMITTED_AT ="));
@@ -118,17 +125,19 @@ public class ExamRepositoryWorkflowTransitionTest {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController submitDatabase = database();
         submitDatabase.plan(TEACHER_LOCK_MARKER).queryRows();
         assertFalse(new ExamRepository(submitDatabase)
-                .submitForApproval(1002, 45, 1));
+                .persistSubmissionForApproval(1002, submittedExam(45, 1002, 1)));
         assertFalseTransitionCommitted(submitDatabase);
 
         ExamRepositoryJdbcTestSupport.FakeDatabaseController approveDatabase = database();
         approveDatabase.plan(COORDINATOR_LOCK_MARKER).queryRows();
-        assertFalse(new ExamRepository(approveDatabase).approve(1003, 45, 1));
+        assertFalse(new ExamRepository(approveDatabase)
+                .persistApproval(1003, approvedExam(45, 1002, 1, 1003)));
         assertFalseTransitionCommitted(approveDatabase);
 
         ExamRepositoryJdbcTestSupport.FakeDatabaseController rejectDatabase = database();
         rejectDatabase.plan(COORDINATOR_LOCK_MARKER).queryRows();
-        assertFalse(new ExamRepository(rejectDatabase).reject(1003, 45, 1, "reason"));
+        assertFalse(new ExamRepository(rejectDatabase)
+                .persistRejection(1003, rejectedExam(45, 1002, 1, 1003, "reason")));
         assertFalseTransitionCommitted(rejectDatabase);
     }
 
@@ -216,7 +225,10 @@ public class ExamRepositoryWorkflowTransitionTest {
 
         IllegalStateException failure = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(database).submitForApproval(1002, 45, 4)
+                () -> new ExamRepository(database).persistSubmissionForApproval(
+                        1002,
+                        submittedExam(45, 1002, 4)
+                )
         );
 
         assertEquals("Exam is not a draft", failure.getMessage());
@@ -317,6 +329,69 @@ public class ExamRepositoryWorkflowTransitionTest {
         );
     }
 
+    private static Exam submittedExam(int examId, int creatorId, int versionNo) {
+        Exam exam = draftExam(examId, creatorId, versionNo);
+        exam.submitForApproval();
+        return exam;
+    }
+
+    private static Exam approvedExam(int examId, int creatorId, int versionNo,
+                                     int reviewerId) {
+        Exam exam = submittedExam(examId, creatorId, versionNo);
+        exam.approve(reviewerId);
+        return exam;
+    }
+
+    private static Exam rejectedExam(int examId, int creatorId, int versionNo,
+                                     int reviewerId, String reason) {
+        Exam exam = submittedExam(examId, creatorId, versionNo);
+        exam.reject(reviewerId, reason);
+        return exam;
+    }
+
+    private static Exam draftExam(int examId, int creatorId, int versionNo) {
+        LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 8, 0);
+        Question question = new Question(
+                17,
+                "Question 17",
+                "Algebra",
+                "MULTIPLE_CHOICE",
+                "HARD",
+                "ACTIVE",
+                "image.png",
+                "One",
+                "Two",
+                "Three",
+                "Four",
+                3
+        );
+        return Exam.rehydrate(
+                examId,
+                "ABC123",
+                7,
+                creatorId,
+                versionNo,
+                "Midterm",
+                90,
+                "Teacher notes",
+                "Read carefully",
+                ExamStatus.DRAFT,
+                createdAt,
+                createdAt.plusDays(1),
+                null,
+                null,
+                null,
+                null,
+                List.of(new ExamQuestion(
+                        17,
+                        4,
+                        1,
+                        new BigDecimal("100.00"),
+                        question
+                ))
+        );
+    }
+
     private static String normalized(String sql) {
         return sql.replaceAll("\\s+", " ").trim().toUpperCase();
     }
@@ -325,19 +400,28 @@ public class ExamRepositoryWorkflowTransitionTest {
         SUBMIT(TEACHER_LOCK_MARKER) {
             @Override
             boolean execute(ExamRepository repository, int expectedVersionNo) {
-                return repository.submitForApproval(1002, 45, expectedVersionNo);
+                return repository.persistSubmissionForApproval(
+                        1002,
+                        submittedExam(45, 1002, expectedVersionNo)
+                );
             }
         },
         APPROVE(COORDINATOR_LOCK_MARKER) {
             @Override
             boolean execute(ExamRepository repository, int expectedVersionNo) {
-                return repository.approve(1003, 45, expectedVersionNo);
+                return repository.persistApproval(
+                        1003,
+                        approvedExam(45, 1002, expectedVersionNo, 1003)
+                );
             }
         },
         REJECT(COORDINATOR_LOCK_MARKER) {
             @Override
             boolean execute(ExamRepository repository, int expectedVersionNo) {
-                return repository.reject(1003, 45, expectedVersionNo, "reason");
+                return repository.persistRejection(
+                        1003,
+                        rejectedExam(45, 1002, expectedVersionNo, 1003, "reason")
+                );
             }
         };
 

@@ -325,7 +325,7 @@ public class ExamManagementExamTest {
             assertEquals(90, draft.getDurationMinutes());
             assertEquals("", draft.getTeacherNotes());
             assertEquals("Read carefully", draft.getStudentInstructions());
-            assertEquals(0, exams.getPayloadCreateCalls());
+            assertEquals(1, exams.getCreateCalls());
 
             List<ExamQuestion> aggregateQuestions = draft.getExamQuestions();
             assertEquals(4, aggregateQuestions.size());
@@ -409,7 +409,6 @@ public class ExamManagementExamTest {
         assertEquals(new BigDecimal("33.34"),
                 draft.getExamQuestions().get(2).getScoreValue());
         assertEquals(1, exams.getCreateCalls());
-        assertEquals(0, exams.getPayloadCreateCalls());
     }
 
     @Test
@@ -719,7 +718,6 @@ public class ExamManagementExamTest {
         private int teacherDetailCalls;
         private int coordinatorDetailCalls;
         private int createCalls;
-        private int payloadCreateCalls;
         private int lastTeacherListUserId;
         private int lastPendingUserId;
         private int lastTeacherDetailUserId;
@@ -770,12 +768,6 @@ public class ExamManagementExamTest {
                 throw createFailure;
             }
             return createdExamId;
-        }
-
-        @Override
-        public int create(int authenticatedUserId, CreateExamPayload payload) {
-            payloadCreateCalls++;
-            throw new AssertionError("Payload repository create must not be used");
         }
 
         private void setTeacherSummaries(List<ExamSummaryDTO> teacherSummaries) {
@@ -844,6 +836,5 @@ public class ExamManagementExamTest {
         }
 
         private Exam getLastCreateExam() { return lastCreateExam; }
-        private int getPayloadCreateCalls() { return payloadCreateCalls; }
     }
 }
