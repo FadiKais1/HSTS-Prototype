@@ -230,7 +230,7 @@ public class ExamManagementServiceTest {
 
     private static Question question(int id, String content, String topic, String difficulty, String status) {
         return new Question(
-                id, content, topic, "SAVED_TYPE", difficulty, status, "illustration.png",
+                id, content, topic, "MULTIPLE_CHOICE", difficulty, status, "illustration.png",
                 "One", "Two", "Three", "Four", 2
         );
     }
