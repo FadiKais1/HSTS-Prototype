@@ -1,11 +1,18 @@
 package hsts.server.control;
 
+import hsts.common.CourseSummaryDTO;
+import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
+import hsts.common.QuestionFilterPayload;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
+import hsts.common.type.UserRole;
 import hsts.server.entity.Exam;
 import hsts.server.entity.Question;
+import hsts.server.entity.User;
+import hsts.server.repository.CourseRepository;
 import hsts.server.repository.QuestionRepository;
+import hsts.server.repository.UserRepository;
 
 import java.util.List;
 
@@ -14,9 +21,21 @@ public class ExamManagementService {
 
     private DatabaseService databaseService;
     private final QuestionRepository questionRepository;
+    private final CourseRepository courseRepository;
+    private final UserRepository userRepository;
 
     public ExamManagementService(QuestionRepository questionRepository) {
         this.questionRepository = questionRepository;
+        this.courseRepository = null;
+        this.userRepository = null;
+    }
+
+    public ExamManagementService(QuestionRepository questionRepository,
+                                 CourseRepository courseRepository,
+                                 UserRepository userRepository) {
+        this.questionRepository = questionRepository;
+        this.courseRepository = courseRepository;
+        this.userRepository = userRepository;
     }
 
     public List<QuestionDTO> getAllQuestions() {
@@ -30,6 +49,55 @@ public class ExamManagementService {
         Question question = questionRepository.findById(questionId)
                 .orElseThrow(() -> new IllegalArgumentException("Question not found: " + questionId));
         return toDto(question);
+    }
+
+    public List<CourseSummaryDTO> getCoursesForTeacher(int authenticatedUserId) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+        return courseRepository.findAssignedToTeacher(authenticatedUserId);
+    }
+
+    public List<QuestionDTO> getQuestions(int authenticatedUserId,
+                                          QuestionFilterPayload filter) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+
+        if (filter != null && filter.getCourseId() != null) {
+            int courseId = filter.getCourseId();
+            if (courseId <= 0) {
+                throw new IllegalArgumentException("Course ID must be positive");
+            }
+            requireCourseAssignment(authenticatedUserId, courseId);
+        }
+
+        return questionRepository.findCurrentForTeacher(authenticatedUserId, filter);
+    }
+
+    public QuestionDTO createQuestion(int authenticatedUserId,
+                                      CreateQuestionPayload payload) {
+        requireQuestionBankDependencies();
+        validateCreateQuestionPayload(payload);
+        authorizeQuestionManager(authenticatedUserId);
+        requireCourseAssignment(authenticatedUserId, payload.getCourseId());
+
+        CreateQuestionPayload normalizedPayload = new CreateQuestionPayload(
+                payload.getCourseId(),
+                payload.getContent().trim(),
+                normalizeText(payload.getTopic(), "General"),
+                payload.getDifficulty(),
+                normalizeText(payload.getIllustrationPath(), ""),
+                payload.getAnswerOption1().trim(),
+                payload.getAnswerOption2().trim(),
+                payload.getAnswerOption3().trim(),
+                payload.getAnswerOption4().trim(),
+                payload.getCorrectOptionNumber()
+        );
+
+        int questionId = questionRepository.create(authenticatedUserId, normalizedPayload);
+        return questionRepository.findCurrentByIdForTeacher(authenticatedUserId, questionId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Created question could not be reloaded: " + questionId
+                ));
     }
 
     public Question createQuestion(int teacherId, int courseId) {
@@ -175,6 +243,55 @@ public class ExamManagementService {
         String status = normalizeText(payload.getStatus(), "ACTIVE");
         if (!status.equals("ACTIVE") && !status.equals("INACTIVE")) {
             throw new IllegalArgumentException("Question status must be ACTIVE or INACTIVE");
+        }
+    }
+
+    private User authorizeQuestionManager(int userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+
+        if (!user.isActive()) {
+            throw new IllegalStateException("User account is blocked");
+        }
+        if (user.getRole() != UserRole.TEACHER && user.getRole() != UserRole.COORDINATOR) {
+            throw new IllegalStateException(
+                    "Question management requires teacher or coordinator role"
+            );
+        }
+        return user;
+    }
+
+    private void requireCourseAssignment(int userId, int courseId) {
+        if (!courseRepository.isAssignedToTeacher(userId, courseId)) {
+            throw new IllegalStateException("User is not assigned to course: " + courseId);
+        }
+    }
+
+    private void validateCreateQuestionPayload(CreateQuestionPayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Question data is required");
+        }
+        if (payload.getCourseId() <= 0) {
+            throw new IllegalArgumentException("Course is required");
+        }
+        if (isBlank(payload.getContent())) {
+            throw new IllegalArgumentException("Question content cannot be empty");
+        }
+        if (payload.getDifficulty() == null) {
+            throw new IllegalArgumentException("Question difficulty is required");
+        }
+        if (isBlank(payload.getAnswerOption1()) || isBlank(payload.getAnswerOption2())
+                || isBlank(payload.getAnswerOption3()) || isBlank(payload.getAnswerOption4())) {
+            throw new IllegalArgumentException("All four answer options are required");
+        }
+        if (payload.getCorrectOptionNumber() < 1 || payload.getCorrectOptionNumber() > 4) {
+            throw new IllegalArgumentException("Correct answer number must be between 1 and 4");
+        }
+    }
+
+    private void requireQuestionBankDependencies() {
+        if (questionRepository == null || courseRepository == null || userRepository == null) {
+            throw new IllegalStateException("Question-bank dependencies are not configured");
         }
     }
 
