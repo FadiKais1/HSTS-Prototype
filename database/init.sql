@@ -108,6 +108,101 @@ CREATE TABLE IF NOT EXISTS answer_options (
         CHECK (option_number BETWEEN 1 AND 4)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS subject_coordinators (
+    subject_id INT NOT NULL,
+    coordinator_user_id INT NOT NULL,
+    assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (subject_id, coordinator_user_id),
+    KEY idx_subject_coordinators_coordinator_user_id (coordinator_user_id),
+    CONSTRAINT fk_subject_coordinators_subject
+        FOREIGN KEY (subject_id) REFERENCES subjects (subject_id),
+    CONSTRAINT fk_subject_coordinators_user
+        FOREIGN KEY (coordinator_user_id) REFERENCES users (user_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exams (
+    exam_id INT NOT NULL AUTO_INCREMENT,
+    exam_code CHAR(6) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    course_id INT NOT NULL,
+    created_by_user_id INT NOT NULL,
+    current_version_no INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (exam_id),
+    CONSTRAINT uq_exams_exam_code UNIQUE (exam_code),
+    KEY idx_exams_course_id (course_id),
+    KEY idx_exams_created_by_user_id (created_by_user_id),
+    CONSTRAINT fk_exams_course
+        FOREIGN KEY (course_id) REFERENCES courses (course_id),
+    CONSTRAINT fk_exams_creator
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_exams_exam_code
+        CHECK (exam_code REGEXP '^[A-Z0-9]{6}$'),
+    CONSTRAINT chk_exams_current_version
+        CHECK (current_version_no IS NULL OR current_version_no > 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exam_versions (
+    exam_id INT NOT NULL,
+    version_no INT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    duration_minutes INT NOT NULL,
+    teacher_notes TEXT NOT NULL,
+    student_instructions TEXT NOT NULL,
+    total_score DECIMAL(7,2) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    version_created_by_user_id INT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    submitted_at DATETIME NULL,
+    reviewed_by_user_id INT NULL,
+    reviewed_at DATETIME NULL,
+    rejection_reason TEXT NULL,
+    PRIMARY KEY (exam_id, version_no),
+    KEY idx_exam_versions_status (status),
+    KEY idx_exam_versions_reviewed_by_user_id (reviewed_by_user_id),
+    KEY idx_exam_versions_submitted_at (submitted_at),
+    CONSTRAINT fk_exam_versions_exam
+        FOREIGN KEY (exam_id) REFERENCES exams (exam_id) ON DELETE CASCADE,
+    CONSTRAINT fk_exam_versions_creator
+        FOREIGN KEY (version_created_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT fk_exam_versions_reviewer
+        FOREIGN KEY (reviewed_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_exam_versions_version
+        CHECK (version_no > 0),
+    CONSTRAINT chk_exam_versions_duration
+        CHECK (duration_minutes > 0),
+    CONSTRAINT chk_exam_versions_total_score
+        CHECK (total_score = 100.00),
+    CONSTRAINT chk_exam_versions_status
+        CHECK (status IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'))
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exam_version_questions (
+    exam_id INT NOT NULL,
+    exam_version_no INT NOT NULL,
+    order_number INT NOT NULL,
+    question_id INT NOT NULL,
+    question_version_no INT NOT NULL,
+    score DECIMAL(7,2) NOT NULL,
+    PRIMARY KEY (exam_id, exam_version_no, order_number),
+    CONSTRAINT uq_exam_version_questions_question UNIQUE
+        (exam_id, exam_version_no, question_id),
+    KEY idx_exam_version_questions_question_version
+        (question_id, question_version_no),
+    CONSTRAINT fk_exam_version_questions_exam_version
+        FOREIGN KEY (exam_id, exam_version_no)
+        REFERENCES exam_versions (exam_id, version_no) ON DELETE CASCADE,
+    CONSTRAINT fk_exam_version_questions_question_version
+        FOREIGN KEY (question_id, question_version_no)
+        REFERENCES question_versions (question_id, version_no),
+    CONSTRAINT chk_exam_version_questions_order
+        CHECK (order_number > 0),
+    CONSTRAINT chk_exam_version_questions_question_version
+        CHECK (question_version_no > 0),
+    CONSTRAINT chk_exam_version_questions_score
+        CHECK (score > 0)
+) ENGINE=InnoDB;
+
 CREATE TEMPORARY TABLE IF NOT EXISTS question_bank_migration_guard (
     validation_result TINYINT NOT NULL
 ) ENGINE=InnoDB;
@@ -192,6 +287,26 @@ THEN 1 ELSE NULL END;
 
 INSERT IGNORE INTO teacher_courses (teacher_user_id, course_id)
 VALUES (1002, 1), (1003, 1);
+
+INSERT INTO subject_coordinators (
+    subject_id,
+    coordinator_user_id
+)
+SELECT
+    subject_record.subject_id,
+    coordinator.user_id
+FROM subjects subject_record
+JOIN users coordinator ON coordinator.user_id = 1003
+WHERE subject_record.subject_id = 1
+  AND subject_record.subject_code = 'LEGACY'
+  AND coordinator.email = 'coordinator@hsts.local'
+  AND coordinator.role = 'COORDINATOR'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM subject_coordinators existing_assignment
+      WHERE existing_assignment.subject_id = subject_record.subject_id
+        AND existing_assignment.coordinator_user_id = coordinator.user_id
+  );
 
 INSERT IGNORE INTO questions (
     question_id,

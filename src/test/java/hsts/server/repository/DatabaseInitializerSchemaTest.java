@@ -88,7 +88,8 @@ public class DatabaseInitializerSchemaTest {
                 "createQuestionVersionsTable();",
                 "createAnswerOptionsTable();",
                 "migrateQuestionBankData();",
-                "createQuestionBankIndexesAndConstraints();"
+                "createQuestionBankIndexesAndConstraints();",
+                "migrateExamSchema();"
         );
     }
 

@@ -24,6 +24,7 @@ public class DatabaseInitializer {
         createAnswerOptionsTable();
         migrateQuestionBankData();
         createQuestionBankIndexesAndConstraints();
+        migrateExamSchema();
     }
 
     private void createUsersTable() {
@@ -190,6 +191,366 @@ public class DatabaseInitializer {
             statement.execute(sql);
         } catch (SQLException e) {
             throw new IllegalStateException(errorMessage, e);
+        }
+    }
+
+    private void migrateExamSchema() {
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            createSubjectCoordinatorsTable(connection);
+            createExamsTable(connection);
+            createExamVersionsTable(connection);
+            createExamVersionQuestionsTable(connection);
+            createExamSchemaIndexesAndConstraints(connection);
+            insertCompatibilityCoordinatorAssignment(connection);
+        } catch (SQLException | RuntimeException e) {
+            throw new IllegalStateException("Failed to migrate exam schema", e);
+        }
+    }
+
+    private void createSubjectCoordinatorsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "subject_coordinators")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE subject_coordinators (
+                    subject_id INT NOT NULL,
+                    coordinator_user_id INT NOT NULL,
+                    assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (subject_id, coordinator_user_id),
+                    KEY idx_subject_coordinators_coordinator_user_id (coordinator_user_id),
+                    CONSTRAINT fk_subject_coordinators_subject
+                        FOREIGN KEY (subject_id) REFERENCES subjects (subject_id),
+                    CONSTRAINT fk_subject_coordinators_user
+                        FOREIGN KEY (coordinator_user_id) REFERENCES users (user_id)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "exams")) {
+            return;
+        }
+
+        // The nullable current-version pointer is maintained transactionally because MySQL
+        // cannot defer the circular foreign key while creating an exam and its first version.
+        executeSchemaStatement(connection, """
+                CREATE TABLE exams (
+                    exam_id INT NOT NULL AUTO_INCREMENT,
+                    exam_code CHAR(6) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                    course_id INT NOT NULL,
+                    created_by_user_id INT NOT NULL,
+                    current_version_no INT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (exam_id),
+                    CONSTRAINT uq_exams_exam_code UNIQUE (exam_code),
+                    KEY idx_exams_course_id (course_id),
+                    KEY idx_exams_created_by_user_id (created_by_user_id),
+                    CONSTRAINT fk_exams_course
+                        FOREIGN KEY (course_id) REFERENCES courses (course_id),
+                    CONSTRAINT fk_exams_creator
+                        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_exams_exam_code
+                        CHECK (exam_code REGEXP '^[A-Z0-9]{6}$'),
+                    CONSTRAINT chk_exams_current_version
+                        CHECK (current_version_no IS NULL OR current_version_no > 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamVersionsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "exam_versions")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE exam_versions (
+                    exam_id INT NOT NULL,
+                    version_no INT NOT NULL,
+                    title VARCHAR(255) NOT NULL,
+                    duration_minutes INT NOT NULL,
+                    teacher_notes TEXT NOT NULL,
+                    student_instructions TEXT NOT NULL,
+                    total_score DECIMAL(7,2) NOT NULL,
+                    status VARCHAR(32) NOT NULL,
+                    version_created_by_user_id INT NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    submitted_at DATETIME NULL,
+                    reviewed_by_user_id INT NULL,
+                    reviewed_at DATETIME NULL,
+                    rejection_reason TEXT NULL,
+                    PRIMARY KEY (exam_id, version_no),
+                    KEY idx_exam_versions_status (status),
+                    KEY idx_exam_versions_reviewed_by_user_id (reviewed_by_user_id),
+                    KEY idx_exam_versions_submitted_at (submitted_at),
+                    CONSTRAINT fk_exam_versions_exam
+                        FOREIGN KEY (exam_id) REFERENCES exams (exam_id) ON DELETE CASCADE,
+                    CONSTRAINT fk_exam_versions_creator
+                        FOREIGN KEY (version_created_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT fk_exam_versions_reviewer
+                        FOREIGN KEY (reviewed_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_exam_versions_version
+                        CHECK (version_no > 0),
+                    CONSTRAINT chk_exam_versions_duration
+                        CHECK (duration_minutes > 0),
+                    CONSTRAINT chk_exam_versions_total_score
+                        CHECK (total_score = 100.00),
+                    CONSTRAINT chk_exam_versions_status
+                        CHECK (status IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'))
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamVersionQuestionsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "exam_version_questions")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE exam_version_questions (
+                    exam_id INT NOT NULL,
+                    exam_version_no INT NOT NULL,
+                    order_number INT NOT NULL,
+                    question_id INT NOT NULL,
+                    question_version_no INT NOT NULL,
+                    score DECIMAL(7,2) NOT NULL,
+                    PRIMARY KEY (exam_id, exam_version_no, order_number),
+                    CONSTRAINT uq_exam_version_questions_question UNIQUE
+                        (exam_id, exam_version_no, question_id),
+                    KEY idx_exam_version_questions_question_version
+                        (question_id, question_version_no),
+                    CONSTRAINT fk_exam_version_questions_exam_version
+                        FOREIGN KEY (exam_id, exam_version_no)
+                        REFERENCES exam_versions (exam_id, version_no) ON DELETE CASCADE,
+                    CONSTRAINT fk_exam_version_questions_question_version
+                        FOREIGN KEY (question_id, question_version_no)
+                        REFERENCES question_versions (question_id, version_no),
+                    CONSTRAINT chk_exam_version_questions_order
+                        CHECK (order_number > 0),
+                    CONSTRAINT chk_exam_version_questions_question_version
+                        CHECK (question_version_no > 0),
+                    CONSTRAINT chk_exam_version_questions_score
+                        CHECK (score > 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamSchemaIndexesAndConstraints(Connection connection)
+            throws SQLException {
+        ensureConstraint(connection, "subject_coordinators", "PRIMARY", """
+                ALTER TABLE subject_coordinators
+                ADD PRIMARY KEY (subject_id, coordinator_user_id)
+                """);
+        ensureIndex(connection, "subject_coordinators",
+                "idx_subject_coordinators_coordinator_user_id", """
+                CREATE INDEX idx_subject_coordinators_coordinator_user_id
+                ON subject_coordinators (coordinator_user_id)
+                """);
+        ensureConstraint(connection, "subject_coordinators",
+                "fk_subject_coordinators_subject", """
+                ALTER TABLE subject_coordinators
+                ADD CONSTRAINT fk_subject_coordinators_subject
+                FOREIGN KEY (subject_id) REFERENCES subjects (subject_id)
+                """);
+        ensureConstraint(connection, "subject_coordinators",
+                "fk_subject_coordinators_user", """
+                ALTER TABLE subject_coordinators
+                ADD CONSTRAINT fk_subject_coordinators_user
+                FOREIGN KEY (coordinator_user_id) REFERENCES users (user_id)
+                """);
+
+        ensureConstraint(connection, "exams", "PRIMARY", """
+                ALTER TABLE exams ADD PRIMARY KEY (exam_id)
+                """);
+        ensureConstraint(connection, "exams", "uq_exams_exam_code", """
+                ALTER TABLE exams
+                ADD CONSTRAINT uq_exams_exam_code UNIQUE (exam_code)
+                """);
+        ensureIndex(connection, "exams", "idx_exams_course_id",
+                "CREATE INDEX idx_exams_course_id ON exams (course_id)");
+        ensureIndex(connection, "exams", "idx_exams_created_by_user_id", """
+                CREATE INDEX idx_exams_created_by_user_id ON exams (created_by_user_id)
+                """);
+        ensureConstraint(connection, "exams", "fk_exams_course", """
+                ALTER TABLE exams
+                ADD CONSTRAINT fk_exams_course
+                FOREIGN KEY (course_id) REFERENCES courses (course_id)
+                """);
+        ensureConstraint(connection, "exams", "fk_exams_creator", """
+                ALTER TABLE exams
+                ADD CONSTRAINT fk_exams_creator
+                FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exams", "chk_exams_exam_code", """
+                ALTER TABLE exams
+                ADD CONSTRAINT chk_exams_exam_code
+                CHECK (exam_code REGEXP '^[A-Z0-9]{6}$')
+                """);
+        ensureConstraint(connection, "exams", "chk_exams_current_version", """
+                ALTER TABLE exams
+                ADD CONSTRAINT chk_exams_current_version
+                CHECK (current_version_no IS NULL OR current_version_no > 0)
+                """);
+
+        ensureConstraint(connection, "exam_versions", "PRIMARY", """
+                ALTER TABLE exam_versions ADD PRIMARY KEY (exam_id, version_no)
+                """);
+        ensureIndex(connection, "exam_versions", "idx_exam_versions_status",
+                "CREATE INDEX idx_exam_versions_status ON exam_versions (status)");
+        ensureIndex(connection, "exam_versions", "idx_exam_versions_reviewed_by_user_id", """
+                CREATE INDEX idx_exam_versions_reviewed_by_user_id
+                ON exam_versions (reviewed_by_user_id)
+                """);
+        ensureIndex(connection, "exam_versions", "idx_exam_versions_submitted_at", """
+                CREATE INDEX idx_exam_versions_submitted_at ON exam_versions (submitted_at)
+                """);
+        ensureConstraint(connection, "exam_versions", "fk_exam_versions_exam", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT fk_exam_versions_exam
+                FOREIGN KEY (exam_id) REFERENCES exams (exam_id) ON DELETE CASCADE
+                """);
+        ensureConstraint(connection, "exam_versions", "fk_exam_versions_creator", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT fk_exam_versions_creator
+                FOREIGN KEY (version_created_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exam_versions", "fk_exam_versions_reviewer", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT fk_exam_versions_reviewer
+                FOREIGN KEY (reviewed_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exam_versions", "chk_exam_versions_version", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT chk_exam_versions_version CHECK (version_no > 0)
+                """);
+        ensureConstraint(connection, "exam_versions", "chk_exam_versions_duration", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT chk_exam_versions_duration CHECK (duration_minutes > 0)
+                """);
+        ensureConstraint(connection, "exam_versions", "chk_exam_versions_total_score", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT chk_exam_versions_total_score CHECK (total_score = 100.00)
+                """);
+        ensureConstraint(connection, "exam_versions", "chk_exam_versions_status", """
+                ALTER TABLE exam_versions
+                ADD CONSTRAINT chk_exam_versions_status
+                CHECK (status IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'))
+                """);
+
+        ensureConstraint(connection, "exam_version_questions", "PRIMARY", """
+                ALTER TABLE exam_version_questions
+                ADD PRIMARY KEY (exam_id, exam_version_no, order_number)
+                """);
+        ensureConstraint(connection, "exam_version_questions",
+                "uq_exam_version_questions_question", """
+                ALTER TABLE exam_version_questions
+                ADD CONSTRAINT uq_exam_version_questions_question
+                UNIQUE (exam_id, exam_version_no, question_id)
+                """);
+        ensureIndex(connection, "exam_version_questions",
+                "idx_exam_version_questions_question_version", """
+                CREATE INDEX idx_exam_version_questions_question_version
+                ON exam_version_questions (question_id, question_version_no)
+                """);
+        ensureConstraint(connection, "exam_version_questions",
+                "fk_exam_version_questions_exam_version", """
+                ALTER TABLE exam_version_questions
+                ADD CONSTRAINT fk_exam_version_questions_exam_version
+                FOREIGN KEY (exam_id, exam_version_no)
+                REFERENCES exam_versions (exam_id, version_no) ON DELETE CASCADE
+                """);
+        ensureConstraint(connection, "exam_version_questions",
+                "fk_exam_version_questions_question_version", """
+                ALTER TABLE exam_version_questions
+                ADD CONSTRAINT fk_exam_version_questions_question_version
+                FOREIGN KEY (question_id, question_version_no)
+                REFERENCES question_versions (question_id, version_no)
+                """);
+        ensureConstraint(connection, "exam_version_questions",
+                "chk_exam_version_questions_order", """
+                ALTER TABLE exam_version_questions
+                ADD CONSTRAINT chk_exam_version_questions_order CHECK (order_number > 0)
+                """);
+        ensureConstraint(connection, "exam_version_questions",
+                "chk_exam_version_questions_question_version", """
+                ALTER TABLE exam_version_questions
+                ADD CONSTRAINT chk_exam_version_questions_question_version
+                CHECK (question_version_no > 0)
+                """);
+        ensureConstraint(connection, "exam_version_questions",
+                "chk_exam_version_questions_score", """
+                ALTER TABLE exam_version_questions
+                ADD CONSTRAINT chk_exam_version_questions_score CHECK (score > 0)
+                """);
+    }
+
+    private void insertCompatibilityCoordinatorAssignment(Connection connection)
+            throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        boolean transactionStarted = false;
+        Throwable migrationFailure = null;
+
+        try {
+            connection.setAutoCommit(false);
+            transactionStarted = true;
+            validateCompatibilityUser(
+                    connection,
+                    1003,
+                    "coordinator@hsts.local",
+                    "COORDINATOR"
+            );
+            validateCompatibilitySubject(connection, true);
+            executeUpdate(connection, """
+                    INSERT INTO subject_coordinators (
+                        subject_id,
+                        coordinator_user_id
+                    )
+                    SELECT
+                        subject_record.subject_id,
+                        coordinator.user_id
+                    FROM subjects subject_record
+                    JOIN users coordinator ON coordinator.user_id = 1003
+                    WHERE subject_record.subject_id = 1
+                      AND subject_record.subject_code = 'LEGACY'
+                      AND coordinator.email = 'coordinator@hsts.local'
+                      AND coordinator.role = 'COORDINATOR'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM subject_coordinators existing_assignment
+                          WHERE existing_assignment.subject_id = subject_record.subject_id
+                            AND existing_assignment.coordinator_user_id = coordinator.user_id
+                      )
+                    """);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            migrationFailure = e;
+            if (transactionStarted) {
+                rollbackWithSuppressed(connection, e);
+            }
+            throw e;
+        } finally {
+            restoreAutoCommit(connection, originalAutoCommit, migrationFailure);
+        }
+    }
+
+    private void executeSchemaStatement(Connection connection, String sql) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
+    }
+
+    private boolean tableExists(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData metaData = connection.getMetaData();
+
+        try (ResultSet resultSet = metaData.getTables(
+                connection.getCatalog(),
+                null,
+                tableName,
+                new String[]{"TABLE"}
+        )) {
+            return resultSet.next();
         }
     }
 
