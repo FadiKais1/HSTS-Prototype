@@ -7,6 +7,9 @@ import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.type.ExecutionStatus;
 import hsts.common.type.SubmissionStatus;
+import hsts.server.entity.ExamExecution;
+import hsts.server.entity.ExamSubmission;
+import hsts.server.entity.StudentAnswer;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -20,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 public class ExamSubmissionRepository {
@@ -54,6 +58,7 @@ public class ExamSubmissionRepository {
 
     private static final String LOCK_EXECUTION_SUBMISSION_SQL = """
             SELECT submission.submission_id,
+                   submission.student_user_id,
                    submission.started_at,
                    submission.status,
                    submission.allocated_duration_minutes,
@@ -95,6 +100,7 @@ public class ExamSubmissionRepository {
 
     private static final String ACTIVE_ATTEMPT_SQL = """
             SELECT submission.submission_id,
+                   submission.student_user_id,
                    submission.started_at,
                    submission.status,
                    submission.allocated_duration_minutes,
@@ -126,6 +132,7 @@ public class ExamSubmissionRepository {
 
     private static final String LOCK_STUDENT_SUBMISSION_SQL = """
             SELECT submission.submission_id,
+                   submission.student_user_id,
                    submission.started_at,
                    submission.status,
                    submission.allocated_duration_minutes,
@@ -157,6 +164,7 @@ public class ExamSubmissionRepository {
 
     private static final String LOCK_INTERNAL_SUBMISSION_SQL = """
             SELECT submission.submission_id,
+                   submission.student_user_id,
                    submission.started_at,
                    submission.status,
                    submission.allocated_duration_minutes,
@@ -366,6 +374,144 @@ public class ExamSubmissionRepository {
             VALUES (?, ?, ?, ?, ?)
             """;
 
+    private static final String SUBMISSION_ENTITY_SELECT = """
+            SELECT submission.submission_id,
+                   submission.execution_id,
+                   execution.exam_id,
+                   execution.exam_version_no,
+                   submission.student_user_id,
+                   submission.started_at,
+                   submission.submitted_at,
+                   submission.status,
+                   submission.allocated_duration_minutes,
+                   submission.extra_minutes,
+                   submission.extension_reason,
+                   submission.actual_duration_minutes,
+                   submission.automatic_score,
+                   submission.final_score,
+                   submission.teacher_feedback,
+                   submission.manual_change_reason,
+                   submission.reviewed_by_user_id,
+                   submission.reviewed_at,
+                   submission.published_by_user_id,
+                   submission.published_at,
+                   submission.created_at,
+                   submission.updated_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            """;
+
+    private static final String STUDENT_SUBMISSION_ENTITY_SQL =
+            SUBMISSION_ENTITY_SELECT + """
+            JOIN users student
+              ON student.user_id = ?
+             AND student.role = 'STUDENT'
+             AND student.status = 'ACTIVE'
+            WHERE submission.submission_id = ?
+              AND submission.student_user_id = student.user_id
+            """;
+
+    private static final String ACTIVE_STUDENT_SUBMISSION_ENTITY_SQL =
+            STUDENT_SUBMISSION_ENTITY_SQL + """
+              AND submission.status = 'IN_PROGRESS'
+            """;
+
+    private static final String MANAGER_SUBMISSION_ENTITY_SQL =
+            SUBMISSION_ENTITY_SELECT + """
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN users manager
+              ON manager.user_id = ?
+             AND manager.role IN ('TEACHER', 'COORDINATOR')
+             AND manager.status = 'ACTIVE'
+            JOIN teacher_courses assignment
+              ON assignment.teacher_user_id = manager.user_id
+             AND assignment.course_id = exam.course_id
+            WHERE submission.submission_id = ?
+            """;
+
+    private static final String INTERNAL_SUBMISSION_ENTITY_SQL =
+            SUBMISSION_ENTITY_SELECT + """
+            WHERE submission.submission_id = ?
+            """;
+
+    private static final String EXPIRED_SUBMISSION_ENTITIES_SQL =
+            SUBMISSION_ENTITY_SELECT + """
+            WHERE submission.status = 'IN_PROGRESS'
+              AND TIMESTAMPADD(
+                    MINUTE,
+                    submission.allocated_duration_minutes + submission.extra_minutes,
+                    submission.started_at
+                  ) <= ?
+            ORDER BY TIMESTAMPADD(
+                         MINUTE,
+                         submission.allocated_duration_minutes
+                             + submission.extra_minutes,
+                         submission.started_at
+                     ) ASC,
+                     submission.submission_id ASC
+            """;
+
+    private static final String SUBMISSION_ANSWERS_ENTITY_SQL = """
+            SELECT answer.answer_id,
+                   answer.submission_id,
+                   answer.question_id,
+                   answer.question_version_no,
+                   answer.selected_option_number,
+                   answer.answer_content,
+                   answer.is_correct,
+                   answer.score_received,
+                   answer.created_at,
+                   answer.updated_at,
+                   selection.order_number
+            FROM student_answers answer
+            JOIN exam_submissions submission
+              ON submission.submission_id = answer.submission_id
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_version_questions selection
+              ON selection.exam_id = execution.exam_id
+             AND selection.exam_version_no = execution.exam_version_no
+             AND selection.question_id = answer.question_id
+             AND selection.question_version_no = answer.question_version_no
+            WHERE answer.submission_id = ?
+            ORDER BY selection.order_number ASC,
+                     answer.answer_id ASC
+            """;
+
+    private static final String UPDATE_ENTITY_GRADED_ANSWER_SQL = """
+            UPDATE student_answers
+            SET is_correct = ?,
+                score_received = ?,
+                updated_at = ?
+            WHERE answer_id = ?
+              AND submission_id = ?
+              AND question_id = ?
+              AND question_version_no = ?
+            """;
+
+    private static final String FINALIZE_ENTITY_SUBMISSION_SQL = """
+            UPDATE exam_submissions
+            SET submitted_at = ?,
+                status = ?,
+                actual_duration_minutes = ?,
+                automatic_score = ?,
+                final_score = ?,
+                updated_at = ?
+            WHERE submission_id = ?
+              AND status = 'IN_PROGRESS'
+            """;
+
+    private static final String UPDATE_ENTITY_EXTENSION_SQL = """
+            UPDATE exam_submissions
+            SET extra_minutes = ?,
+                extension_reason = ?,
+                updated_at = ?
+            WHERE submission_id = ?
+              AND status = 'IN_PROGRESS'
+              AND extra_minutes = ?
+            """;
+
     private final DatabaseController databaseController;
 
     public ExamSubmissionRepository() {
@@ -378,12 +524,53 @@ public class ExamSubmissionRepository {
 
     public ExamAttemptDTO startOrResume(int authenticatedStudentId, int executionId,
                                         LocalDateTime now) {
+        return startOrResumeInternal(
+                authenticatedStudentId,
+                executionId,
+                null,
+                now,
+                (connection, submission) -> loadAttempt(
+                        connection,
+                        authenticatedStudentId,
+                        submission,
+                        now
+                )
+        );
+    }
+
+    public ExamSubmission startOrResume(int authenticatedStudentUserId,
+                                        ExamExecution execution,
+                                        LocalDateTime currentTime) {
+        Objects.requireNonNull(execution, "Exam execution is required");
+        return startOrResumeInternal(
+                authenticatedStudentUserId,
+                execution.getExecutionId(),
+                execution,
+                currentTime,
+                (connection, submission) -> loadInternalEntity(
+                        connection,
+                        submission.submissionId
+                )
+        );
+    }
+
+    private <T> T startOrResumeInternal(
+            int authenticatedStudentId,
+            int executionId,
+            ExamExecution suppliedExecution,
+            LocalDateTime now,
+            SubmissionResultLoader<T> resultLoader
+    ) {
+        Objects.requireNonNull(now, "Server time is required");
         return executeInTransaction("Failed to start exam attempt", connection -> {
             LockedExecution execution = lockAvailableExecution(
                     connection,
                     authenticatedStudentId,
                     executionId
             ).orElseThrow(() -> new IllegalStateException("Execution not available"));
+            if (suppliedExecution != null) {
+                requireMatchingExecution(suppliedExecution, execution);
+            }
 
             Optional<SubmissionRecord> existing = findExecutionSubmission(
                     connection,
@@ -391,13 +578,8 @@ public class ExamSubmissionRepository {
                     authenticatedStudentId
             );
             if (existing.isPresent()) {
-                return resumeAttempt(
-                        connection,
-                        authenticatedStudentId,
-                        execution,
-                        existing.get(),
-                        now
-                );
+                requireResumableAttempt(existing.get(), now);
+                return resultLoader.load(connection, existing.get());
             }
 
             requireNewAttemptAvailable(execution, now);
@@ -423,26 +605,89 @@ public class ExamSubmissionRepository {
                 if (racedSubmission.isEmpty()) {
                     throw exception;
                 }
-                return resumeAttempt(
-                        connection,
-                        authenticatedStudentId,
-                        execution,
-                        racedSubmission.get(),
-                        now
-                );
+                requireResumableAttempt(racedSubmission.get(), now);
+                return resultLoader.load(connection, racedSubmission.get());
             }
 
             incrementStartedCount(connection, executionId);
             SubmissionRecord created = new SubmissionRecord(
                     submissionId,
                     execution,
+                    authenticatedStudentId,
                     now,
                     SubmissionStatus.IN_PROGRESS,
                     execution.durationMinutes,
                     0
             );
-            return loadAttempt(connection, authenticatedStudentId, created, now);
+            return resultLoader.load(connection, created);
         });
+    }
+
+    public Optional<ExamSubmission> findEntityForStudent(
+            int authenticatedStudentUserId,
+            int submissionId
+    ) {
+        return findSubmissionEntity(
+                STUDENT_SUBMISSION_ENTITY_SQL,
+                authenticatedStudentUserId,
+                submissionId,
+                "Failed to load student exam submission entity"
+        );
+    }
+
+    public Optional<ExamSubmission> findActiveEntityForStudent(
+            int authenticatedStudentUserId,
+            int submissionId
+    ) {
+        return findSubmissionEntity(
+                ACTIVE_STUDENT_SUBMISSION_ENTITY_SQL,
+                authenticatedStudentUserId,
+                submissionId,
+                "Failed to load active student exam submission entity"
+        );
+    }
+
+    public Optional<ExamSubmission> findEntityForManager(
+            int authenticatedManagerUserId,
+            int submissionId
+    ) {
+        return findSubmissionEntity(
+                MANAGER_SUBMISSION_ENTITY_SQL,
+                authenticatedManagerUserId,
+                submissionId,
+                "Failed to load manager exam submission entity"
+        );
+    }
+
+    public List<ExamSubmission> findExpiredInProgressEntities(
+            LocalDateTime currentTime
+    ) {
+        Objects.requireNonNull(currentTime, "Server time is required");
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     EXPIRED_SUBMISSION_ENTITIES_SQL
+             )) {
+            statement.setObject(1, currentTime);
+            List<SubmissionEntityData> rows = new ArrayList<>();
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    rows.add(mapSubmissionEntityData(resultSet));
+                }
+            }
+            List<ExamSubmission> submissions = new ArrayList<>(rows.size());
+            for (SubmissionEntityData row : rows) {
+                submissions.add(row.rehydrate(loadAnswerEntities(
+                        connection,
+                        row.submissionId
+                )));
+            }
+            return List.copyOf(submissions);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load expired exam submission entities",
+                    exception
+            );
+        }
     }
 
     public Optional<ExamAttemptDTO> findActiveForStudent(int authenticatedStudentId,
@@ -476,36 +721,125 @@ public class ExamSubmissionRepository {
         if (payload == null) {
             throw new IllegalArgumentException("Answer data is missing");
         }
+        AnswerCommand command = new AnswerCommand(
+                payload.getSubmissionId(),
+                payload.getQuestionId(),
+                null,
+                payload.getSelectedOptionNumber()
+        );
+        return saveAnswerInternal(
+                authenticatedStudentId,
+                command,
+                null,
+                now,
+                (connection, submission) -> new StudentAnswerDTO(
+                        command.questionId,
+                        command.selectedOptionNumber,
+                        now
+                )
+        );
+    }
 
+    public ExamSubmission persistAnswer(
+            int authenticatedStudentUserId,
+            ExamSubmission submission,
+            StudentAnswer answer,
+            LocalDateTime currentTime
+    ) {
+        Objects.requireNonNull(submission, "Exam submission is required");
+        Objects.requireNonNull(answer, "Student answer is required");
+        if (submission.getSubmissionId() <= 0) {
+            throw new IllegalArgumentException("Persisted submission ID must be positive");
+        }
+        if (submission.getStudentUserId() != authenticatedStudentUserId) {
+            throw new IllegalArgumentException("Exam attempt not found: "
+                    + submission.getSubmissionId());
+        }
+        if (answer.getSubmissionId() != submission.getSubmissionId()) {
+            throw new IllegalArgumentException(
+                    "Student answer belongs to a different submission"
+            );
+        }
+        if (answer.isGraded()) {
+            throw new IllegalArgumentException("Saved answer must be ungraded");
+        }
+
+        AnswerCommand command = new AnswerCommand(
+                submission.getSubmissionId(),
+                answer.getQuestionId(),
+                answer.getQuestionVersionNo(),
+                answer.getSelectedOptionNumber()
+        );
+        return saveAnswerInternal(
+                authenticatedStudentUserId,
+                command,
+                submission,
+                currentTime,
+                (connection, locked) -> loadInternalEntity(
+                        connection,
+                        locked.submissionId
+                )
+        );
+    }
+
+    private <T> T saveAnswerInternal(
+            int authenticatedStudentId,
+            AnswerCommand command,
+            ExamSubmission suppliedSubmission,
+            LocalDateTime now,
+            SubmissionResultLoader<T> resultLoader
+    ) {
+        Objects.requireNonNull(now, "Server time is required");
         return executeInTransaction("Failed to save exam answer", connection -> {
             SubmissionRecord submission = lockStudentSubmission(
                     connection,
                     authenticatedStudentId,
-                    payload.getSubmissionId()
+                    command.submissionId
             ).orElseThrow(() -> new IllegalArgumentException(
-                    "Exam attempt not found: " + payload.getSubmissionId()
+                    "Exam attempt not found: " + command.submissionId
             ));
 
             requireInProgress(submission);
             requireBeforeDeadline(submission, now);
+            if (suppliedSubmission != null) {
+                requireMatchingSubmission(suppliedSubmission, submission);
+                if (suppliedSubmission.getStatus()
+                        != SubmissionStatus.IN_PROGRESS) {
+                    throw new IllegalStateException(
+                            "Exam attempt already submitted"
+                    );
+                }
+                if (!suppliedSubmission.isEditable(now)) {
+                    throw new IllegalStateException("Exam time has expired");
+                }
+            }
             int questionVersionNo = lockExamQuestionVersion(
                     connection,
                     submission,
-                    payload.getQuestionId()
+                    command.questionId
             ).orElseThrow(() -> new IllegalArgumentException(
-                    "Question not found in exam: " + payload.getQuestionId()
+                    "Question not found in exam: " + command.questionId
             ));
-            if (payload.getSelectedOptionNumber() < 1
-                    || payload.getSelectedOptionNumber() > 4) {
+            if (command.questionVersionNo != null
+                    && command.questionVersionNo != questionVersionNo) {
+                throw new IllegalArgumentException(
+                        "Question answer version does not match the submission"
+                );
+            }
+            if (command.selectedOptionNumber < 1
+                    || command.selectedOptionNumber > 4) {
                 throw new IllegalArgumentException("Invalid answer option");
             }
 
-            upsertAnswer(connection, payload, questionVersionNo, now);
-            return new StudentAnswerDTO(
-                    payload.getQuestionId(),
-                    payload.getSelectedOptionNumber(),
+            upsertAnswer(
+                    connection,
+                    command.submissionId,
+                    command.questionId,
+                    questionVersionNo,
+                    command.selectedOptionNumber,
                     now
             );
+            return resultLoader.load(connection, submission);
         });
     }
 
@@ -532,6 +866,35 @@ public class ExamSubmissionRepository {
             );
             return loadAttempt(connection, authenticatedStudentId, finalized, now);
         });
+    }
+
+    public ExamSubmission persistStudentSubmission(
+            int authenticatedStudentUserId,
+            ExamSubmission submission
+    ) {
+        Objects.requireNonNull(submission, "Exam submission is required");
+        if (submission.getStudentUserId() != authenticatedStudentUserId) {
+            throw new IllegalArgumentException("Exam attempt not found: "
+                    + submission.getSubmissionId());
+        }
+        requirePersistableFinalState(submission, false);
+
+        return executeInTransaction(
+                "Failed to persist student exam submission",
+                connection -> {
+                    SubmissionRecord source = lockStudentSubmission(
+                            connection,
+                            authenticatedStudentUserId,
+                            submission.getSubmissionId()
+                    ).orElseThrow(() -> new IllegalArgumentException(
+                            "Exam attempt not found: " + submission.getSubmissionId()
+                    ));
+                    requireInProgress(source);
+                    requireMatchingSubmission(submission, source);
+                    persistFinalizedEntity(connection, source, submission);
+                    return loadInternalEntity(connection, submission.getSubmissionId());
+                }
+        );
     }
 
     public List<Integer> findExpiredSubmissionIds(LocalDateTime now) {
@@ -575,6 +938,32 @@ public class ExamSubmissionRepository {
         });
     }
 
+    public ExamSubmission persistAutomaticSubmission(
+            ExamSubmission submission
+    ) {
+        Objects.requireNonNull(submission, "Exam submission is required");
+        requirePersistableFinalState(submission, true);
+
+        return executeInTransaction(
+                "Failed to persist automatic exam submission",
+                connection -> {
+                    SubmissionRecord source = lockInternalSubmission(
+                            connection,
+                            submission.getSubmissionId()
+                    ).orElseThrow(() -> new IllegalArgumentException(
+                            "Exam attempt not found: " + submission.getSubmissionId()
+                    ));
+                    requireInProgress(source);
+                    requireMatchingSubmission(submission, source);
+                    if (deadline(source).isAfter(submission.getSubmittedAt())) {
+                        throw new IllegalStateException("Exam time has not expired");
+                    }
+                    persistFinalizedEntity(connection, source, submission);
+                    return loadInternalEntity(connection, submission.getSubmissionId());
+                }
+        );
+    }
+
     public boolean extendTime(int authenticatedManagerId,
                               ExtendSubmissionTimePayload payload,
                               LocalDateTime now) {
@@ -602,6 +991,94 @@ public class ExamSubmissionRepository {
             updateExtension(connection, payload);
             insertExtensionAudit(connection, authenticatedManagerId, payload, now);
             return true;
+        });
+    }
+
+    public ExamSubmission persistExtension(
+            int authenticatedManagerUserId,
+            ExamSubmission submission,
+            int addedMinutes,
+            String reason,
+            LocalDateTime currentTime
+    ) {
+        Objects.requireNonNull(submission, "Exam submission is required");
+        Objects.requireNonNull(currentTime, "Server time is required");
+        if (addedMinutes <= 0) {
+            throw new IllegalArgumentException("Extra minutes must be positive");
+        }
+        String normalizedReason = requireText(reason, "Extension reason is required");
+        if (submission.getStatus() != SubmissionStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Exam attempt already submitted");
+        }
+        if (!normalizedReason.equals(submission.getExtensionReason())) {
+            throw new IllegalArgumentException(
+                    "Extension reason does not match submission state"
+            );
+        }
+        if (!currentTime.equals(submission.getUpdatedAt())) {
+            throw new IllegalArgumentException(
+                    "Extension timestamp does not match submission state"
+            );
+        }
+        int previousExtraMinutes;
+        try {
+            previousExtraMinutes = Math.subtractExact(
+                    submission.getExtraMinutes(),
+                    addedMinutes
+            );
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(
+                    "Extension minutes do not match submission state",
+                    exception
+            );
+        }
+        if (previousExtraMinutes < 0) {
+            throw new IllegalArgumentException(
+                    "Extension minutes do not match submission state"
+            );
+        }
+
+        return executeInTransaction("Failed to extend submission time", connection -> {
+            ExtensionTarget target = lockExtensionTarget(
+                    connection,
+                    authenticatedManagerUserId,
+                    submission.getSubmissionId()
+            ).orElseThrow(() -> new IllegalArgumentException(
+                    "Exam attempt not found: " + submission.getSubmissionId()
+            ));
+            if (target.status != SubmissionStatus.IN_PROGRESS) {
+                throw new IllegalStateException("Exam attempt already submitted");
+            }
+            if (!currentTime.isBefore(target.deadline())) {
+                throw new IllegalStateException("Exam time has expired");
+            }
+            if (!submission.getStartedAt().equals(target.startedAt)
+                    || submission.getAllocatedDurationMinutes()
+                    != target.allocatedDurationMinutes
+                    || target.extraMinutes != previousExtraMinutes
+                    || !submission.getEffectiveDeadline().equals(
+                            target.deadline().plusMinutes(addedMinutes)
+                    )) {
+                throw new IllegalStateException(
+                        "Extension state does not match persisted submission"
+                );
+            }
+
+            updateEntityExtension(
+                    connection,
+                    submission,
+                    previousExtraMinutes,
+                    normalizedReason
+            );
+            insertExtensionAudit(
+                    connection,
+                    authenticatedManagerUserId,
+                    submission.getSubmissionId(),
+                    addedMinutes,
+                    normalizedReason,
+                    currentTime
+            );
+            return loadInternalEntity(connection, submission.getSubmissionId());
         });
     }
 
@@ -654,6 +1131,7 @@ public class ExamSubmissionRepository {
                 return Optional.of(new SubmissionRecord(
                         resultSet.getInt("submission_id"),
                         execution,
+                        resultSet.getInt("student_user_id"),
                         resultSet.getObject("started_at", LocalDateTime.class),
                         SubmissionStatus.valueOf(resultSet.getString("status")),
                         resultSet.getInt("allocated_duration_minutes"),
@@ -663,18 +1141,14 @@ public class ExamSubmissionRepository {
         }
     }
 
-    private ExamAttemptDTO resumeAttempt(Connection connection,
-                                         int authenticatedStudentId,
-                                         LockedExecution execution,
-                                         SubmissionRecord submission,
-                                         LocalDateTime now) throws SQLException {
+    private void requireResumableAttempt(SubmissionRecord submission,
+                                         LocalDateTime now) {
         if (submission.status != SubmissionStatus.IN_PROGRESS) {
             throw new IllegalStateException("Exam attempt already submitted");
         }
         if (!now.isBefore(deadline(submission))) {
             throw new IllegalStateException("Execution not available");
         }
-        return loadAttempt(connection, authenticatedStudentId, submission, now);
     }
 
     private void requireNewAttemptAvailable(LockedExecution execution, LocalDateTime now) {
@@ -790,6 +1264,7 @@ public class ExamSubmissionRepository {
         return new SubmissionRecord(
                 resultSet.getInt("submission_id"),
                 execution,
+                resultSet.getInt("student_user_id"),
                 resultSet.getObject("started_at", LocalDateTime.class),
                 SubmissionStatus.valueOf(resultSet.getString("status")),
                 resultSet.getInt("allocated_duration_minutes"),
@@ -883,6 +1358,138 @@ public class ExamSubmissionRepository {
         return answers;
     }
 
+    private Optional<ExamSubmission> findSubmissionEntity(
+            String sql,
+            int authenticatedUserId,
+            int submissionId,
+            String failureMessage
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, submissionId);
+            return loadSubmissionEntity(connection, statement);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(failureMessage, exception);
+        }
+    }
+
+    private ExamSubmission loadInternalEntity(Connection connection,
+                                               int submissionId)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                INTERNAL_SUBMISSION_ENTITY_SQL
+        )) {
+            statement.setInt(1, submissionId);
+            return loadSubmissionEntity(connection, statement).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Persisted exam submission could not be reloaded: "
+                                    + submissionId
+                    )
+            );
+        }
+    }
+
+    private Optional<ExamSubmission> loadSubmissionEntity(
+            Connection connection,
+            PreparedStatement statement
+    ) throws SQLException {
+        SubmissionEntityData data;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                return Optional.empty();
+            }
+            data = mapSubmissionEntityData(resultSet);
+            if (resultSet.next()) {
+                throw new IllegalStateException(
+                        "Duplicate persisted exam submission: " + data.submissionId
+                );
+            }
+        }
+        return Optional.of(data.rehydrate(loadAnswerEntities(
+                connection,
+                data.submissionId
+        )));
+    }
+
+    private SubmissionEntityData mapSubmissionEntityData(ResultSet resultSet)
+            throws SQLException {
+        int submissionId = resultSet.getInt("submission_id");
+        String statusValue = resultSet.getString("status");
+        final SubmissionStatus status;
+        try {
+            status = SubmissionStatus.valueOf(statusValue);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new IllegalArgumentException(
+                    "Submission status is invalid: " + submissionId,
+                    exception
+            );
+        }
+        return new SubmissionEntityData(
+                submissionId,
+                resultSet.getInt("execution_id"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getInt("student_user_id"),
+                resultSet.getObject("started_at", LocalDateTime.class),
+                resultSet.getObject("submitted_at", LocalDateTime.class),
+                status,
+                resultSet.getInt("allocated_duration_minutes"),
+                resultSet.getInt("extra_minutes"),
+                resultSet.getString("extension_reason"),
+                resultSet.getObject("actual_duration_minutes", Integer.class),
+                resultSet.getBigDecimal("automatic_score"),
+                resultSet.getBigDecimal("final_score"),
+                resultSet.getString("teacher_feedback"),
+                resultSet.getString("manual_change_reason"),
+                resultSet.getObject("reviewed_by_user_id", Integer.class),
+                resultSet.getObject("reviewed_at", LocalDateTime.class),
+                resultSet.getObject("published_by_user_id", Integer.class),
+                resultSet.getObject("published_at", LocalDateTime.class),
+                resultSet.getObject("created_at", LocalDateTime.class),
+                resultSet.getObject("updated_at", LocalDateTime.class)
+        );
+    }
+
+    private List<StudentAnswer> loadAnswerEntities(Connection connection,
+                                                   int submissionId)
+            throws SQLException {
+        List<StudentAnswer> answers = new ArrayList<>();
+        int previousOrder = 0;
+        try (PreparedStatement statement = connection.prepareStatement(
+                SUBMISSION_ANSWERS_ENTITY_SQL
+        )) {
+            statement.setInt(1, submissionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    Integer orderNumber = resultSet.getObject(
+                            "order_number",
+                            Integer.class
+                    );
+                    if (orderNumber == null || orderNumber <= previousOrder) {
+                        throw new IllegalArgumentException(
+                                "Submission answer order is invalid: " + submissionId
+                        );
+                    }
+                    previousOrder = orderNumber;
+                    answers.add(StudentAnswer.rehydrate(
+                            resultSet.getInt("answer_id"),
+                            resultSet.getInt("submission_id"),
+                            resultSet.getInt("question_id"),
+                            resultSet.getInt("question_version_no"),
+                            resultSet.getInt("selected_option_number"),
+                            resultSet.getString("answer_content"),
+                            resultSet.getObject("is_correct", Boolean.class),
+                            resultSet.getBigDecimal("score_received"),
+                            resultSet.getObject("created_at", LocalDateTime.class),
+                            resultSet.getObject("updated_at", LocalDateTime.class)
+                    ));
+                }
+            }
+        }
+        return answers;
+    }
+
     private void requireInProgress(SubmissionRecord submission) {
         if (submission.status != SubmissionStatus.IN_PROGRESS) {
             throw new IllegalStateException("Exam attempt already submitted");
@@ -892,6 +1499,73 @@ public class ExamSubmissionRepository {
     private void requireBeforeDeadline(SubmissionRecord submission, LocalDateTime now) {
         if (!now.isBefore(deadline(submission))) {
             throw new IllegalStateException("Exam time has expired");
+        }
+    }
+
+    private void requireMatchingExecution(ExamExecution supplied,
+                                          LockedExecution persisted) {
+        if (supplied.getExecutionId() != persisted.executionId
+                || supplied.getExamId() != persisted.examId
+                || supplied.getExamVersionNo() != persisted.examVersionNo
+                || supplied.getDurationMinutes() != persisted.durationMinutes
+                || !supplied.getExecutionCode().equals(persisted.executionCode)
+                || !supplied.getOpeningTime().equals(persisted.openingTime)
+                || !supplied.getClosingTime().equals(persisted.closingTime)) {
+            throw new IllegalStateException(
+                    "Execution state does not match supplied entity"
+            );
+        }
+    }
+
+    private void requireMatchingSubmission(ExamSubmission supplied,
+                                           SubmissionRecord persisted) {
+        if (supplied.getSubmissionId() != persisted.submissionId
+                || supplied.getExecutionId() != persisted.execution.executionId
+                || supplied.getExamId() != persisted.execution.examId
+                || supplied.getExamVersionNo()
+                != persisted.execution.examVersionNo
+                || supplied.getStudentUserId() != persisted.studentUserId
+                || !supplied.getStartedAt().equals(persisted.startedAt)
+                || supplied.getAllocatedDurationMinutes()
+                != persisted.allocatedDurationMinutes) {
+            throw new IllegalStateException(
+                    "Submission state does not match persisted attempt"
+            );
+        }
+    }
+
+    private void requirePersistableFinalState(ExamSubmission submission,
+                                              boolean automatic) {
+        if (submission.getSubmissionId() <= 0) {
+            throw new IllegalArgumentException("Persisted submission ID must be positive");
+        }
+        SubmissionStatus status = submission.getStatus();
+        if (automatic) {
+            if (status != SubmissionStatus.AUTO_SUBMITTED) {
+                throw new IllegalArgumentException(
+                        "Automatic submission must be AUTO_SUBMITTED"
+                );
+            }
+        } else if (status != SubmissionStatus.SUBMITTED
+                && status != SubmissionStatus.AUTO_SUBMITTED) {
+            throw new IllegalArgumentException(
+                    "Student submission must be finalized"
+            );
+        }
+        if (submission.getSubmittedAt() == null
+                || submission.getActualDurationMinutes() == null) {
+            throw new IllegalArgumentException(
+                    "Finalized submission state is incomplete"
+            );
+        }
+        if (submission.getReviewedByUserId() != null
+                || submission.getReviewedAt() != null
+                || submission.getPublishedByUserId() != null
+                || submission.getPublishedAt() != null
+                || submission.getStatus() == SubmissionStatus.PUBLISHED) {
+            throw new IllegalArgumentException(
+                    "Finalization persistence cannot publish or review results"
+            );
         }
     }
 
@@ -913,14 +1587,15 @@ public class ExamSubmissionRepository {
         }
     }
 
-    private void upsertAnswer(Connection connection, SaveExamAnswerPayload payload,
-                              int questionVersionNo, LocalDateTime now)
+    private void upsertAnswer(Connection connection, int submissionId,
+                              int questionId, int questionVersionNo,
+                              int selectedOptionNumber, LocalDateTime now)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(UPSERT_ANSWER_SQL)) {
-            statement.setInt(1, payload.getSubmissionId());
-            statement.setInt(2, payload.getQuestionId());
+            statement.setInt(1, submissionId);
+            statement.setInt(2, questionId);
             statement.setInt(3, questionVersionNo);
-            statement.setInt(4, payload.getSelectedOptionNumber());
+            statement.setInt(4, selectedOptionNumber);
             statement.setNull(5, Types.LONGVARCHAR);
             statement.setNull(6, Types.BOOLEAN);
             statement.setNull(7, Types.DECIMAL);
@@ -1078,12 +1753,26 @@ public class ExamSubmissionRepository {
     private void insertExtensionAudit(Connection connection, int authenticatedManagerId,
                                       ExtendSubmissionTimePayload payload,
                                       LocalDateTime now) throws SQLException {
+        insertExtensionAudit(
+                connection,
+                authenticatedManagerId,
+                payload.getSubmissionId(),
+                payload.getExtraMinutes(),
+                payload.getReason(),
+                now
+        );
+    }
+
+    private void insertExtensionAudit(Connection connection, int authenticatedManagerId,
+                                      int submissionId, int addedMinutes,
+                                      String reason, LocalDateTime now)
+            throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 INSERT_EXTENSION_AUDIT_SQL
         )) {
-            statement.setInt(1, payload.getSubmissionId());
-            statement.setInt(2, payload.getExtraMinutes());
-            statement.setString(3, payload.getReason());
+            statement.setInt(1, submissionId);
+            statement.setInt(2, addedMinutes);
+            statement.setString(3, reason);
             statement.setInt(4, authenticatedManagerId);
             statement.setObject(5, now);
             if (statement.executeUpdate() != 1) {
@@ -1092,10 +1781,130 @@ public class ExamSubmissionRepository {
         }
     }
 
+    private void updateEntityExtension(Connection connection,
+                                       ExamSubmission submission,
+                                       int previousExtraMinutes,
+                                       String normalizedReason)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_ENTITY_EXTENSION_SQL
+        )) {
+            statement.setInt(1, submission.getExtraMinutes());
+            statement.setString(2, normalizedReason);
+            statement.setObject(3, submission.getUpdatedAt());
+            statement.setInt(4, submission.getSubmissionId());
+            statement.setInt(5, previousExtraMinutes);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException(
+                        "Extension state does not match persisted submission"
+                );
+            }
+        }
+    }
+
+    private void persistFinalizedEntity(Connection connection,
+                                        SubmissionRecord source,
+                                        ExamSubmission submission)
+            throws SQLException {
+        persistEntityAnswerGrades(connection, source, submission);
+        try (PreparedStatement statement = connection.prepareStatement(
+                FINALIZE_ENTITY_SUBMISSION_SQL
+        )) {
+            statement.setObject(1, submission.getSubmittedAt());
+            statement.setString(2, submission.getStatus().name());
+            statement.setInt(3, submission.getActualDurationMinutes());
+            setNullableBigDecimal(
+                    statement,
+                    4,
+                    submission.getAutomaticScoreValue().orElse(null)
+            );
+            setNullableBigDecimal(
+                    statement,
+                    5,
+                    submission.getServerFinalScore().orElse(null)
+            );
+            statement.setObject(6, submission.getUpdatedAt());
+            statement.setInt(7, submission.getSubmissionId());
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Exam attempt already submitted");
+            }
+        }
+        incrementFinalizationCounter(
+                connection,
+                source.execution.executionId,
+                submission.getStatus()
+        );
+    }
+
+    private void persistEntityAnswerGrades(Connection connection,
+                                           SubmissionRecord source,
+                                           ExamSubmission submission)
+            throws SQLException {
+        for (StudentAnswer answer : submission.getStudentAnswers()) {
+            if (answer.getAnswerId() <= 0
+                    || answer.getSubmissionId() != submission.getSubmissionId()) {
+                throw new IllegalArgumentException(
+                        "Submission contains an unpersisted student answer"
+                );
+            }
+            int persistedVersion = lockExamQuestionVersion(
+                    connection,
+                    source,
+                    answer.getQuestionId()
+            ).orElseThrow(() -> new IllegalArgumentException(
+                    "Question not found in exam: " + answer.getQuestionId()
+            ));
+            if (persistedVersion != answer.getQuestionVersionNo()) {
+                throw new IllegalArgumentException(
+                        "Question answer version does not match the submission"
+                );
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                    UPDATE_ENTITY_GRADED_ANSWER_SQL
+            )) {
+                Boolean correctness = answer.getCorrectness().orElse(null);
+                BigDecimal score = answer.getScoreReceivedValue().orElse(null);
+                if (correctness == null) {
+                    statement.setNull(1, Types.BOOLEAN);
+                    statement.setNull(2, Types.DECIMAL);
+                } else {
+                    statement.setBoolean(1, correctness);
+                    statement.setBigDecimal(2, score);
+                }
+                statement.setObject(3, answer.getUpdatedAt());
+                statement.setInt(4, answer.getAnswerId());
+                statement.setInt(5, answer.getSubmissionId());
+                statement.setInt(6, answer.getQuestionId());
+                statement.setInt(7, answer.getQuestionVersionNo());
+                if (statement.executeUpdate() != 1) {
+                    throw new SQLException(
+                            "Persisted answer grading update failed"
+                    );
+                }
+            }
+        }
+    }
+
+    private void setNullableBigDecimal(PreparedStatement statement, int index,
+                                       BigDecimal value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.DECIMAL);
+        } else {
+            statement.setBigDecimal(index, value);
+        }
+    }
+
     private LocalDateTime deadline(SubmissionRecord submission) {
         return submission.startedAt.plusMinutes(
                 (long) submission.allocatedDurationMinutes + submission.extraMinutes
         );
+    }
+
+    private String requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return value.trim();
     }
 
     private boolean isSubmissionCollision(SQLException exception) {
@@ -1166,6 +1975,129 @@ public class ExamSubmissionRepository {
         T execute(Connection connection) throws SQLException;
     }
 
+    @FunctionalInterface
+    private interface SubmissionResultLoader<T> {
+        T load(Connection connection, SubmissionRecord submission)
+                throws SQLException;
+    }
+
+    private static final class AnswerCommand {
+        private final int submissionId;
+        private final int questionId;
+        private final Integer questionVersionNo;
+        private final int selectedOptionNumber;
+
+        private AnswerCommand(int submissionId, int questionId,
+                              Integer questionVersionNo,
+                              int selectedOptionNumber) {
+            this.submissionId = submissionId;
+            this.questionId = questionId;
+            this.questionVersionNo = questionVersionNo;
+            this.selectedOptionNumber = selectedOptionNumber;
+        }
+    }
+
+    private static final class SubmissionEntityData {
+        private final int submissionId;
+        private final int executionId;
+        private final int examId;
+        private final int examVersionNo;
+        private final int studentUserId;
+        private final LocalDateTime startedAt;
+        private final LocalDateTime submittedAt;
+        private final SubmissionStatus status;
+        private final int allocatedDurationMinutes;
+        private final int extraMinutes;
+        private final String extensionReason;
+        private final Integer actualDurationMinutes;
+        private final BigDecimal automaticScore;
+        private final BigDecimal finalScore;
+        private final String teacherFeedback;
+        private final String manualChangeReason;
+        private final Integer reviewedByUserId;
+        private final LocalDateTime reviewedAt;
+        private final Integer publishedByUserId;
+        private final LocalDateTime publishedAt;
+        private final LocalDateTime createdAt;
+        private final LocalDateTime updatedAt;
+
+        private SubmissionEntityData(
+                int submissionId,
+                int executionId,
+                int examId,
+                int examVersionNo,
+                int studentUserId,
+                LocalDateTime startedAt,
+                LocalDateTime submittedAt,
+                SubmissionStatus status,
+                int allocatedDurationMinutes,
+                int extraMinutes,
+                String extensionReason,
+                Integer actualDurationMinutes,
+                BigDecimal automaticScore,
+                BigDecimal finalScore,
+                String teacherFeedback,
+                String manualChangeReason,
+                Integer reviewedByUserId,
+                LocalDateTime reviewedAt,
+                Integer publishedByUserId,
+                LocalDateTime publishedAt,
+                LocalDateTime createdAt,
+                LocalDateTime updatedAt
+        ) {
+            this.submissionId = submissionId;
+            this.executionId = executionId;
+            this.examId = examId;
+            this.examVersionNo = examVersionNo;
+            this.studentUserId = studentUserId;
+            this.startedAt = startedAt;
+            this.submittedAt = submittedAt;
+            this.status = status;
+            this.allocatedDurationMinutes = allocatedDurationMinutes;
+            this.extraMinutes = extraMinutes;
+            this.extensionReason = extensionReason;
+            this.actualDurationMinutes = actualDurationMinutes;
+            this.automaticScore = automaticScore;
+            this.finalScore = finalScore;
+            this.teacherFeedback = teacherFeedback;
+            this.manualChangeReason = manualChangeReason;
+            this.reviewedByUserId = reviewedByUserId;
+            this.reviewedAt = reviewedAt;
+            this.publishedByUserId = publishedByUserId;
+            this.publishedAt = publishedAt;
+            this.createdAt = createdAt;
+            this.updatedAt = updatedAt;
+        }
+
+        private ExamSubmission rehydrate(List<StudentAnswer> answers) {
+            return ExamSubmission.rehydrate(
+                    submissionId,
+                    executionId,
+                    examId,
+                    examVersionNo,
+                    studentUserId,
+                    startedAt,
+                    submittedAt,
+                    status,
+                    allocatedDurationMinutes,
+                    extraMinutes,
+                    extensionReason,
+                    actualDurationMinutes,
+                    automaticScore,
+                    finalScore,
+                    teacherFeedback,
+                    manualChangeReason,
+                    reviewedByUserId,
+                    reviewedAt,
+                    publishedByUserId,
+                    publishedAt,
+                    createdAt,
+                    updatedAt,
+                    answers
+            );
+        }
+    }
+
     private static final class LockedExecution {
         private final int executionId;
         private final String executionCode;
@@ -1199,16 +2131,19 @@ public class ExamSubmissionRepository {
     private static final class SubmissionRecord {
         private final int submissionId;
         private final LockedExecution execution;
+        private final int studentUserId;
         private final LocalDateTime startedAt;
         private final SubmissionStatus status;
         private final int allocatedDurationMinutes;
         private final int extraMinutes;
 
         private SubmissionRecord(int submissionId, LockedExecution execution,
+                                 int studentUserId,
                                  LocalDateTime startedAt, SubmissionStatus status,
                                  int allocatedDurationMinutes, int extraMinutes) {
             this.submissionId = submissionId;
             this.execution = execution;
+            this.studentUserId = studentUserId;
             this.startedAt = startedAt;
             this.status = status;
             this.allocatedDurationMinutes = allocatedDurationMinutes;
@@ -1219,6 +2154,7 @@ public class ExamSubmissionRepository {
             return new SubmissionRecord(
                     submissionId,
                     execution,
+                    studentUserId,
                     startedAt,
                     newStatus,
                     allocatedDurationMinutes,
