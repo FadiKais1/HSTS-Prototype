@@ -1,5 +1,7 @@
 package hsts.server.repository;
 
+import hsts.server.security.PasswordHasher;
+
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
@@ -25,6 +27,7 @@ public class DatabaseInitializer {
         migrateQuestionBankData();
         createQuestionBankIndexesAndConstraints();
         migrateExamSchema();
+        migrateExecutionSchema();
     }
 
     private void createUsersTable() {
@@ -204,6 +207,726 @@ public class DatabaseInitializer {
             insertCompatibilityCoordinatorAssignment(connection);
         } catch (SQLException | RuntimeException e) {
             throw new IllegalStateException("Failed to migrate exam schema", e);
+        }
+    }
+
+    private void migrateExecutionSchema() {
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            createStudentProfilesTable(connection);
+            createStudentCoursesTable(connection);
+            createExamExecutionsTable(connection);
+            createExamSubmissionsTable(connection);
+            createStudentAnswersTable(connection);
+            createSubmissionTimeExtensionsTable(connection);
+            createExamExecutionDecilesTable(connection);
+            migrateExecutionSchemaColumns(connection);
+            createExecutionSchemaIndexesAndConstraints(connection);
+            insertExecutionCompatibilityData(connection);
+        } catch (SQLException | RuntimeException e) {
+            throw new IllegalStateException("Failed to migrate exam execution schema", e);
+        }
+    }
+
+    private void createStudentProfilesTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "student_profiles")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE student_profiles (
+                    user_id INT NOT NULL,
+                    identity_number_hash VARCHAR(255) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id),
+                    CONSTRAINT fk_student_profiles_user
+                        FOREIGN KEY (user_id) REFERENCES users (user_id)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createStudentCoursesTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "student_courses")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE student_courses (
+                    student_user_id INT NOT NULL,
+                    course_id INT NOT NULL,
+                    enrolled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (student_user_id, course_id),
+                    KEY idx_student_courses_course_id (course_id),
+                    CONSTRAINT fk_student_courses_student
+                        FOREIGN KEY (student_user_id) REFERENCES users (user_id),
+                    CONSTRAINT fk_student_courses_course
+                        FOREIGN KEY (course_id) REFERENCES courses (course_id)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamExecutionsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "exam_executions")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE exam_executions (
+                    execution_id INT NOT NULL AUTO_INCREMENT,
+                    execution_code CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                    exam_id INT NOT NULL,
+                    exam_version_no INT NOT NULL,
+                    opening_time DATETIME NOT NULL,
+                    closing_time DATETIME NOT NULL,
+                    duration_minutes INT NOT NULL,
+                    status VARCHAR(32) NOT NULL,
+                    created_by_user_id INT NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    closed_at DATETIME NULL,
+                    average_score DECIMAL(7,2) NULL,
+                    median_score DECIMAL(7,2) NULL,
+                    started_count INT NOT NULL DEFAULT 0,
+                    submitted_count INT NOT NULL DEFAULT 0,
+                    auto_submitted_count INT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (execution_id),
+                    CONSTRAINT uq_exam_executions_code UNIQUE (execution_code),
+                    KEY idx_exam_executions_exam_version (exam_id, exam_version_no),
+                    KEY idx_exam_executions_status_window
+                        (status, opening_time, closing_time),
+                    KEY idx_exam_executions_creator (created_by_user_id),
+                    CONSTRAINT fk_exam_executions_exam_version
+                        FOREIGN KEY (exam_id, exam_version_no)
+                        REFERENCES exam_versions (exam_id, version_no),
+                    CONSTRAINT fk_exam_executions_creator
+                        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_exam_executions_code
+                        CHECK (execution_code REGEXP '^[A-Z0-9]{4}$'),
+                    CONSTRAINT chk_exam_executions_window
+                        CHECK (opening_time < closing_time),
+                    CONSTRAINT chk_exam_executions_duration
+                        CHECK (duration_minutes > 0),
+                    CONSTRAINT chk_exam_executions_status
+                        CHECK (status IN ('SCHEDULED', 'OPEN', 'CLOSED')),
+                    CONSTRAINT chk_exam_executions_counts
+                        CHECK (started_count >= 0
+                            AND submitted_count >= 0
+                            AND auto_submitted_count >= 0),
+                    CONSTRAINT chk_exam_executions_average_score
+                        CHECK (average_score IS NULL OR average_score BETWEEN 0 AND 100),
+                    CONSTRAINT chk_exam_executions_median_score
+                        CHECK (median_score IS NULL OR median_score BETWEEN 0 AND 100)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamSubmissionsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "exam_submissions")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE exam_submissions (
+                    submission_id INT NOT NULL AUTO_INCREMENT,
+                    execution_id INT NOT NULL,
+                    student_user_id INT NOT NULL,
+                    started_at DATETIME NOT NULL,
+                    submitted_at DATETIME NULL,
+                    status VARCHAR(32) NOT NULL,
+                    allocated_duration_minutes INT NOT NULL,
+                    extra_minutes INT NOT NULL DEFAULT 0,
+                    extension_reason TEXT NULL,
+                    actual_duration_minutes INT NULL,
+                    automatic_score DECIMAL(7,2) NULL,
+                    final_score DECIMAL(7,2) NULL,
+                    teacher_feedback TEXT NULL,
+                    manual_change_reason TEXT NULL,
+                    reviewed_by_user_id INT NULL,
+                    reviewed_at DATETIME NULL,
+                    published_by_user_id INT NULL,
+                    published_at DATETIME NULL,
+                    PRIMARY KEY (submission_id),
+                    CONSTRAINT uq_exam_submissions_execution_student
+                        UNIQUE (execution_id, student_user_id),
+                    KEY idx_exam_submissions_student_status (student_user_id, status),
+                    KEY idx_exam_submissions_execution_status (execution_id, status),
+                    CONSTRAINT fk_exam_submissions_execution
+                        FOREIGN KEY (execution_id) REFERENCES exam_executions (execution_id)
+                        ON DELETE CASCADE,
+                    CONSTRAINT fk_exam_submissions_student
+                        FOREIGN KEY (student_user_id) REFERENCES users (user_id),
+                    CONSTRAINT fk_exam_submissions_reviewer
+                        FOREIGN KEY (reviewed_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT fk_exam_submissions_publisher
+                        FOREIGN KEY (published_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_exam_submissions_status
+                        CHECK (status IN
+                            ('IN_PROGRESS', 'SUBMITTED', 'AUTO_SUBMITTED', 'PUBLISHED')),
+                    CONSTRAINT chk_exam_submissions_allocated_duration
+                        CHECK (allocated_duration_minutes > 0),
+                    CONSTRAINT chk_exam_submissions_extra_minutes
+                        CHECK (extra_minutes >= 0),
+                    CONSTRAINT chk_exam_submissions_actual_duration
+                        CHECK (actual_duration_minutes IS NULL
+                            OR actual_duration_minutes >= 0),
+                    CONSTRAINT chk_exam_submissions_automatic_score
+                        CHECK (automatic_score IS NULL OR automatic_score BETWEEN 0 AND 100),
+                    CONSTRAINT chk_exam_submissions_final_score
+                        CHECK (final_score IS NULL OR final_score BETWEEN 0 AND 100)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createStudentAnswersTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "student_answers")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE student_answers (
+                    answer_id INT NOT NULL AUTO_INCREMENT,
+                    submission_id INT NOT NULL,
+                    question_id INT NOT NULL,
+                    question_version_no INT NOT NULL,
+                    selected_option_number INT NOT NULL,
+                    answer_content TEXT NULL,
+                    is_correct BOOLEAN NULL,
+                    score_received DECIMAL(7,2) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (answer_id),
+                    CONSTRAINT uq_student_answers_submission_question
+                        UNIQUE (submission_id, question_id),
+                    KEY idx_student_answers_question_version
+                        (question_id, question_version_no),
+                    CONSTRAINT fk_student_answers_submission
+                        FOREIGN KEY (submission_id)
+                        REFERENCES exam_submissions (submission_id) ON DELETE CASCADE,
+                    CONSTRAINT fk_student_answers_question_version
+                        FOREIGN KEY (question_id, question_version_no)
+                        REFERENCES question_versions (question_id, version_no),
+                    CONSTRAINT chk_student_answers_selected_option
+                        CHECK (selected_option_number BETWEEN 1 AND 4),
+                    CONSTRAINT chk_student_answers_score
+                        CHECK (score_received IS NULL OR score_received >= 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createSubmissionTimeExtensionsTable(Connection connection)
+            throws SQLException {
+        if (tableExists(connection, "submission_time_extensions")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE submission_time_extensions (
+                    extension_id INT NOT NULL AUTO_INCREMENT,
+                    submission_id INT NOT NULL,
+                    added_minutes INT NOT NULL,
+                    reason TEXT NOT NULL,
+                    extended_by_user_id INT NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (extension_id),
+                    CONSTRAINT fk_submission_time_extensions_submission
+                        FOREIGN KEY (submission_id)
+                        REFERENCES exam_submissions (submission_id) ON DELETE CASCADE,
+                    CONSTRAINT fk_submission_time_extensions_user
+                        FOREIGN KEY (extended_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_submission_time_extensions_minutes
+                        CHECK (added_minutes > 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createExamExecutionDecilesTable(Connection connection)
+            throws SQLException {
+        if (tableExists(connection, "exam_execution_deciles")) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                CREATE TABLE exam_execution_deciles (
+                    execution_id INT NOT NULL,
+                    decile_number INT NOT NULL,
+                    submission_count INT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (execution_id, decile_number),
+                    CONSTRAINT fk_exam_execution_deciles_execution
+                        FOREIGN KEY (execution_id)
+                        REFERENCES exam_executions (execution_id) ON DELETE CASCADE,
+                    CONSTRAINT chk_exam_execution_deciles_number
+                        CHECK (decile_number BETWEEN 1 AND 10),
+                    CONSTRAINT chk_exam_execution_deciles_count
+                        CHECK (submission_count >= 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void migrateExecutionSchemaColumns(Connection connection) throws SQLException {
+        addColumnIfMissing(connection, "student_profiles", "user_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_profiles", "identity_number_hash",
+                "VARCHAR(255) NOT NULL");
+        addColumnIfMissing(connection, "student_profiles", "created_at",
+                "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        addColumnIfMissing(connection, "student_profiles", "updated_at", """
+                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                """);
+
+        addColumnIfMissing(connection, "student_courses", "student_user_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_courses", "course_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_courses", "enrolled_at",
+                "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+
+        addColumnIfMissing(connection, "exam_executions", "execution_id",
+                "INT NOT NULL AUTO_INCREMENT PRIMARY KEY");
+        addColumnIfMissing(connection, "exam_executions", "execution_code",
+                "CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "exam_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "exam_version_no", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "opening_time", "DATETIME NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "closing_time", "DATETIME NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "duration_minutes", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "status", "VARCHAR(32) NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "created_by_user_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_executions", "created_at",
+                "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        addColumnIfMissing(connection, "exam_executions", "closed_at", "DATETIME NULL");
+        addColumnIfMissing(connection, "exam_executions", "average_score", "DECIMAL(7,2) NULL");
+        addColumnIfMissing(connection, "exam_executions", "median_score", "DECIMAL(7,2) NULL");
+        addColumnIfMissing(connection, "exam_executions", "started_count",
+                "INT NOT NULL DEFAULT 0");
+        addColumnIfMissing(connection, "exam_executions", "submitted_count",
+                "INT NOT NULL DEFAULT 0");
+        addColumnIfMissing(connection, "exam_executions", "auto_submitted_count",
+                "INT NOT NULL DEFAULT 0");
+
+        addColumnIfMissing(connection, "exam_submissions", "submission_id",
+                "INT NOT NULL AUTO_INCREMENT PRIMARY KEY");
+        addColumnIfMissing(connection, "exam_submissions", "execution_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "student_user_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "started_at", "DATETIME NOT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "submitted_at", "DATETIME NULL");
+        addColumnIfMissing(connection, "exam_submissions", "status", "VARCHAR(32) NOT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "allocated_duration_minutes",
+                "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "extra_minutes",
+                "INT NOT NULL DEFAULT 0");
+        addColumnIfMissing(connection, "exam_submissions", "extension_reason", "TEXT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "actual_duration_minutes", "INT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "automatic_score", "DECIMAL(7,2) NULL");
+        addColumnIfMissing(connection, "exam_submissions", "final_score", "DECIMAL(7,2) NULL");
+        addColumnIfMissing(connection, "exam_submissions", "teacher_feedback", "TEXT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "manual_change_reason", "TEXT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "reviewed_by_user_id", "INT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "reviewed_at", "DATETIME NULL");
+        addColumnIfMissing(connection, "exam_submissions", "published_by_user_id", "INT NULL");
+        addColumnIfMissing(connection, "exam_submissions", "published_at", "DATETIME NULL");
+
+        addColumnIfMissing(connection, "student_answers", "answer_id",
+                "INT NOT NULL AUTO_INCREMENT PRIMARY KEY");
+        addColumnIfMissing(connection, "student_answers", "submission_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_answers", "question_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_answers", "question_version_no", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_answers", "selected_option_number", "INT NOT NULL");
+        addColumnIfMissing(connection, "student_answers", "answer_content", "TEXT NULL");
+        addColumnIfMissing(connection, "student_answers", "is_correct", "BOOLEAN NULL");
+        addColumnIfMissing(connection, "student_answers", "score_received", "DECIMAL(7,2) NULL");
+        addColumnIfMissing(connection, "student_answers", "created_at",
+                "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        addColumnIfMissing(connection, "student_answers", "updated_at", """
+                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                """);
+
+        addColumnIfMissing(connection, "submission_time_extensions", "extension_id",
+                "INT NOT NULL AUTO_INCREMENT PRIMARY KEY");
+        addColumnIfMissing(connection, "submission_time_extensions", "submission_id",
+                "INT NOT NULL");
+        addColumnIfMissing(connection, "submission_time_extensions", "added_minutes",
+                "INT NOT NULL");
+        addColumnIfMissing(connection, "submission_time_extensions", "reason", "TEXT NOT NULL");
+        addColumnIfMissing(connection, "submission_time_extensions", "extended_by_user_id",
+                "INT NOT NULL");
+        addColumnIfMissing(connection, "submission_time_extensions", "created_at",
+                "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+
+        addColumnIfMissing(connection, "exam_execution_deciles", "execution_id", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_execution_deciles", "decile_number", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_execution_deciles", "submission_count",
+                "INT NOT NULL DEFAULT 0");
+    }
+
+    private void createExecutionSchemaIndexesAndConstraints(Connection connection)
+            throws SQLException {
+        ensureConstraint(connection, "student_profiles", "PRIMARY", """
+                ALTER TABLE student_profiles ADD PRIMARY KEY (user_id)
+                """);
+        ensureConstraint(connection, "student_profiles", "fk_student_profiles_user", """
+                ALTER TABLE student_profiles
+                ADD CONSTRAINT fk_student_profiles_user
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+                """);
+
+        ensureConstraint(connection, "student_courses", "PRIMARY", """
+                ALTER TABLE student_courses ADD PRIMARY KEY (student_user_id, course_id)
+                """);
+        ensureIndex(connection, "student_courses", "idx_student_courses_course_id", """
+                CREATE INDEX idx_student_courses_course_id ON student_courses (course_id)
+                """);
+        ensureConstraint(connection, "student_courses", "fk_student_courses_student", """
+                ALTER TABLE student_courses
+                ADD CONSTRAINT fk_student_courses_student
+                FOREIGN KEY (student_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "student_courses", "fk_student_courses_course", """
+                ALTER TABLE student_courses
+                ADD CONSTRAINT fk_student_courses_course
+                FOREIGN KEY (course_id) REFERENCES courses (course_id)
+                """);
+
+        ensureConstraint(connection, "exam_executions", "PRIMARY", """
+                ALTER TABLE exam_executions ADD PRIMARY KEY (execution_id)
+                """);
+        ensureConstraint(connection, "exam_executions", "uq_exam_executions_code", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT uq_exam_executions_code UNIQUE (execution_code)
+                """);
+        ensureIndex(connection, "exam_executions", "idx_exam_executions_exam_version", """
+                CREATE INDEX idx_exam_executions_exam_version
+                ON exam_executions (exam_id, exam_version_no)
+                """);
+        ensureIndex(connection, "exam_executions", "idx_exam_executions_status_window", """
+                CREATE INDEX idx_exam_executions_status_window
+                ON exam_executions (status, opening_time, closing_time)
+                """);
+        ensureIndex(connection, "exam_executions", "idx_exam_executions_creator", """
+                CREATE INDEX idx_exam_executions_creator
+                ON exam_executions (created_by_user_id)
+                """);
+        ensureConstraint(connection, "exam_executions",
+                "fk_exam_executions_exam_version", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT fk_exam_executions_exam_version
+                FOREIGN KEY (exam_id, exam_version_no)
+                REFERENCES exam_versions (exam_id, version_no)
+                """);
+        ensureConstraint(connection, "exam_executions", "fk_exam_executions_creator", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT fk_exam_executions_creator
+                FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exam_executions", "chk_exam_executions_code", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_code
+                CHECK (execution_code REGEXP '^[A-Z0-9]{4}$')
+                """);
+        ensureConstraint(connection, "exam_executions", "chk_exam_executions_window", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_window CHECK (opening_time < closing_time)
+                """);
+        ensureConstraint(connection, "exam_executions", "chk_exam_executions_duration", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_duration CHECK (duration_minutes > 0)
+                """);
+        ensureConstraint(connection, "exam_executions", "chk_exam_executions_status", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_status
+                CHECK (status IN ('SCHEDULED', 'OPEN', 'CLOSED'))
+                """);
+        ensureConstraint(connection, "exam_executions", "chk_exam_executions_counts", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_counts
+                CHECK (started_count >= 0
+                    AND submitted_count >= 0
+                    AND auto_submitted_count >= 0)
+                """);
+        ensureConstraint(connection, "exam_executions",
+                "chk_exam_executions_average_score", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_average_score
+                CHECK (average_score IS NULL OR average_score BETWEEN 0 AND 100)
+                """);
+        ensureConstraint(connection, "exam_executions",
+                "chk_exam_executions_median_score", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_median_score
+                CHECK (median_score IS NULL OR median_score BETWEEN 0 AND 100)
+                """);
+
+        ensureConstraint(connection, "exam_submissions", "PRIMARY", """
+                ALTER TABLE exam_submissions ADD PRIMARY KEY (submission_id)
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "uq_exam_submissions_execution_student", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT uq_exam_submissions_execution_student
+                UNIQUE (execution_id, student_user_id)
+                """);
+        ensureIndex(connection, "exam_submissions",
+                "idx_exam_submissions_student_status", """
+                CREATE INDEX idx_exam_submissions_student_status
+                ON exam_submissions (student_user_id, status)
+                """);
+        ensureIndex(connection, "exam_submissions",
+                "idx_exam_submissions_execution_status", """
+                CREATE INDEX idx_exam_submissions_execution_status
+                ON exam_submissions (execution_id, status)
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "fk_exam_submissions_execution", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT fk_exam_submissions_execution
+                FOREIGN KEY (execution_id) REFERENCES exam_executions (execution_id)
+                ON DELETE CASCADE
+                """);
+        ensureConstraint(connection, "exam_submissions", "fk_exam_submissions_student", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT fk_exam_submissions_student
+                FOREIGN KEY (student_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exam_submissions", "fk_exam_submissions_reviewer", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT fk_exam_submissions_reviewer
+                FOREIGN KEY (reviewed_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exam_submissions", "fk_exam_submissions_publisher", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT fk_exam_submissions_publisher
+                FOREIGN KEY (published_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "exam_submissions", "chk_exam_submissions_status", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT chk_exam_submissions_status
+                CHECK (status IN ('IN_PROGRESS', 'SUBMITTED', 'AUTO_SUBMITTED', 'PUBLISHED'))
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "chk_exam_submissions_allocated_duration", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT chk_exam_submissions_allocated_duration
+                CHECK (allocated_duration_minutes > 0)
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "chk_exam_submissions_extra_minutes", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT chk_exam_submissions_extra_minutes CHECK (extra_minutes >= 0)
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "chk_exam_submissions_actual_duration", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT chk_exam_submissions_actual_duration
+                CHECK (actual_duration_minutes IS NULL OR actual_duration_minutes >= 0)
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "chk_exam_submissions_automatic_score", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT chk_exam_submissions_automatic_score
+                CHECK (automatic_score IS NULL OR automatic_score BETWEEN 0 AND 100)
+                """);
+        ensureConstraint(connection, "exam_submissions",
+                "chk_exam_submissions_final_score", """
+                ALTER TABLE exam_submissions
+                ADD CONSTRAINT chk_exam_submissions_final_score
+                CHECK (final_score IS NULL OR final_score BETWEEN 0 AND 100)
+                """);
+
+        ensureConstraint(connection, "student_answers", "PRIMARY", """
+                ALTER TABLE student_answers ADD PRIMARY KEY (answer_id)
+                """);
+        ensureConstraint(connection, "student_answers",
+                "uq_student_answers_submission_question", """
+                ALTER TABLE student_answers
+                ADD CONSTRAINT uq_student_answers_submission_question
+                UNIQUE (submission_id, question_id)
+                """);
+        ensureIndex(connection, "student_answers",
+                "idx_student_answers_question_version", """
+                CREATE INDEX idx_student_answers_question_version
+                ON student_answers (question_id, question_version_no)
+                """);
+        ensureConstraint(connection, "student_answers", "fk_student_answers_submission", """
+                ALTER TABLE student_answers
+                ADD CONSTRAINT fk_student_answers_submission
+                FOREIGN KEY (submission_id) REFERENCES exam_submissions (submission_id)
+                ON DELETE CASCADE
+                """);
+        ensureConstraint(connection, "student_answers",
+                "fk_student_answers_question_version", """
+                ALTER TABLE student_answers
+                ADD CONSTRAINT fk_student_answers_question_version
+                FOREIGN KEY (question_id, question_version_no)
+                REFERENCES question_versions (question_id, version_no)
+                """);
+        ensureConstraint(connection, "student_answers",
+                "chk_student_answers_selected_option", """
+                ALTER TABLE student_answers
+                ADD CONSTRAINT chk_student_answers_selected_option
+                CHECK (selected_option_number BETWEEN 1 AND 4)
+                """);
+        ensureConstraint(connection, "student_answers", "chk_student_answers_score", """
+                ALTER TABLE student_answers
+                ADD CONSTRAINT chk_student_answers_score
+                CHECK (score_received IS NULL OR score_received >= 0)
+                """);
+
+        ensureConstraint(connection, "submission_time_extensions", "PRIMARY", """
+                ALTER TABLE submission_time_extensions ADD PRIMARY KEY (extension_id)
+                """);
+        ensureConstraint(connection, "submission_time_extensions",
+                "fk_submission_time_extensions_submission", """
+                ALTER TABLE submission_time_extensions
+                ADD CONSTRAINT fk_submission_time_extensions_submission
+                FOREIGN KEY (submission_id) REFERENCES exam_submissions (submission_id)
+                ON DELETE CASCADE
+                """);
+        ensureConstraint(connection, "submission_time_extensions",
+                "fk_submission_time_extensions_user", """
+                ALTER TABLE submission_time_extensions
+                ADD CONSTRAINT fk_submission_time_extensions_user
+                FOREIGN KEY (extended_by_user_id) REFERENCES users (user_id)
+                """);
+        ensureConstraint(connection, "submission_time_extensions",
+                "chk_submission_time_extensions_minutes", """
+                ALTER TABLE submission_time_extensions
+                ADD CONSTRAINT chk_submission_time_extensions_minutes
+                CHECK (added_minutes > 0)
+                """);
+
+        ensureConstraint(connection, "exam_execution_deciles", "PRIMARY", """
+                ALTER TABLE exam_execution_deciles
+                ADD PRIMARY KEY (execution_id, decile_number)
+                """);
+        ensureConstraint(connection, "exam_execution_deciles",
+                "fk_exam_execution_deciles_execution", """
+                ALTER TABLE exam_execution_deciles
+                ADD CONSTRAINT fk_exam_execution_deciles_execution
+                FOREIGN KEY (execution_id) REFERENCES exam_executions (execution_id)
+                ON DELETE CASCADE
+                """);
+        ensureConstraint(connection, "exam_execution_deciles",
+                "chk_exam_execution_deciles_number", """
+                ALTER TABLE exam_execution_deciles
+                ADD CONSTRAINT chk_exam_execution_deciles_number
+                CHECK (decile_number BETWEEN 1 AND 10)
+                """);
+        ensureConstraint(connection, "exam_execution_deciles",
+                "chk_exam_execution_deciles_count", """
+                ALTER TABLE exam_execution_deciles
+                ADD CONSTRAINT chk_exam_execution_deciles_count
+                CHECK (submission_count >= 0)
+                """);
+    }
+
+    private void insertExecutionCompatibilityData(Connection connection) throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        boolean transactionStarted = false;
+        Throwable migrationFailure = null;
+
+        try {
+            connection.setAutoCommit(false);
+            transactionStarted = true;
+            validateExecutionCompatibilityStudent(connection);
+            validateCompatibilityCourse(connection, true);
+            insertCompatibilityStudentEnrollment(connection);
+            insertCompatibilityStudentProfile(connection);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            migrationFailure = e;
+            if (transactionStarted) {
+                rollbackWithSuppressed(connection, e);
+            }
+            throw e;
+        } finally {
+            restoreAutoCommit(connection, originalAutoCommit, migrationFailure);
+        }
+    }
+
+    private void validateExecutionCompatibilityStudent(Connection connection)
+            throws SQLException {
+        String sql = """
+                SELECT user_id, email, role, status
+                FROM users
+                WHERE user_id = 1001 OR email = 'student@hsts.local'
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+            int matches = 0;
+            boolean exactMatch = false;
+
+            while (resultSet.next()) {
+                matches++;
+                exactMatch = exactMatch || (
+                        resultSet.getInt("user_id") == 1001
+                                && "student@hsts.local".equalsIgnoreCase(
+                                resultSet.getString("email"))
+                                && "STUDENT".equals(resultSet.getString("role"))
+                                && "ACTIVE".equals(resultSet.getString("status"))
+                );
+            }
+
+            if (matches != 1 || !exactMatch) {
+                throw new IllegalStateException(
+                        "Compatibility student conflict for fixed identifier 1001"
+                );
+            }
+        }
+    }
+
+    private void insertCompatibilityStudentEnrollment(Connection connection)
+            throws SQLException {
+        executeUpdate(connection, """
+                INSERT INTO student_courses (student_user_id, course_id)
+                SELECT student.user_id, course.course_id
+                FROM users student
+                JOIN courses course ON course.course_id = 1
+                WHERE student.user_id = 1001
+                  AND student.role = 'STUDENT'
+                  AND student.status = 'ACTIVE'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM student_courses existing_enrollment
+                      WHERE existing_enrollment.student_user_id = student.user_id
+                        AND existing_enrollment.course_id = course.course_id
+                  )
+                """);
+    }
+
+    private void insertCompatibilityStudentProfile(Connection connection)
+            throws SQLException {
+        if (studentProfileExists(connection, 1001)) {
+            return;
+        }
+
+        String identityHash = PasswordHasher.hash("123456789");
+        String sql = """
+                INSERT INTO student_profiles (user_id, identity_number_hash)
+                SELECT student.user_id, ?
+                FROM users student
+                WHERE student.user_id = 1001
+                  AND student.role = 'STUDENT'
+                  AND student.status = 'ACTIVE'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM student_profiles existing_profile
+                      WHERE existing_profile.user_id = student.user_id
+                  )
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, identityHash);
+            statement.executeUpdate();
+        }
+    }
+
+    private boolean studentProfileExists(Connection connection, int userId)
+            throws SQLException {
+        String sql = "SELECT 1 FROM student_profiles WHERE user_id = ?";
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, userId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next();
+            }
         }
     }
 

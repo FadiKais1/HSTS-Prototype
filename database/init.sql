@@ -203,6 +203,178 @@ CREATE TABLE IF NOT EXISTS exam_version_questions (
         CHECK (score > 0)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS student_profiles (
+    user_id INT NOT NULL,
+    identity_number_hash VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id),
+    CONSTRAINT fk_student_profiles_user
+        FOREIGN KEY (user_id) REFERENCES users (user_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS student_courses (
+    student_user_id INT NOT NULL,
+    course_id INT NOT NULL,
+    enrolled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (student_user_id, course_id),
+    KEY idx_student_courses_course_id (course_id),
+    CONSTRAINT fk_student_courses_student
+        FOREIGN KEY (student_user_id) REFERENCES users (user_id),
+    CONSTRAINT fk_student_courses_course
+        FOREIGN KEY (course_id) REFERENCES courses (course_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exam_executions (
+    execution_id INT NOT NULL AUTO_INCREMENT,
+    execution_code CHAR(4) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    exam_id INT NOT NULL,
+    exam_version_no INT NOT NULL,
+    opening_time DATETIME NOT NULL,
+    closing_time DATETIME NOT NULL,
+    duration_minutes INT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    created_by_user_id INT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at DATETIME NULL,
+    average_score DECIMAL(7,2) NULL,
+    median_score DECIMAL(7,2) NULL,
+    started_count INT NOT NULL DEFAULT 0,
+    submitted_count INT NOT NULL DEFAULT 0,
+    auto_submitted_count INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (execution_id),
+    CONSTRAINT uq_exam_executions_code UNIQUE (execution_code),
+    KEY idx_exam_executions_exam_version (exam_id, exam_version_no),
+    KEY idx_exam_executions_status_window (status, opening_time, closing_time),
+    KEY idx_exam_executions_creator (created_by_user_id),
+    CONSTRAINT fk_exam_executions_exam_version
+        FOREIGN KEY (exam_id, exam_version_no)
+        REFERENCES exam_versions (exam_id, version_no),
+    CONSTRAINT fk_exam_executions_creator
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_exam_executions_code
+        CHECK (execution_code REGEXP '^[A-Z0-9]{4}$'),
+    CONSTRAINT chk_exam_executions_window
+        CHECK (opening_time < closing_time),
+    CONSTRAINT chk_exam_executions_duration
+        CHECK (duration_minutes > 0),
+    CONSTRAINT chk_exam_executions_status
+        CHECK (status IN ('SCHEDULED', 'OPEN', 'CLOSED')),
+    CONSTRAINT chk_exam_executions_counts
+        CHECK (started_count >= 0
+            AND submitted_count >= 0
+            AND auto_submitted_count >= 0),
+    CONSTRAINT chk_exam_executions_average_score
+        CHECK (average_score IS NULL OR average_score BETWEEN 0 AND 100),
+    CONSTRAINT chk_exam_executions_median_score
+        CHECK (median_score IS NULL OR median_score BETWEEN 0 AND 100)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exam_submissions (
+    submission_id INT NOT NULL AUTO_INCREMENT,
+    execution_id INT NOT NULL,
+    student_user_id INT NOT NULL,
+    started_at DATETIME NOT NULL,
+    submitted_at DATETIME NULL,
+    status VARCHAR(32) NOT NULL,
+    allocated_duration_minutes INT NOT NULL,
+    extra_minutes INT NOT NULL DEFAULT 0,
+    extension_reason TEXT NULL,
+    actual_duration_minutes INT NULL,
+    automatic_score DECIMAL(7,2) NULL,
+    final_score DECIMAL(7,2) NULL,
+    teacher_feedback TEXT NULL,
+    manual_change_reason TEXT NULL,
+    reviewed_by_user_id INT NULL,
+    reviewed_at DATETIME NULL,
+    published_by_user_id INT NULL,
+    published_at DATETIME NULL,
+    PRIMARY KEY (submission_id),
+    CONSTRAINT uq_exam_submissions_execution_student
+        UNIQUE (execution_id, student_user_id),
+    KEY idx_exam_submissions_student_status (student_user_id, status),
+    KEY idx_exam_submissions_execution_status (execution_id, status),
+    CONSTRAINT fk_exam_submissions_execution
+        FOREIGN KEY (execution_id) REFERENCES exam_executions (execution_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_exam_submissions_student
+        FOREIGN KEY (student_user_id) REFERENCES users (user_id),
+    CONSTRAINT fk_exam_submissions_reviewer
+        FOREIGN KEY (reviewed_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT fk_exam_submissions_publisher
+        FOREIGN KEY (published_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_exam_submissions_status
+        CHECK (status IN ('IN_PROGRESS', 'SUBMITTED', 'AUTO_SUBMITTED', 'PUBLISHED')),
+    CONSTRAINT chk_exam_submissions_allocated_duration
+        CHECK (allocated_duration_minutes > 0),
+    CONSTRAINT chk_exam_submissions_extra_minutes
+        CHECK (extra_minutes >= 0),
+    CONSTRAINT chk_exam_submissions_actual_duration
+        CHECK (actual_duration_minutes IS NULL OR actual_duration_minutes >= 0),
+    CONSTRAINT chk_exam_submissions_automatic_score
+        CHECK (automatic_score IS NULL OR automatic_score BETWEEN 0 AND 100),
+    CONSTRAINT chk_exam_submissions_final_score
+        CHECK (final_score IS NULL OR final_score BETWEEN 0 AND 100)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS student_answers (
+    answer_id INT NOT NULL AUTO_INCREMENT,
+    submission_id INT NOT NULL,
+    question_id INT NOT NULL,
+    question_version_no INT NOT NULL,
+    selected_option_number INT NOT NULL,
+    answer_content TEXT NULL,
+    is_correct BOOLEAN NULL,
+    score_received DECIMAL(7,2) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (answer_id),
+    CONSTRAINT uq_student_answers_submission_question
+        UNIQUE (submission_id, question_id),
+    KEY idx_student_answers_question_version (question_id, question_version_no),
+    CONSTRAINT fk_student_answers_submission
+        FOREIGN KEY (submission_id) REFERENCES exam_submissions (submission_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_student_answers_question_version
+        FOREIGN KEY (question_id, question_version_no)
+        REFERENCES question_versions (question_id, version_no),
+    CONSTRAINT chk_student_answers_selected_option
+        CHECK (selected_option_number BETWEEN 1 AND 4),
+    CONSTRAINT chk_student_answers_score
+        CHECK (score_received IS NULL OR score_received >= 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS submission_time_extensions (
+    extension_id INT NOT NULL AUTO_INCREMENT,
+    submission_id INT NOT NULL,
+    added_minutes INT NOT NULL,
+    reason TEXT NOT NULL,
+    extended_by_user_id INT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (extension_id),
+    CONSTRAINT fk_submission_time_extensions_submission
+        FOREIGN KEY (submission_id) REFERENCES exam_submissions (submission_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_submission_time_extensions_user
+        FOREIGN KEY (extended_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_submission_time_extensions_minutes
+        CHECK (added_minutes > 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS exam_execution_deciles (
+    execution_id INT NOT NULL,
+    decile_number INT NOT NULL,
+    submission_count INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (execution_id, decile_number),
+    CONSTRAINT fk_exam_execution_deciles_execution
+        FOREIGN KEY (execution_id) REFERENCES exam_executions (execution_id)
+        ON DELETE CASCADE,
+    CONSTRAINT chk_exam_execution_deciles_number
+        CHECK (decile_number BETWEEN 1 AND 10),
+    CONSTRAINT chk_exam_execution_deciles_count
+        CHECK (submission_count >= 0)
+) ENGINE=InnoDB;
+
 CREATE TEMPORARY TABLE IF NOT EXISTS question_bank_migration_guard (
     validation_result TINYINT NOT NULL
 ) ENGINE=InnoDB;
@@ -287,6 +459,20 @@ THEN 1 ELSE NULL END;
 
 INSERT IGNORE INTO teacher_courses (teacher_user_id, course_id)
 VALUES (1002, 1), (1003, 1);
+
+INSERT INTO student_courses (student_user_id, course_id)
+SELECT student.user_id, course.course_id
+FROM users student
+JOIN courses course ON course.course_id = 1
+WHERE student.user_id = 1001
+  AND student.role = 'STUDENT'
+  AND student.status = 'ACTIVE'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM student_courses existing_enrollment
+      WHERE existing_enrollment.student_user_id = student.user_id
+        AND existing_enrollment.course_id = course.course_id
+  );
 
 INSERT INTO subject_coordinators (
     subject_id,
