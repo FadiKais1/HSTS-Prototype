@@ -7,6 +7,7 @@ import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
+import hsts.common.GenerateExamPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionVersionDTO;
@@ -25,9 +26,13 @@ import hsts.server.repository.QuestionRepository;
 import hsts.server.repository.UserRepository;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class ExamManagementService {
     private static final String MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
@@ -267,6 +272,69 @@ public class ExamManagementService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Exam not found: " + examId
                 ));
+    }
+
+    public ExamDTO generateAutomaticExam(int authenticatedUserId,
+                                         GenerateExamPayload payload) {
+        authorizeExamManager(authenticatedUserId);
+        requireAutomaticExamRepositories();
+        if (payload == null) {
+            throw new IllegalArgumentException("Automatic exam data is missing");
+        }
+
+        validateExamPresentation(
+                payload.getTitle(),
+                payload.getDurationMinutes(),
+                payload.getStudentInstructions()
+        );
+        if (isBlank(payload.getTopic())) {
+            throw new IllegalArgumentException("Topic is required");
+        }
+        if (payload.getDifficulty() == null) {
+            throw new IllegalArgumentException("Difficulty is required");
+        }
+        if (payload.getQuestionCount() <= 0) {
+            throw new IllegalArgumentException("Question count must be positive");
+        }
+
+        QuestionFilterPayload filter = new QuestionFilterPayload(
+                payload.getCourseId(),
+                null,
+                payload.getTopic().trim(),
+                payload.getDifficulty(),
+                QuestionStatus.ACTIVE
+        );
+        List<QuestionDTO> matchingQuestions = questionRepository.findCurrentForTeacher(
+                authenticatedUserId,
+                filter
+        );
+        List<QuestionDTO> distinctQuestions = new ArrayList<>(matchingQuestions.size());
+        Set<Integer> distinctQuestionIds = new HashSet<>();
+        for (QuestionDTO question : matchingQuestions) {
+            if (distinctQuestionIds.add(question.getQuestionId())) {
+                distinctQuestions.add(question);
+            }
+        }
+        if (distinctQuestions.size() < payload.getQuestionCount()) {
+            throw new IllegalArgumentException("Not enough matching questions");
+        }
+
+        List<QuestionDTO> shuffledQuestions = new ArrayList<>(distinctQuestions);
+        Collections.shuffle(shuffledQuestions, ThreadLocalRandom.current());
+        List<ExamQuestionSelectionPayload> selections = createAutomaticSelections(
+                shuffledQuestions,
+                payload.getQuestionCount()
+        );
+
+        CreateExamPayload createPayload = new CreateExamPayload(
+                payload.getCourseId(),
+                payload.getTitle().trim(),
+                payload.getDurationMinutes(),
+                normalizeText(payload.getTeacherNotes(), ""),
+                payload.getStudentInstructions().trim(),
+                selections
+        );
+        return createExam(authenticatedUserId, createPayload);
     }
 
     public ExamDTO updateExam(int authenticatedUserId, UpdateExamPayload payload) {
@@ -575,15 +643,7 @@ public class ExamManagementService {
     private void validateExamData(String title, int durationMinutes,
                                   String studentInstructions,
                                   List<ExamQuestionSelectionPayload> questions) {
-        if (isBlank(title)) {
-            throw new IllegalArgumentException("Exam title is required");
-        }
-        if (durationMinutes <= 0) {
-            throw new IllegalArgumentException("Exam duration must be positive");
-        }
-        if (isBlank(studentInstructions)) {
-            throw new IllegalArgumentException("Student instructions are required");
-        }
+        validateExamPresentation(title, durationMinutes, studentInstructions);
 
         if (questions == null || questions.isEmpty()) {
             throw new IllegalArgumentException("At least one question is required");
@@ -614,6 +674,46 @@ public class ExamManagementService {
         if (totalScore.compareTo(new BigDecimal("100.00")) != 0) {
             throw new IllegalArgumentException("Exam total score must equal 100");
         }
+    }
+
+    private void validateExamPresentation(String title, int durationMinutes,
+                                          String studentInstructions) {
+        if (isBlank(title)) {
+            throw new IllegalArgumentException("Exam title is required");
+        }
+        if (durationMinutes <= 0) {
+            throw new IllegalArgumentException("Exam duration must be positive");
+        }
+        if (isBlank(studentInstructions)) {
+            throw new IllegalArgumentException("Student instructions are required");
+        }
+    }
+
+    private List<ExamQuestionSelectionPayload> createAutomaticSelections(
+            List<QuestionDTO> shuffledQuestions,
+            int questionCount) {
+        BigDecimal totalScore = new BigDecimal("100.00");
+        BigDecimal regularScore = totalScore.divide(
+                BigDecimal.valueOf(questionCount),
+                2,
+                RoundingMode.DOWN
+        );
+        BigDecimal finalScore = totalScore.subtract(
+                regularScore.multiply(BigDecimal.valueOf(questionCount - 1L))
+        );
+
+        List<ExamQuestionSelectionPayload> selections = new ArrayList<>(questionCount);
+        for (int index = 0; index < questionCount; index++) {
+            QuestionDTO question = shuffledQuestions.get(index);
+            BigDecimal score = index == questionCount - 1 ? finalScore : regularScore;
+            selections.add(new ExamQuestionSelectionPayload(
+                    question.getQuestionId(),
+                    question.getVersionNo(),
+                    index + 1,
+                    score.doubleValue()
+            ));
+        }
+        return selections;
     }
 
     private void validateQuestionOrder(List<ExamQuestionSelectionPayload> questions) {
@@ -664,6 +764,14 @@ public class ExamManagementService {
     private void requireExamRepository() {
         if (examRepository == null) {
             throw new IllegalStateException("Exam repository is not configured");
+        }
+    }
+
+    private void requireAutomaticExamRepositories() {
+        if (questionRepository == null || examRepository == null) {
+            throw new IllegalStateException(
+                    "Automatic-exam repositories are not configured"
+            );
         }
     }
 

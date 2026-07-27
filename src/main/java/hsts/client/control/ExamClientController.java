@@ -5,6 +5,7 @@ import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
+import hsts.common.GenerateExamPayload;
 import hsts.common.RejectExamPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
@@ -57,6 +58,17 @@ public class ExamClientController {
                         responsePayload,
                         ExamDTO.class,
                         "Invalid create-exam response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<ExamDTO> generateExam(GenerateExamPayload payload) {
+        return sendRequest(
+                new Request(RequestType.GENERATE_EXAM, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamDTO.class,
+                        "Invalid generate-exam response from server"
                 )
         );
     }

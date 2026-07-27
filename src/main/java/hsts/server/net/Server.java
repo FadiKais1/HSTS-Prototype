@@ -3,6 +3,7 @@ package hsts.server.net;
 import hsts.common.CreateExamPayload;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.ExamVersionPayload;
+import hsts.common.GenerateExamPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
 import hsts.common.QuestionFilterPayload;
@@ -104,7 +105,7 @@ public class Server extends AbstractServer {
 
                 case GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION,
                      ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY,
-                     LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM,
+                     LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM, GENERATE_EXAM,
                      LIST_PENDING_EXAMS, GET_PENDING_EXAM, UPDATE_EXAM,
                      SUBMIT_EXAM_FOR_APPROVAL, APPROVE_EXAM, REJECT_EXAM ->
                         Response.error("Authentication context required");
@@ -234,6 +235,19 @@ public class Server extends AbstractServer {
                     yield Response.success(
                             "Exam created successfully",
                             examManagementService.createExam(authenticatedUserId, payload)
+                    );
+                }
+
+                case GENERATE_EXAM -> {
+                    if (!(request.getPayload() instanceof GenerateExamPayload payload)) {
+                        throw new IllegalArgumentException("Automatic exam data is missing");
+                    }
+                    yield Response.success(
+                            "Exam generated successfully",
+                            examManagementService.generateAutomaticExam(
+                                    authenticatedUserId,
+                                    payload
+                            )
                     );
                 }
 
