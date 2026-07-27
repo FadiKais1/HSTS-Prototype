@@ -126,7 +126,7 @@ public class ExamRepository {
             WHERE e.exam_id = ?
             """;
 
-    private static final String EXAM_ENTITY_SELECT = """
+    private static final String EXAM_ENTITY_COLUMNS = """
             SELECT e.exam_id,
                    e.exam_code,
                    e.course_id,
@@ -145,11 +145,22 @@ public class ExamRepository {
                    ev.reviewed_by_user_id,
                    ev.reviewed_at,
                    ev.rejection_reason
+            """;
+
+    private static final String EXAM_ENTITY_SELECT = EXAM_ENTITY_COLUMNS + """
             FROM exams e
             JOIN courses c ON c.course_id = e.course_id
             LEFT JOIN exam_versions ev
               ON ev.exam_id = e.exam_id
              AND ev.version_no = e.current_version_no
+            """;
+
+    private static final String EXACT_EXAM_ENTITY_VERSION_SQL = EXAM_ENTITY_COLUMNS + """
+            FROM exams e
+            JOIN exam_versions ev
+              ON ev.exam_id = e.exam_id
+            WHERE e.exam_id = ?
+              AND ev.version_no = ?
             """;
 
     private static final String TEACHER_EXAM_ENTITY_BY_ID_SQL = EXAM_ENTITY_SELECT + """
@@ -495,6 +506,35 @@ public class ExamRepository {
         }
     }
 
+    public Optional<Exam> findEntityVersion(int examId, int versionNo) {
+        if (examId <= 0) {
+            throw new IllegalArgumentException("Exam ID must be positive");
+        }
+        if (versionNo <= 0) {
+            throw new IllegalArgumentException("Exam version must be positive");
+        }
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     EXACT_EXAM_ENTITY_VERSION_SQL
+             )) {
+            statement.setInt(1, examId);
+            statement.setInt(2, versionNo);
+            return loadExamEntity(
+                    connection,
+                    statement,
+                    examId,
+                    false,
+                    "Requested exam version is missing: " + examId
+                            + " version " + versionNo,
+                    "Requested exam version timestamp is missing: " + examId
+                            + " version " + versionNo
+            );
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load exact exam version", e);
+        }
+    }
+
     public int create(int authenticatedUserId, Exam exam) {
         if (exam == null) {
             throw new IllegalArgumentException("Exam creation data is missing");
@@ -567,6 +607,24 @@ public class ExamRepository {
                                                   PreparedStatement statement,
                                                   int requestedExamId)
             throws SQLException {
+        return loadExamEntity(
+                connection,
+                statement,
+                requestedExamId,
+                true,
+                "Current exam version is missing: " + requestedExamId,
+                "Current exam version timestamp is missing: " + requestedExamId
+        );
+    }
+
+    private Optional<Exam> loadExamEntity(
+            Connection connection,
+            PreparedStatement statement,
+            int requestedExamId,
+            boolean includeLogicalExamUpdatedAt,
+            String missingVersionMessage,
+            String missingVersionTimestampMessage
+    ) throws SQLException {
         try (ResultSet resultSet = statement.executeQuery()) {
             if (!resultSet.next()) {
                 return Optional.empty();
@@ -574,9 +632,7 @@ public class ExamRepository {
 
             Object versionValue = resultSet.getObject("version_no");
             if (versionValue == null) {
-                throw new IllegalArgumentException(
-                        "Current exam version is missing: " + requestedExamId
-                );
+                throw new IllegalArgumentException(missingVersionMessage);
             }
 
             int hydratedExamId = resultSet.getInt("exam_id");
@@ -599,7 +655,7 @@ public class ExamRepository {
             );
             LocalDateTime versionCreatedAt = requireTimestamp(
                     resultSet.getObject("version_created_at", LocalDateTime.class),
-                    "Current exam version timestamp is missing: " + hydratedExamId
+                    missingVersionTimestampMessage
             );
             LocalDateTime submittedAt = resultSet.getObject(
                     "submitted_at",
@@ -609,15 +665,25 @@ public class ExamRepository {
                     "reviewed_at",
                     LocalDateTime.class
             );
-            LocalDateTime updatedAt = latestTimestamp(
-                    requireTimestamp(
-                            resultSet.getObject("exam_updated_at", LocalDateTime.class),
-                            "Exam update timestamp is missing: " + hydratedExamId
-                    ),
-                    versionCreatedAt,
-                    submittedAt,
-                    reviewedAt
-            );
+            LocalDateTime updatedAt = includeLogicalExamUpdatedAt
+                    ? latestTimestamp(
+                            requireTimestamp(
+                                    resultSet.getObject(
+                                            "exam_updated_at",
+                                            LocalDateTime.class
+                                    ),
+                                    "Exam update timestamp is missing: " + hydratedExamId
+                            ),
+                            versionCreatedAt,
+                            submittedAt,
+                            reviewedAt
+                    )
+                    : latestTimestamp(
+                            createdAt,
+                            versionCreatedAt,
+                            submittedAt,
+                            reviewedAt
+                    );
 
             Exam exam = Exam.rehydrate(
                     hydratedExamId,
