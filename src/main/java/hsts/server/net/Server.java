@@ -4,6 +4,7 @@ import hsts.common.CreateQuestionPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionIdPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
@@ -97,7 +98,8 @@ public class Server extends AbstractServer {
 
                 case LOGOUT -> Response.error("Connection context required");
 
-                case GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION ->
+                case GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION,
+                     ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY ->
                         Response.error("Authentication context required");
             };
 
@@ -166,6 +168,39 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case ACTIVATE_QUESTION -> {
+                    int questionId = requireQuestionIdPayload(request).getQuestionId();
+                    yield Response.success(
+                            "Question activated successfully",
+                            examManagementService.activateQuestion(
+                                    authenticatedUserId,
+                                    questionId
+                            )
+                    );
+                }
+
+                case DEACTIVATE_QUESTION -> {
+                    int questionId = requireQuestionIdPayload(request).getQuestionId();
+                    yield Response.success(
+                            "Question deactivated successfully",
+                            examManagementService.deactivateQuestion(
+                                    authenticatedUserId,
+                                    questionId
+                            )
+                    );
+                }
+
+                case GET_QUESTION_HISTORY -> {
+                    int questionId = requireQuestionIdPayload(request).getQuestionId();
+                    yield Response.success(
+                            "Question history loaded successfully",
+                            examManagementService.getQuestionHistory(
+                                    authenticatedUserId,
+                                    questionId
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
@@ -213,6 +248,13 @@ public class Server extends AbstractServer {
     private void bindAuthentication(ConnectionToClient client, LoginResult loginResult) {
         client.setInfo(AUTHENTICATED_USER_ID, loginResult.getUserId());
         client.setInfo(AUTHENTICATED_SESSION_ID, loginResult.getSessionId());
+    }
+
+    private QuestionIdPayload requireQuestionIdPayload(Request request) {
+        if (!(request.getPayload() instanceof QuestionIdPayload payload)) {
+            throw new IllegalArgumentException("Question ID is required");
+        }
+        return payload;
     }
 
     private boolean isAuthenticated(ConnectionToClient client) {

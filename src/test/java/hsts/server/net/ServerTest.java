@@ -6,6 +6,8 @@ import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionIdPayload;
+import hsts.common.QuestionVersionDTO;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
@@ -373,6 +375,114 @@ public class ServerTest {
         assertError(response, "Scoped questions unavailable");
     }
 
+    @Test
+    public void authenticatedStatusAndHistoryRoutesForwardSessionUserAndQuestionId() {
+        int authenticatedUserId = 8001;
+        RecordingScopedExamManagementService service = new RecordingScopedExamManagementService();
+        QuestionDTO activated = normalizedQuestion(71, 7, "Activated question");
+        QuestionDTO deactivated = normalizedQuestion(72, 7, "Deactivated question");
+        List<QuestionVersionDTO> history = List.of();
+        service.setActivatedQuestion(activated);
+        service.setDeactivatedQuestion(deactivated);
+        service.setHistory(history);
+        Server server = new Server(
+                0,
+                service,
+                new AuthService(new InMemoryUserRepository())
+        );
+
+        Response activateResponse = server.handleAuthenticatedRequest(
+                new Request(RequestType.ACTIVATE_QUESTION, new QuestionIdPayload(71)),
+                authenticatedUserId
+        );
+        Response deactivateResponse = server.handleAuthenticatedRequest(
+                new Request(RequestType.DEACTIVATE_QUESTION, new QuestionIdPayload(72)),
+                authenticatedUserId
+        );
+        Response historyResponse = server.handleAuthenticatedRequest(
+                new Request(RequestType.GET_QUESTION_HISTORY, new QuestionIdPayload(73)),
+                authenticatedUserId
+        );
+
+        assertSuccess(activateResponse, "Question activated successfully");
+        assertSame(activated, activateResponse.getPayload());
+        assertEquals(authenticatedUserId, service.getLastActivateUserId());
+        assertEquals(71, service.getLastActivateQuestionId());
+
+        assertSuccess(deactivateResponse, "Question deactivated successfully");
+        assertSame(deactivated, deactivateResponse.getPayload());
+        assertEquals(authenticatedUserId, service.getLastDeactivateUserId());
+        assertEquals(72, service.getLastDeactivateQuestionId());
+
+        assertSuccess(historyResponse, "Question history loaded successfully");
+        assertSame(history, historyResponse.getPayload());
+        assertEquals(authenticatedUserId, service.getLastHistoryUserId());
+        assertEquals(73, service.getLastHistoryQuestionId());
+    }
+
+    @Test
+    public void authenticatedStatusAndHistoryRoutesRequireQuestionIdPayload() {
+        RecordingScopedExamManagementService service = new RecordingScopedExamManagementService();
+        Server server = new Server(
+                0,
+                service,
+                new AuthService(new InMemoryUserRepository())
+        );
+
+        for (RequestType type : new RequestType[]{
+                RequestType.ACTIVATE_QUESTION,
+                RequestType.DEACTIVATE_QUESTION,
+                RequestType.GET_QUESTION_HISTORY
+        }) {
+            Response nullPayload = server.handleAuthenticatedRequest(
+                    new Request(type, null),
+                    8002
+            );
+            Response wrongPayload = server.handleAuthenticatedRequest(
+                    new Request(type, 99),
+                    8002
+            );
+
+            assertError(nullPayload, "Question ID is required");
+            assertError(wrongPayload, "Question ID is required");
+        }
+        assertEquals(0, service.getStatusAndHistoryCalls());
+    }
+
+    @Test
+    public void statusAndHistoryServiceFailuresBecomeExactErrorResponses() {
+        RecordingScopedExamManagementService service = new RecordingScopedExamManagementService();
+        service.setFailure(new IllegalArgumentException("Question not found: 91"));
+        Server server = new Server(
+                0,
+                service,
+                new AuthService(new InMemoryUserRepository())
+        );
+
+        Response response = server.handleAuthenticatedRequest(
+                new Request(RequestType.ACTIVATE_QUESTION, new QuestionIdPayload(91)),
+                8003
+        );
+
+        assertError(response, "Question not found: 91");
+    }
+
+    @Test
+    public void contextFreeStatusAndHistoryRoutesRequireAuthenticationContext() {
+        Server server = serverWith();
+
+        for (RequestType type : new RequestType[]{
+                RequestType.ACTIVATE_QUESTION,
+                RequestType.DEACTIVATE_QUESTION,
+                RequestType.GET_QUESTION_HISTORY
+        }) {
+            Response response = server.handleRequest(
+                    new Request(type, new QuestionIdPayload(1))
+            );
+            assertError(response, "Authentication context required");
+        }
+    }
+
     private static Server serverWith(Question... questions) {
         InMemoryQuestionRepository repository = new InMemoryQuestionRepository(questions);
         return new Server(
@@ -559,6 +669,9 @@ public class ServerTest {
         private List<QuestionDTO> listedQuestions = List.of();
         private QuestionDTO selectedQuestion;
         private QuestionDTO updatedQuestion;
+        private QuestionDTO activatedQuestion;
+        private QuestionDTO deactivatedQuestion;
+        private List<QuestionVersionDTO> history = List.of();
         private RuntimeException failure;
         private int lastListUserId;
         private QuestionFilterPayload lastListFilter;
@@ -566,6 +679,13 @@ public class ServerTest {
         private int lastQuestionId;
         private int lastUpdateUserId;
         private UpdateQuestionPayload lastUpdatePayload;
+        private int lastActivateUserId;
+        private int lastActivateQuestionId;
+        private int lastDeactivateUserId;
+        private int lastDeactivateQuestionId;
+        private int lastHistoryUserId;
+        private int lastHistoryQuestionId;
+        private int statusAndHistoryCalls;
 
         private RecordingScopedExamManagementService() {
             super(new InMemoryQuestionRepository());
@@ -597,6 +717,34 @@ public class ServerTest {
             return updatedQuestion;
         }
 
+        @Override
+        public QuestionDTO activateQuestion(int authenticatedUserId, int questionId) {
+            throwIfConfigured();
+            statusAndHistoryCalls++;
+            lastActivateUserId = authenticatedUserId;
+            lastActivateQuestionId = questionId;
+            return activatedQuestion;
+        }
+
+        @Override
+        public QuestionDTO deactivateQuestion(int authenticatedUserId, int questionId) {
+            throwIfConfigured();
+            statusAndHistoryCalls++;
+            lastDeactivateUserId = authenticatedUserId;
+            lastDeactivateQuestionId = questionId;
+            return deactivatedQuestion;
+        }
+
+        @Override
+        public List<QuestionVersionDTO> getQuestionHistory(int authenticatedUserId,
+                                                           int questionId) {
+            throwIfConfigured();
+            statusAndHistoryCalls++;
+            lastHistoryUserId = authenticatedUserId;
+            lastHistoryQuestionId = questionId;
+            return history;
+        }
+
         private void throwIfConfigured() {
             if (failure != null) {
                 throw failure;
@@ -613,6 +761,18 @@ public class ServerTest {
 
         private void setUpdatedQuestion(QuestionDTO updatedQuestion) {
             this.updatedQuestion = updatedQuestion;
+        }
+
+        private void setActivatedQuestion(QuestionDTO activatedQuestion) {
+            this.activatedQuestion = activatedQuestion;
+        }
+
+        private void setDeactivatedQuestion(QuestionDTO deactivatedQuestion) {
+            this.deactivatedQuestion = deactivatedQuestion;
+        }
+
+        private void setHistory(List<QuestionVersionDTO> history) {
+            this.history = history;
         }
 
         private void setFailure(RuntimeException failure) {
@@ -642,5 +802,13 @@ public class ServerTest {
         private UpdateQuestionPayload getLastUpdatePayload() {
             return lastUpdatePayload;
         }
+
+        private int getLastActivateUserId() { return lastActivateUserId; }
+        private int getLastActivateQuestionId() { return lastActivateQuestionId; }
+        private int getLastDeactivateUserId() { return lastDeactivateUserId; }
+        private int getLastDeactivateQuestionId() { return lastDeactivateQuestionId; }
+        private int getLastHistoryUserId() { return lastHistoryUserId; }
+        private int getLastHistoryQuestionId() { return lastHistoryQuestionId; }
+        private int getStatusAndHistoryCalls() { return statusAndHistoryCalls; }
     }
 }

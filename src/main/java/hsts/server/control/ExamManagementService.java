@@ -4,8 +4,10 @@ import hsts.common.CourseSummaryDTO;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionVersionDTO;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
+import hsts.common.type.QuestionStatus;
 import hsts.common.type.UserRole;
 import hsts.server.entity.Exam;
 import hsts.server.entity.Question;
@@ -174,6 +176,29 @@ public class ExamManagementService {
         return getQuestionById(authenticatedUserId, questionId);
     }
 
+    public QuestionDTO activateQuestion(int authenticatedUserId, int questionId) {
+        return updateQuestionStatus(authenticatedUserId, questionId, QuestionStatus.ACTIVE);
+    }
+
+    public QuestionDTO deactivateQuestion(int authenticatedUserId, int questionId) {
+        return updateQuestionStatus(authenticatedUserId, questionId, QuestionStatus.INACTIVE);
+    }
+
+    public List<QuestionVersionDTO> getQuestionHistory(int authenticatedUserId,
+                                                       int questionId) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+
+        List<QuestionVersionDTO> versions = questionRepository.findVersionsForTeacher(
+                authenticatedUserId,
+                questionId
+        );
+        if (versions.isEmpty()) {
+            throw new IllegalArgumentException("Question not found: " + questionId);
+        }
+        return versions;
+    }
+
     public void deactivateQuestion(int questionId) {
         throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
     }
@@ -305,6 +330,22 @@ public class ExamManagementService {
         if (!courseRepository.isAssignedToTeacher(userId, courseId)) {
             throw new IllegalStateException("User is not assigned to course: " + courseId);
         }
+    }
+
+    private QuestionDTO updateQuestionStatus(int authenticatedUserId, int questionId,
+                                             QuestionStatus status) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+
+        boolean updated = questionRepository.updateStatusForTeacher(
+                authenticatedUserId,
+                questionId,
+                status
+        );
+        if (!updated) {
+            throw new IllegalArgumentException("Question not found: " + questionId);
+        }
+        return getQuestionById(authenticatedUserId, questionId);
     }
 
     private void validateCreateQuestionPayload(CreateQuestionPayload payload) {
