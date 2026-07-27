@@ -305,6 +305,74 @@ public class ServerTest {
         }
     }
 
+    @Test
+    public void authenticatedLegacyQuestionRoutesUseScopedServiceMethods() {
+        int authenticatedUserId = 7001;
+        RecordingScopedExamManagementService service = new RecordingScopedExamManagementService();
+        QuestionDTO listedQuestion = normalizedQuestion(61, 7, "Listed question");
+        QuestionDTO selectedQuestion = normalizedQuestion(62, 7, "Selected question");
+        QuestionDTO updatedQuestion = normalizedQuestion(63, 7, "Updated question");
+        service.setListedQuestions(List.of(listedQuestion));
+        service.setSelectedQuestion(selectedQuestion);
+        service.setUpdatedQuestion(updatedQuestion);
+        Server server = new Server(
+                0,
+                service,
+                new AuthService(new InMemoryUserRepository())
+        );
+        UpdateQuestionPayload updatePayload = new UpdateQuestionPayload(
+                63, "Updated question", "Topic", "HARD", "ACTIVE", "",
+                "One", "Two", "Three", "Four", 2, 4
+        );
+
+        Response listResponse = server.handleAuthenticatedRequest(
+                new Request(RequestType.GET_ALL_QUESTIONS, null),
+                authenticatedUserId
+        );
+        Response getResponse = server.handleAuthenticatedRequest(
+                new Request(RequestType.GET_QUESTION_BY_ID, 62),
+                authenticatedUserId
+        );
+        Response updateResponse = server.handleAuthenticatedRequest(
+                new Request(RequestType.UPDATE_QUESTION, updatePayload),
+                authenticatedUserId
+        );
+
+        assertSuccess(listResponse, "Questions loaded successfully");
+        assertSame(listedQuestion, ((List<?>) listResponse.getPayload()).get(0));
+        assertEquals(authenticatedUserId, service.getLastListUserId());
+        assertNull(service.getLastListFilter());
+
+        assertSuccess(getResponse, "Question loaded successfully");
+        assertSame(selectedQuestion, getResponse.getPayload());
+        assertEquals(authenticatedUserId, service.getLastGetUserId());
+        assertEquals(62, service.getLastQuestionId());
+
+        assertSuccess(updateResponse, "Question updated successfully");
+        assertSame(updatedQuestion, updateResponse.getPayload());
+        assertEquals(authenticatedUserId, service.getLastUpdateUserId());
+        assertSame(updatePayload, service.getLastUpdatePayload());
+    }
+
+    @Test
+    public void authenticatedLegacyQuestionRouteConvertsServiceError() {
+        IllegalStateException failure = new IllegalStateException("Scoped questions unavailable");
+        RecordingScopedExamManagementService service = new RecordingScopedExamManagementService();
+        service.setFailure(failure);
+        Server server = new Server(
+                0,
+                service,
+                new AuthService(new InMemoryUserRepository())
+        );
+
+        Response response = server.handleAuthenticatedRequest(
+                new Request(RequestType.GET_ALL_QUESTIONS, null),
+                7001
+        );
+
+        assertError(response, "Scoped questions unavailable");
+    }
+
     private static Server serverWith(Question... questions) {
         InMemoryQuestionRepository repository = new InMemoryQuestionRepository(questions);
         return new Server(
@@ -483,6 +551,96 @@ public class ServerTest {
 
         private int getLastCreateUserId() {
             return lastCreateUserId;
+        }
+    }
+
+    private static final class RecordingScopedExamManagementService
+            extends ExamManagementService {
+        private List<QuestionDTO> listedQuestions = List.of();
+        private QuestionDTO selectedQuestion;
+        private QuestionDTO updatedQuestion;
+        private RuntimeException failure;
+        private int lastListUserId;
+        private QuestionFilterPayload lastListFilter;
+        private int lastGetUserId;
+        private int lastQuestionId;
+        private int lastUpdateUserId;
+        private UpdateQuestionPayload lastUpdatePayload;
+
+        private RecordingScopedExamManagementService() {
+            super(new InMemoryQuestionRepository());
+        }
+
+        @Override
+        public List<QuestionDTO> getQuestions(int authenticatedUserId,
+                                              QuestionFilterPayload filter) {
+            throwIfConfigured();
+            lastListUserId = authenticatedUserId;
+            lastListFilter = filter;
+            return listedQuestions;
+        }
+
+        @Override
+        public QuestionDTO getQuestionById(int authenticatedUserId, int questionId) {
+            throwIfConfigured();
+            lastGetUserId = authenticatedUserId;
+            lastQuestionId = questionId;
+            return selectedQuestion;
+        }
+
+        @Override
+        public QuestionDTO updateQuestion(int authenticatedUserId,
+                                          UpdateQuestionPayload payload) {
+            throwIfConfigured();
+            lastUpdateUserId = authenticatedUserId;
+            lastUpdatePayload = payload;
+            return updatedQuestion;
+        }
+
+        private void throwIfConfigured() {
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        private void setListedQuestions(List<QuestionDTO> listedQuestions) {
+            this.listedQuestions = listedQuestions;
+        }
+
+        private void setSelectedQuestion(QuestionDTO selectedQuestion) {
+            this.selectedQuestion = selectedQuestion;
+        }
+
+        private void setUpdatedQuestion(QuestionDTO updatedQuestion) {
+            this.updatedQuestion = updatedQuestion;
+        }
+
+        private void setFailure(RuntimeException failure) {
+            this.failure = failure;
+        }
+
+        private int getLastListUserId() {
+            return lastListUserId;
+        }
+
+        private QuestionFilterPayload getLastListFilter() {
+            return lastListFilter;
+        }
+
+        private int getLastGetUserId() {
+            return lastGetUserId;
+        }
+
+        private int getLastQuestionId() {
+            return lastQuestionId;
+        }
+
+        private int getLastUpdateUserId() {
+            return lastUpdateUserId;
+        }
+
+        private UpdateQuestionPayload getLastUpdatePayload() {
+            return lastUpdatePayload;
         }
     }
 }

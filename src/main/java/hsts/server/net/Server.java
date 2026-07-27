@@ -109,6 +109,33 @@ public class Server extends AbstractServer {
     Response handleAuthenticatedRequest(Request request, int authenticatedUserId) {
         try {
             return switch (request.getType()) {
+                case GET_ALL_QUESTIONS -> Response.success(
+                        "Questions loaded successfully",
+                        examManagementService.getQuestions(authenticatedUserId, null)
+                );
+
+                case GET_QUESTION_BY_ID -> {
+                    int questionId = (Integer) request.getPayload();
+                    yield Response.success(
+                            "Question loaded successfully",
+                            examManagementService.getQuestionById(
+                                    authenticatedUserId,
+                                    questionId
+                            )
+                    );
+                }
+
+                case UPDATE_QUESTION -> {
+                    UpdateQuestionPayload payload = (UpdateQuestionPayload) request.getPayload();
+                    yield Response.success(
+                            "Question updated successfully",
+                            examManagementService.updateQuestion(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
                 case GET_MY_COURSES -> Response.success(
                         "Courses loaded successfully",
                         examManagementService.getCoursesForTeacher(authenticatedUserId)

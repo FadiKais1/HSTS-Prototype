@@ -51,6 +51,15 @@ public class ExamManagementService {
         return toDto(question);
     }
 
+    public QuestionDTO getQuestionById(int authenticatedUserId, int questionId) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+        return questionRepository.findCurrentByIdForTeacher(authenticatedUserId, questionId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Question not found: " + questionId
+                ));
+    }
+
     public List<CourseSummaryDTO> getCoursesForTeacher(int authenticatedUserId) {
         requireQuestionBankDependencies();
         authorizeQuestionManager(authenticatedUserId);
@@ -132,6 +141,37 @@ public class ExamManagementService {
         }
 
         return getQuestionById(payload.getQuestionId());
+    }
+
+    public QuestionDTO updateQuestion(int authenticatedUserId,
+                                      UpdateQuestionPayload payload) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+        validateQuestionPayload(payload);
+
+        int questionId = payload.getQuestionId();
+        questionRepository.findCurrentByIdForTeacher(authenticatedUserId, questionId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Question not found: " + questionId
+                ));
+
+        UpdateQuestionPayload normalizedPayload = new UpdateQuestionPayload(
+                questionId,
+                payload.getContent().trim(),
+                normalizeText(payload.getTopic(), "General"),
+                normalizeText(payload.getDifficulty(), "EASY"),
+                normalizeText(payload.getStatus(), "ACTIVE"),
+                normalizeText(payload.getIllustrationPath(), ""),
+                payload.getAnswerOption1().trim(),
+                payload.getAnswerOption2().trim(),
+                payload.getAnswerOption3().trim(),
+                payload.getAnswerOption4().trim(),
+                payload.getCorrectOptionNumber(),
+                payload.getExpectedVersionNo()
+        );
+
+        questionRepository.updateWithNewVersion(authenticatedUserId, normalizedPayload);
+        return getQuestionById(authenticatedUserId, questionId);
     }
 
     public void deactivateQuestion(int questionId) {
