@@ -6,9 +6,12 @@ import hsts.common.CreateQuestionPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
+import hsts.common.ExamVersionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionVersionDTO;
+import hsts.common.RejectExamPayload;
+import hsts.common.UpdateExamPayload;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
@@ -266,6 +269,104 @@ public class ExamManagementService {
                 ));
     }
 
+    public ExamDTO updateExam(int authenticatedUserId, UpdateExamPayload payload) {
+        authorizeExamManager(authenticatedUserId);
+        requireExamRepository();
+        if (payload == null) {
+            throw new IllegalArgumentException("Exam update data is missing");
+        }
+
+        ExamDTO currentExam = getExamForTeacher(
+                authenticatedUserId,
+                payload.getExamId()
+        );
+        validateExamData(
+                payload.getTitle(),
+                payload.getDurationMinutes(),
+                payload.getStudentInstructions(),
+                payload.getQuestions()
+        );
+        validateExamQuestions(
+                authenticatedUserId,
+                currentExam.getCourseId(),
+                payload.getQuestions()
+        );
+
+        UpdateExamPayload normalizedPayload = new UpdateExamPayload(
+                payload.getExamId(),
+                payload.getExpectedVersionNo(),
+                payload.getTitle().trim(),
+                payload.getDurationMinutes(),
+                normalizeText(payload.getTeacherNotes(), ""),
+                payload.getStudentInstructions().trim(),
+                payload.getQuestions()
+        );
+
+        examRepository.updateWithNewVersion(authenticatedUserId, normalizedPayload);
+        return getExamForTeacher(authenticatedUserId, payload.getExamId());
+    }
+
+    public ExamDTO submitExamForApproval(int authenticatedUserId,
+                                         ExamVersionPayload payload) {
+        authorizeExamManager(authenticatedUserId);
+        requireExamRepository();
+        if (payload == null) {
+            throw new IllegalArgumentException("Exam version data is missing");
+        }
+
+        boolean submitted = examRepository.submitForApproval(
+                authenticatedUserId,
+                payload.getExamId(),
+                payload.getExpectedVersionNo()
+        );
+        if (!submitted) {
+            throw new IllegalArgumentException("Exam not found: " + payload.getExamId());
+        }
+        return getExamForTeacher(authenticatedUserId, payload.getExamId());
+    }
+
+    public ExamDTO approveExam(int authenticatedCoordinatorId,
+                               ExamVersionPayload payload) {
+        authorizeCoordinator(authenticatedCoordinatorId);
+        requireExamRepository();
+        if (payload == null) {
+            throw new IllegalArgumentException("Exam version data is missing");
+        }
+
+        boolean approved = examRepository.approve(
+                authenticatedCoordinatorId,
+                payload.getExamId(),
+                payload.getExpectedVersionNo()
+        );
+        if (!approved) {
+            throw new IllegalArgumentException("Exam not found: " + payload.getExamId());
+        }
+        return getExamForCoordinator(authenticatedCoordinatorId, payload.getExamId());
+    }
+
+    public ExamDTO rejectExam(int authenticatedCoordinatorId,
+                              RejectExamPayload payload) {
+        authorizeCoordinator(authenticatedCoordinatorId);
+        requireExamRepository();
+        if (payload == null) {
+            throw new IllegalArgumentException("Exam rejection data is missing");
+        }
+        if (isBlank(payload.getReason())) {
+            throw new IllegalArgumentException("Rejection reason is required");
+        }
+
+        boolean rejected = examRepository.reject(
+                authenticatedCoordinatorId,
+                payload.getExamId(),
+                payload.getExpectedVersionNo(),
+                payload.getReason().trim()
+        );
+        if (!rejected) {
+            throw new IllegalArgumentException("Exam not found: " + payload.getExamId());
+        }
+        return getExamForCoordinator(authenticatedCoordinatorId, payload.getExamId());
+    }
+
     public void deactivateQuestion(int questionId) {
         throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
     }
@@ -463,17 +564,27 @@ public class ExamManagementService {
         if (payload == null) {
             throw new IllegalArgumentException("Exam creation data is missing");
         }
-        if (isBlank(payload.getTitle())) {
+        validateExamData(
+                payload.getTitle(),
+                payload.getDurationMinutes(),
+                payload.getStudentInstructions(),
+                payload.getQuestions()
+        );
+    }
+
+    private void validateExamData(String title, int durationMinutes,
+                                  String studentInstructions,
+                                  List<ExamQuestionSelectionPayload> questions) {
+        if (isBlank(title)) {
             throw new IllegalArgumentException("Exam title is required");
         }
-        if (payload.getDurationMinutes() <= 0) {
+        if (durationMinutes <= 0) {
             throw new IllegalArgumentException("Exam duration must be positive");
         }
-        if (isBlank(payload.getStudentInstructions())) {
+        if (isBlank(studentInstructions)) {
             throw new IllegalArgumentException("Student instructions are required");
         }
 
-        List<ExamQuestionSelectionPayload> questions = payload.getQuestions();
         if (questions == null || questions.isEmpty()) {
             throw new IllegalArgumentException("At least one question is required");
         }
@@ -521,13 +632,22 @@ public class ExamManagementService {
 
     private void validateExamQuestions(int authenticatedUserId,
                                        CreateExamPayload payload) {
-        for (ExamQuestionSelectionPayload selection : payload.getQuestions()) {
+        validateExamQuestions(
+                authenticatedUserId,
+                payload.getCourseId(),
+                payload.getQuestions()
+        );
+    }
+
+    private void validateExamQuestions(int authenticatedUserId, int courseId,
+                                       List<ExamQuestionSelectionPayload> questions) {
+        for (ExamQuestionSelectionPayload selection : questions) {
             QuestionDTO question = questionRepository.findCurrentByIdForTeacher(
                     authenticatedUserId,
                     selection.getQuestionId()
             ).orElseThrow(() -> unavailableQuestion(selection.getQuestionId()));
 
-            if (question.getCourseId() != payload.getCourseId()
+            if (question.getCourseId() != courseId
                     || !QuestionStatus.ACTIVE.name().equals(question.getStatus())
                     || question.getVersionNo() != selection.getQuestionVersionNo()) {
                 throw unavailableQuestion(selection.getQuestionId());
