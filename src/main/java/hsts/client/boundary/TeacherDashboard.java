@@ -35,16 +35,29 @@ public class TeacherDashboard {
     @FXML
     private Button approvalRequestsButton;
     private Runnable questionBankHandler;
+    @FXML
+    private Button examManagementButton;
+    private Runnable examManagementHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
         questionBankHandler = null;
+        examManagementHandler = null;
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
                           Runnable logoutHandler, Runnable questionBankHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
+        examManagementHandler = null;
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable questionBankHandler,
+                          Runnable examManagementHandler) {
+        configureDashboard(stage, client, loginResult, logoutHandler);
+        this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
+        this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
     }
 
     @FXML
@@ -82,6 +95,20 @@ public class TeacherDashboard {
             questionBankHandler.run();
         } catch (RuntimeException exception) {
             showError("Question bank is unavailable");
+        }
+    }
+
+    @FXML
+    private void handleExamManagement() {
+        if (examManagementHandler == null) {
+            showError("Exam management is unavailable");
+            return;
+        }
+
+        try {
+            examManagementHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Exam management is unavailable");
         }
     }
 

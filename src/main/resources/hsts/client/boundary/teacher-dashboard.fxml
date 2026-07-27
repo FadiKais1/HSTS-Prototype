@@ -43,7 +43,9 @@
                 <Button fx:id="questionBankButton" text="Question Bank"
                         onAction="#handleQuestionBank" maxWidth="Infinity" prefHeight="46"
                         style="-fx-background-color: #2563eb; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
-                <Button text="Exam Management" disable="true" maxWidth="Infinity" prefHeight="46"/>
+                <Button fx:id="examManagementButton" text="Exam Management"
+                        onAction="#handleExamManagement" maxWidth="Infinity" prefHeight="46"
+                        style="-fx-background-color: #0f766e; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button fx:id="approvalRequestsButton" text="Approval Requests" disable="true"
                         managed="false" visible="false" maxWidth="Infinity" prefHeight="46"/>
                 <Button text="Reports" disable="true" maxWidth="Infinity" prefHeight="46"/>

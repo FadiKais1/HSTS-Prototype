@@ -1,6 +1,7 @@
 package hsts.client;
 
 import hsts.client.boundary.LoginPage;
+import hsts.client.boundary.ExamBuilderPage;
 import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.StudentDashboard;
@@ -149,7 +150,8 @@ public class MainClient extends Application {
                 client,
                 loginResult,
                 this::logout,
-                () -> showQuestionBank(loginResult)
+                () -> showQuestionBank(loginResult),
+                () -> showExamBuilder(loginResult)
         );
     }
 
@@ -174,6 +176,24 @@ public class MainClient extends Application {
             try {
                 showTeacherDashboard(loginResult);
                 showNavigationError("Unable to open question bank");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void showExamBuilder(LoginResult loginResult) {
+        try {
+            ExamBuilderPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/exam-builder-page.fxml",
+                    "HSTS Exam Management System - Exam Builder"
+            );
+            controller.configure(stage, client, () -> returnToTeacherDashboard(loginResult));
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showTeacherDashboard(loginResult);
+                showNavigationError("Unable to open exam management");
             } catch (IOException | RuntimeException restoreException) {
                 cleanupAfterNavigationFailure();
             }
