@@ -14,7 +14,6 @@ public class InMemoryQuestionRepository extends QuestionRepository {
     private RuntimeException findAllFailure;
     private int findAllCalls;
     private int findByIdCalls;
-    private int updateCalls;
 
     public InMemoryQuestionRepository(Question... initialQuestions) {
         for (Question question : initialQuestions) {
@@ -37,30 +36,12 @@ public class InMemoryQuestionRepository extends QuestionRepository {
         return Optional.ofNullable(questions.get(questionId));
     }
 
-    @Override
-    public boolean updateQuestion(Question question) {
-        updateCalls++;
-        if (!questions.containsKey(question.getQuestionId())) {
-            return false;
-        }
-        questions.put(question.getQuestionId(), question);
-        return true;
-    }
-
-    public Question getStoredQuestion(int questionId) {
-        return questions.get(questionId);
-    }
-
     public int getFindAllCalls() {
         return findAllCalls;
     }
 
     public int getFindByIdCalls() {
         return findByIdCalls;
-    }
-
-    public int getUpdateCalls() {
-        return updateCalls;
     }
 
     public void setFindAllFailure(RuntimeException findAllFailure) {

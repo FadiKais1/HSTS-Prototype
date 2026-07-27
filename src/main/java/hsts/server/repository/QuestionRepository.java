@@ -572,17 +572,6 @@ public class QuestionRepository {
         }
     }
 
-    /**
-     * COMPATIBILITY-ONLY: retained for existing repository subclasses. Legacy
-     * single-row updates bypass immutable version and answer-option history.
-     */
-    @Deprecated
-    public boolean updateQuestion(Question question) {
-        throw new UnsupportedOperationException(
-                "Legacy question mutation is not supported"
-        );
-    }
-
     private Question mapRowToQuestion(ResultSet resultSet) throws SQLException {
         return new Question(
                 resultSet.getInt("question_id"),

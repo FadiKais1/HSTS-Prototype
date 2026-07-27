@@ -192,20 +192,6 @@ public class QuestionRepositoryCreateTest {
         assertEquals(0, databaseController.getConnectionCalls());
     }
 
-    @Test
-    public void legacySingleRowUpdateIsExplicitlyUnsupported() {
-        QuestionRepository repository = new QuestionRepository(
-                new RecordingDatabaseController(true)
-        );
-
-        UnsupportedOperationException exception = assertThrows(
-                UnsupportedOperationException.class,
-                () -> repository.updateQuestion(question(DifficultyLevel.HARD))
-        );
-
-        assertEquals("Legacy question mutation is not supported", exception.getMessage());
-    }
-
     private static Question question(DifficultyLevel difficulty) {
         return new Question(
                 0,
