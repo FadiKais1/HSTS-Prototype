@@ -8,6 +8,7 @@ import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
+import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Question;
 
 import java.sql.Connection;
@@ -70,6 +71,35 @@ public class QuestionRepository {
               ON option_4.question_id = qv.question_id
              AND option_4.version_no = qv.version_no
              AND option_4.option_number = 4
+            """;
+
+    private static final String CURRENT_QUESTION_ENTITY_SELECT = """
+            SELECT q.question_id,
+                   q.status,
+                   q.created_at,
+                   q.updated_at,
+                   q.current_version_no,
+                   qv.version_no,
+                   qv.content,
+                   qv.topic,
+                   qv.question_type,
+                   qv.difficulty,
+                   qv.illustration_path,
+                   qv.correct_option_number,
+                   option_row.option_number,
+                   option_row.option_text
+            FROM questions q
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+             AND tc.teacher_user_id = ?
+            LEFT JOIN question_versions qv
+              ON qv.question_id = q.question_id
+             AND qv.version_no = q.current_version_no
+            LEFT JOIN answer_options option_row
+              ON option_row.question_id = qv.question_id
+             AND option_row.version_no = qv.version_no
+            WHERE q.question_id = ?
+            ORDER BY option_row.option_number
             """;
 
     private static final String CREATE_QUESTION_SQL = """
@@ -220,6 +250,35 @@ public class QuestionRepository {
             throw new IllegalArgumentException("Question difficulty is required");
         }
 
+        QuestionPersistenceData data = new QuestionPersistenceData(
+                payload.getContent(),
+                payload.getTopic(),
+                QuestionType.MULTIPLE_CHOICE.name(),
+                payload.getDifficulty().name(),
+                QuestionStatus.ACTIVE.name(),
+                payload.getIllustrationPath(),
+                payload.getAnswerOption1(),
+                payload.getAnswerOption2(),
+                payload.getAnswerOption3(),
+                payload.getAnswerOption4(),
+                payload.getCorrectOptionNumber()
+        );
+        return createQuestion(createdByUserId, payload.getCourseId(), data);
+    }
+
+    public int create(int authenticatedUserId, int courseId, Question question) {
+        if (question == null) {
+            throw new IllegalArgumentException("Question data is required");
+        }
+        return createQuestion(
+                authenticatedUserId,
+                courseId,
+                persistenceData(question)
+        );
+    }
+
+    private int createQuestion(int createdByUserId, int courseId,
+                               QuestionPersistenceData data) {
         try (Connection connection = databaseController.getConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
             boolean transactionStarted = false;
@@ -233,11 +292,18 @@ public class QuestionRepository {
                 int questionId = insertCurrentQuestion(
                         connection,
                         createdByUserId,
-                        payload,
+                        courseId,
+                        data,
                         createdAt
                 );
-                insertQuestionVersion(connection, questionId, createdByUserId, payload, createdAt);
-                insertAnswerOptions(connection, questionId, payload);
+                insertQuestionVersion(
+                        connection,
+                        questionId,
+                        createdByUserId,
+                        data,
+                        createdAt
+                );
+                insertAnswerOptions(connection, questionId, 1, data);
                 connection.commit();
                 return questionId;
 
@@ -261,6 +327,43 @@ public class QuestionRepository {
             throw new IllegalArgumentException("Question update data is required");
         }
 
+        QuestionPersistenceData data = new QuestionPersistenceData(
+                payload.getContent(),
+                payload.getTopic(),
+                QuestionType.MULTIPLE_CHOICE.name(),
+                payload.getDifficulty(),
+                payload.getStatus(),
+                payload.getIllustrationPath(),
+                payload.getAnswerOption1(),
+                payload.getAnswerOption2(),
+                payload.getAnswerOption3(),
+                payload.getAnswerOption4(),
+                payload.getCorrectOptionNumber()
+        );
+        return updateQuestionVersion(
+                updatedByUserId,
+                payload.getQuestionId(),
+                payload.getExpectedVersionNo(),
+                data
+        );
+    }
+
+    public int updateWithNewVersion(int authenticatedUserId, int questionId,
+                                    int expectedVersionNo, Question question) {
+        if (question == null) {
+            throw new IllegalArgumentException("Question update data is required");
+        }
+        return updateQuestionVersion(
+                authenticatedUserId,
+                questionId,
+                expectedVersionNo,
+                persistenceData(question)
+        );
+    }
+
+    private int updateQuestionVersion(int updatedByUserId, int questionId,
+                                      int expectedVersionNo,
+                                      QuestionPersistenceData data) {
         try (Connection connection = databaseController.getConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
             boolean transactionStarted = false;
@@ -270,9 +373,9 @@ public class QuestionRepository {
                 connection.setAutoCommit(false);
                 transactionStarted = true;
 
-                int currentVersionNo = lockCurrentVersion(connection, payload.getQuestionId());
-                if (payload.getExpectedVersionNo() > 0
-                        && payload.getExpectedVersionNo() != currentVersionNo) {
+                int currentVersionNo = lockCurrentVersion(connection, questionId);
+                if (expectedVersionNo > 0
+                        && expectedVersionNo != currentVersionNo) {
                     throw new IllegalStateException("Question version conflict");
                 }
 
@@ -281,14 +384,16 @@ public class QuestionRepository {
                 insertUpdatedQuestionVersion(
                         connection,
                         updatedByUserId,
-                        payload,
+                        questionId,
+                        data,
                         newVersionNo,
                         updatedAt
                 );
-                insertUpdatedAnswerOptions(connection, payload, newVersionNo);
+                insertAnswerOptions(connection, questionId, newVersionNo, data);
                 updateCurrentQuestion(
                         connection,
-                        payload,
+                        questionId,
+                        data,
                         currentVersionNo,
                         newVersionNo,
                         updatedAt
@@ -450,6 +555,32 @@ public class QuestionRepository {
 
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load assigned question by id", e);
+        }
+    }
+
+    public Optional<Question> findCurrentEntityByIdForTeacher(
+            int authenticatedUserId,
+            int questionId
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     CURRENT_QUESTION_ENTITY_SELECT
+             )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, questionId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(mapCurrentQuestionEntity(resultSet, questionId));
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException(
+                    "Failed to load assigned question by id",
+                    e
+            );
         }
     }
 
@@ -643,25 +774,175 @@ public class QuestionRepository {
         );
     }
 
+    private Question mapCurrentQuestionEntity(ResultSet resultSet, int questionId)
+            throws SQLException {
+        Object versionValue = resultSet.getObject("version_no");
+        if (versionValue == null) {
+            throw new IllegalArgumentException(
+                    "Current question version is missing: " + questionId
+            );
+        }
+
+        int hydratedQuestionId = resultSet.getInt("question_id");
+        String content = resultSet.getString("content");
+        String topic = resultSet.getString("topic");
+        QuestionType type = parsePersistedEnum(
+                resultSet.getString("question_type"),
+                QuestionType.class,
+                "Question type",
+                questionId
+        );
+        DifficultyLevel difficulty = parsePersistedEnum(
+                resultSet.getString("difficulty"),
+                DifficultyLevel.class,
+                "Question difficulty",
+                questionId
+        );
+        QuestionStatus status = parsePersistedEnum(
+                resultSet.getString("status"),
+                QuestionStatus.class,
+                "Question status",
+                questionId
+        );
+        String illustrationPath = resultSet.getString("illustration_path");
+        LocalDateTime createdAt = resultSet.getObject(
+                "created_at",
+                LocalDateTime.class
+        );
+        LocalDateTime updatedAt = resultSet.getObject(
+                "updated_at",
+                LocalDateTime.class
+        );
+        int correctOptionNumber = resultSet.getInt("correct_option_number");
+        if (correctOptionNumber < 1 || correctOptionNumber > 4) {
+            throw new IllegalArgumentException(
+                    "Correct answer number is invalid for question: " + questionId
+            );
+        }
+
+        List<AnswerOption> options = new ArrayList<>(4);
+        do {
+            Object optionNumberValue = resultSet.getObject("option_number");
+            if (optionNumberValue != null) {
+                int optionNumber = resultSet.getInt("option_number");
+                options.add(new AnswerOption(
+                        optionNumber,
+                        resultSet.getString("option_text"),
+                        optionNumber == correctOptionNumber
+                ));
+            }
+        } while (resultSet.next());
+
+        if (options.size() != 4) {
+            throw new IllegalArgumentException(
+                    "Question must contain exactly four answer options: "
+                            + questionId
+            );
+        }
+
+        return Question.rehydrate(
+                hydratedQuestionId,
+                content,
+                type,
+                difficulty,
+                status,
+                createdAt,
+                updatedAt,
+                topic,
+                illustrationPath,
+                options
+        );
+    }
+
+    private static <E extends Enum<E>> E parsePersistedEnum(
+            String value,
+            Class<E> enumType,
+            String label,
+            int questionId
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    label + " is missing for question: " + questionId
+            );
+        }
+        try {
+            return Enum.valueOf(enumType, value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    label + " is invalid for question: " + questionId,
+                    exception
+            );
+        }
+    }
+
+    private static QuestionPersistenceData persistenceData(Question question) {
+        List<AnswerOption> options = question.getAnswerOptions();
+        if (options.size() != 4) {
+            throw new IllegalArgumentException(
+                    "Question must contain exactly four answer options"
+            );
+        }
+
+        String[] optionTexts = new String[4];
+        for (AnswerOption option : options) {
+            int optionNumber = option.getOptionId();
+            if (optionTexts[optionNumber - 1] != null) {
+                throw new IllegalArgumentException(
+                        "Question contains a duplicate answer option: "
+                                + optionNumber
+                );
+            }
+            optionTexts[optionNumber - 1] = option.getOptionText();
+        }
+        for (String optionText : optionTexts) {
+            if (optionText == null) {
+                throw new IllegalArgumentException(
+                        "Question must contain answer options 1 through 4"
+                );
+            }
+        }
+
+        int correctOptionNumber = question.getCorrectOptionNumber();
+        if (correctOptionNumber < 1 || correctOptionNumber > 4) {
+            throw new IllegalArgumentException(
+                    "Question must have exactly one correct answer"
+            );
+        }
+
+        return new QuestionPersistenceData(
+                question.getContent(),
+                question.getTopic(),
+                question.getQuestionType().name(),
+                question.getDifficultyLevel().name(),
+                question.getQuestionStatus().name(),
+                question.getIllustrationPath(),
+                optionTexts[0],
+                optionTexts[1],
+                optionTexts[2],
+                optionTexts[3],
+                correctOptionNumber
+        );
+    }
+
     private int insertCurrentQuestion(Connection connection, int createdByUserId,
-                                      CreateQuestionPayload payload,
+                                      int courseId, QuestionPersistenceData data,
                                       LocalDateTime createdAt) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 CREATE_QUESTION_SQL,
                 Statement.RETURN_GENERATED_KEYS
         )) {
-            statement.setString(1, payload.getContent());
-            statement.setString(2, payload.getTopic());
-            statement.setString(3, "MULTIPLE_CHOICE");
-            statement.setString(4, payload.getDifficulty().name());
-            statement.setString(5, "ACTIVE");
-            statement.setString(6, payload.getIllustrationPath());
-            statement.setString(7, payload.getAnswerOption1());
-            statement.setString(8, payload.getAnswerOption2());
-            statement.setString(9, payload.getAnswerOption3());
-            statement.setString(10, payload.getAnswerOption4());
-            statement.setInt(11, payload.getCorrectOptionNumber());
-            statement.setInt(12, payload.getCourseId());
+            statement.setString(1, data.content());
+            statement.setString(2, data.topic());
+            statement.setString(3, data.type());
+            statement.setString(4, data.difficulty());
+            statement.setString(5, data.status());
+            statement.setString(6, data.illustrationPath());
+            statement.setString(7, data.answerOption1());
+            statement.setString(8, data.answerOption2());
+            statement.setString(9, data.answerOption3());
+            statement.setString(10, data.answerOption4());
+            statement.setInt(11, data.correctOptionNumber());
+            statement.setInt(12, courseId);
             statement.setInt(13, createdByUserId);
             statement.setInt(14, 1);
             statement.setObject(15, createdAt);
@@ -686,17 +967,18 @@ public class QuestionRepository {
     }
 
     private void insertQuestionVersion(Connection connection, int questionId,
-                                       int createdByUserId, CreateQuestionPayload payload,
+                                       int createdByUserId,
+                                       QuestionPersistenceData data,
                                        LocalDateTime createdAt) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(CREATE_QUESTION_VERSION_SQL)) {
             statement.setInt(1, questionId);
             statement.setInt(2, 1);
-            statement.setString(3, payload.getContent());
-            statement.setString(4, payload.getTopic());
-            statement.setString(5, "MULTIPLE_CHOICE");
-            statement.setString(6, payload.getDifficulty().name());
-            statement.setString(7, payload.getIllustrationPath());
-            statement.setInt(8, payload.getCorrectOptionNumber());
+            statement.setString(3, data.content());
+            statement.setString(4, data.topic());
+            statement.setString(5, data.type());
+            statement.setString(6, data.difficulty());
+            statement.setString(7, data.illustrationPath());
+            statement.setInt(8, data.correctOptionNumber());
             statement.setInt(9, createdByUserId);
             statement.setObject(10, createdAt);
 
@@ -707,18 +989,19 @@ public class QuestionRepository {
     }
 
     private void insertAnswerOptions(Connection connection, int questionId,
-                                     CreateQuestionPayload payload) throws SQLException {
+                                     int versionNo, QuestionPersistenceData data)
+            throws SQLException {
         String[] optionTexts = {
-                payload.getAnswerOption1(),
-                payload.getAnswerOption2(),
-                payload.getAnswerOption3(),
-                payload.getAnswerOption4()
+                data.answerOption1(),
+                data.answerOption2(),
+                data.answerOption3(),
+                data.answerOption4()
         };
 
         try (PreparedStatement statement = connection.prepareStatement(CREATE_ANSWER_OPTION_SQL)) {
             for (int optionNumber = 1; optionNumber <= optionTexts.length; optionNumber++) {
                 statement.setInt(1, questionId);
-                statement.setInt(2, 1);
+                statement.setInt(2, versionNo);
                 statement.setInt(3, optionNumber);
                 statement.setString(4, optionTexts[optionNumber - 1]);
 
@@ -742,18 +1025,21 @@ public class QuestionRepository {
         }
     }
 
-    private void insertUpdatedQuestionVersion(Connection connection, int updatedByUserId,
-                                              UpdateQuestionPayload payload, int newVersionNo,
+    private void insertUpdatedQuestionVersion(Connection connection,
+                                              int updatedByUserId,
+                                              int questionId,
+                                              QuestionPersistenceData data,
+                                              int newVersionNo,
                                               LocalDateTime updatedAt) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(CREATE_QUESTION_VERSION_SQL)) {
-            statement.setInt(1, payload.getQuestionId());
+            statement.setInt(1, questionId);
             statement.setInt(2, newVersionNo);
-            statement.setString(3, payload.getContent());
-            statement.setString(4, payload.getTopic());
-            statement.setString(5, "MULTIPLE_CHOICE");
-            statement.setString(6, payload.getDifficulty());
-            statement.setString(7, payload.getIllustrationPath());
-            statement.setInt(8, payload.getCorrectOptionNumber());
+            statement.setString(3, data.content());
+            statement.setString(4, data.topic());
+            statement.setString(5, data.type());
+            statement.setString(6, data.difficulty());
+            statement.setString(7, data.illustrationPath());
+            statement.setInt(8, data.correctOptionNumber());
             statement.setInt(9, updatedByUserId);
             statement.setObject(10, updatedAt);
 
@@ -763,46 +1049,24 @@ public class QuestionRepository {
         }
     }
 
-    private void insertUpdatedAnswerOptions(Connection connection, UpdateQuestionPayload payload,
-                                            int newVersionNo) throws SQLException {
-        String[] optionTexts = {
-                payload.getAnswerOption1(),
-                payload.getAnswerOption2(),
-                payload.getAnswerOption3(),
-                payload.getAnswerOption4()
-        };
-
-        try (PreparedStatement statement = connection.prepareStatement(CREATE_ANSWER_OPTION_SQL)) {
-            for (int optionNumber = 1; optionNumber <= optionTexts.length; optionNumber++) {
-                statement.setInt(1, payload.getQuestionId());
-                statement.setInt(2, newVersionNo);
-                statement.setInt(3, optionNumber);
-                statement.setString(4, optionTexts[optionNumber - 1]);
-
-                if (statement.executeUpdate() != 1) {
-                    throw new SQLException("Answer option insert did not affect exactly one row");
-                }
-            }
-        }
-    }
-
-    private void updateCurrentQuestion(Connection connection, UpdateQuestionPayload payload,
+    private void updateCurrentQuestion(Connection connection, int questionId,
+                                       QuestionPersistenceData data,
                                        int currentVersionNo, int newVersionNo,
                                        LocalDateTime updatedAt) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(UPDATE_CURRENT_QUESTION_SQL)) {
-            statement.setString(1, payload.getContent());
-            statement.setString(2, payload.getTopic());
-            statement.setString(3, "MULTIPLE_CHOICE");
-            statement.setString(4, payload.getDifficulty());
-            statement.setString(5, payload.getIllustrationPath());
-            statement.setString(6, payload.getAnswerOption1());
-            statement.setString(7, payload.getAnswerOption2());
-            statement.setString(8, payload.getAnswerOption3());
-            statement.setString(9, payload.getAnswerOption4());
-            statement.setInt(10, payload.getCorrectOptionNumber());
+            statement.setString(1, data.content());
+            statement.setString(2, data.topic());
+            statement.setString(3, data.type());
+            statement.setString(4, data.difficulty());
+            statement.setString(5, data.illustrationPath());
+            statement.setString(6, data.answerOption1());
+            statement.setString(7, data.answerOption2());
+            statement.setString(8, data.answerOption3());
+            statement.setString(9, data.answerOption4());
+            statement.setInt(10, data.correctOptionNumber());
             statement.setInt(11, newVersionNo);
             statement.setObject(12, updatedAt);
-            statement.setInt(13, payload.getQuestionId());
+            statement.setInt(13, questionId);
             statement.setInt(14, currentVersionNo);
 
             if (statement.executeUpdate() != 1) {
@@ -883,5 +1147,20 @@ public class QuestionRepository {
             }
             throw restorationFailure;
         }
+    }
+
+    private record QuestionPersistenceData(
+            String content,
+            String topic,
+            String type,
+            String difficulty,
+            String status,
+            String illustrationPath,
+            String answerOption1,
+            String answerOption2,
+            String answerOption3,
+            String answerOption4,
+            int correctOptionNumber
+    ) {
     }
 }
