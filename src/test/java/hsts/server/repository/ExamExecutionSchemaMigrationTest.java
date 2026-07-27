@@ -157,6 +157,8 @@ public class ExamExecutionSchemaMigrationTest {
         assertAppearsInOrder(INITIALIZER,
                 "createExamExecutionDecilesTable(connection);",
                 "migrateExecutionSchemaColumns(connection);",
+                "backfillExecutionUpdatedAt(connection);",
+                "normalizeExecutionUpdatedAtColumn(connection);",
                 "createExecutionSchemaIndexesAndConstraints(connection);",
                 "insertExecutionCompatibilityData(connection);"
         );
@@ -201,6 +203,88 @@ public class ExamExecutionSchemaMigrationTest {
                 "ensureConstraint(connection, \"submission_time_extensions\"",
                 "ensureConstraint(connection, \"exam_execution_deciles\""
         );
+    }
+
+    @Test
+    public void executionUpdatedAtHasAuthoritativeAutomaticDefinition() {
+        String freshExecutionTable = between(
+                INIT_SQL,
+                "CREATE TABLE IF NOT EXISTS exam_executions",
+                "CREATE TABLE IF NOT EXISTS exam_submissions"
+        );
+        String runtimeExecutionTable = between(
+                INITIALIZER,
+                "private void createExamExecutionsTable",
+                "private void createExamSubmissionsTable"
+        );
+
+        for (String definition : List.of(freshExecutionTable, runtimeExecutionTable)) {
+            assertContainsAll(definition,
+                    "updated_at TIMESTAMP NOT NULL",
+                    "DEFAULT CURRENT_TIMESTAMP",
+                    "ON UPDATE CURRENT_TIMESTAMP",
+                    ") ENGINE=InnoDB"
+            );
+            assertAppearsInOrder(definition,
+                    "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+                    "updated_at TIMESTAMP NOT NULL",
+                    "closed_at DATETIME NULL"
+            );
+        }
+    }
+
+    @Test
+    public void runtimeUpdatedAtMigrationBackfillsThenNormalizesWithoutOverwrite() {
+        assertContainsAll(INITIALIZER,
+                "addColumnIfMissing(connection, \"exam_executions\", \"updated_at\", \"TIMESTAMP NULL\")",
+                "FROM information_schema.COLUMNS",
+                "TABLE_NAME = 'exam_executions'",
+                "COLUMN_NAME = 'updated_at'",
+                "MODIFY COLUMN updated_at TIMESTAMP NOT NULL",
+                "DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+        );
+
+        String backfill = between(
+                INITIALIZER,
+                "private void backfillExecutionUpdatedAt",
+                "private void normalizeExecutionUpdatedAtColumn"
+        );
+        assertContainsAll(backfill,
+                "boolean originalAutoCommit = connection.getAutoCommit();",
+                "connection.setAutoCommit(false);",
+                "SET updated_at = COALESCE(closed_at, created_at)",
+                "WHERE updated_at IS NULL",
+                "connection.commit();",
+                "rollbackWithSuppressed(connection, e);",
+                "restoreAutoCommit(connection, originalAutoCommit, migrationFailure);"
+        );
+        assertFalse(backfill.contains("CURRENT_TIMESTAMP"));
+
+        assertAppearsInOrder(INITIALIZER,
+                "addColumnIfMissing(connection, \"exam_executions\", \"updated_at\", \"TIMESTAMP NULL\")",
+                "private void backfillExecutionUpdatedAt",
+                "private void normalizeExecutionUpdatedAtColumn"
+        );
+    }
+
+    @Test
+    public void updatedAtMigrationIsStructuralAndNonDestructive() {
+        String executionMigration = between(
+                INITIALIZER,
+                "private void migrateExecutionSchema",
+                "private void validateExecutionCompatibilityStudent"
+        );
+        String normalized = normalize(executionMigration);
+
+        assertFalse(normalized.contains("DROP TABLE"));
+        assertFalse(normalized.contains("TRUNCATE TABLE"));
+        assertFalse(normalized.contains("DELETE FROM"));
+        assertFalse(normalized.contains("INSERT INTO EXAM_EXECUTIONS"));
+        assertEquals(1, occurrences(normalized, "UPDATE EXAM_EXECUTIONS"));
+        assertTrue("Structural checks do not replace a live MySQL migration check",
+                INITIALIZER.contains(
+                        "SET updated_at = COALESCE(closed_at, created_at)"
+                ));
     }
 
     @Test

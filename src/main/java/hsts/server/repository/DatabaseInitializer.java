@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Locale;
 
 public class DatabaseInitializer {
 
@@ -220,6 +221,8 @@ public class DatabaseInitializer {
             createSubmissionTimeExtensionsTable(connection);
             createExamExecutionDecilesTable(connection);
             migrateExecutionSchemaColumns(connection);
+            backfillExecutionUpdatedAt(connection);
+            normalizeExecutionUpdatedAtColumn(connection);
             createExecutionSchemaIndexesAndConstraints(connection);
             insertExecutionCompatibilityData(connection);
         } catch (SQLException | RuntimeException e) {
@@ -283,6 +286,8 @@ public class DatabaseInitializer {
                     status VARCHAR(32) NOT NULL,
                     created_by_user_id INT NOT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
                     closed_at DATETIME NULL,
                     average_score DECIMAL(7,2) NULL,
                     median_score DECIMAL(7,2) NULL,
@@ -491,6 +496,7 @@ public class DatabaseInitializer {
         addColumnIfMissing(connection, "exam_executions", "created_by_user_id", "INT NOT NULL");
         addColumnIfMissing(connection, "exam_executions", "created_at",
                 "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        addColumnIfMissing(connection, "exam_executions", "updated_at", "TIMESTAMP NULL");
         addColumnIfMissing(connection, "exam_executions", "closed_at", "DATETIME NULL");
         addColumnIfMissing(connection, "exam_executions", "average_score", "DECIMAL(7,2) NULL");
         addColumnIfMissing(connection, "exam_executions", "median_score", "DECIMAL(7,2) NULL");
@@ -554,6 +560,74 @@ public class DatabaseInitializer {
         addColumnIfMissing(connection, "exam_execution_deciles", "decile_number", "INT NOT NULL");
         addColumnIfMissing(connection, "exam_execution_deciles", "submission_count",
                 "INT NOT NULL DEFAULT 0");
+    }
+
+    private void backfillExecutionUpdatedAt(Connection connection) throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        boolean transactionStarted = false;
+        Throwable migrationFailure = null;
+
+        try {
+            connection.setAutoCommit(false);
+            transactionStarted = true;
+            // closed_at is the latest authoritative lifecycle timestamp when present.
+            executeUpdate(connection, """
+                    UPDATE exam_executions
+                    SET updated_at = COALESCE(closed_at, created_at)
+                    WHERE updated_at IS NULL
+                    """);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            migrationFailure = e;
+            if (transactionStarted) {
+                rollbackWithSuppressed(connection, e);
+            }
+            throw e;
+        } finally {
+            restoreAutoCommit(connection, originalAutoCommit, migrationFailure);
+        }
+    }
+
+    private void normalizeExecutionUpdatedAtColumn(Connection connection)
+            throws SQLException {
+        if (executionUpdatedAtDefinitionIsRequired(connection)) {
+            return;
+        }
+
+        executeSchemaStatement(connection, """
+                ALTER TABLE exam_executions
+                MODIFY COLUMN updated_at TIMESTAMP NOT NULL
+                    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                """);
+    }
+
+    private boolean executionUpdatedAtDefinitionIsRequired(Connection connection)
+            throws SQLException {
+        String sql = """
+                SELECT DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'exam_executions'
+                  AND COLUMN_NAME = 'updated_at'
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                return false;
+            }
+
+            String dataType = resultSet.getString("DATA_TYPE");
+            String nullable = resultSet.getString("IS_NULLABLE");
+            String defaultValue = resultSet.getString("COLUMN_DEFAULT");
+            String extra = resultSet.getString("EXTRA");
+            return "timestamp".equalsIgnoreCase(dataType)
+                    && "NO".equalsIgnoreCase(nullable)
+                    && defaultValue != null
+                    && defaultValue.toUpperCase(Locale.ROOT).startsWith("CURRENT_TIMESTAMP")
+                    && extra != null
+                    && extra.toLowerCase(Locale.ROOT).contains("on update current_timestamp");
+        }
     }
 
     private void createExecutionSchemaIndexesAndConstraints(Connection connection)

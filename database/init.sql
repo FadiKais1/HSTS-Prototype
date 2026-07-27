@@ -236,6 +236,7 @@ CREATE TABLE IF NOT EXISTS exam_executions (
     status VARCHAR(32) NOT NULL,
     created_by_user_id INT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     closed_at DATETIME NULL,
     average_score DECIMAL(7,2) NULL,
     median_score DECIMAL(7,2) NULL,
