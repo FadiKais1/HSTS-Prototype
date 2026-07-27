@@ -4,9 +4,12 @@ import hsts.client.net.Client;
 import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamSummaryDTO;
+import hsts.common.ExamVersionPayload;
+import hsts.common.RejectExamPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
+import hsts.common.UpdateExamPayload;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +79,50 @@ public class ExamClientController {
                         payload,
                         ExamDTO.class,
                         "Invalid pending-exam response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<ExamDTO> updateExam(UpdateExamPayload payload) {
+        return sendRequest(
+                new Request(RequestType.UPDATE_EXAM, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamDTO.class,
+                        "Invalid update-exam response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<ExamDTO> submitExamForApproval(ExamVersionPayload payload) {
+        return sendRequest(
+                new Request(RequestType.SUBMIT_EXAM_FOR_APPROVAL, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamDTO.class,
+                        "Invalid submit-exam response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<ExamDTO> approveExam(ExamVersionPayload payload) {
+        return sendRequest(
+                new Request(RequestType.APPROVE_EXAM, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamDTO.class,
+                        "Invalid approve-exam response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<ExamDTO> rejectExam(RejectExamPayload payload) {
+        return sendRequest(
+                new Request(RequestType.REJECT_EXAM, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamDTO.class,
+                        "Invalid reject-exam response from server"
                 )
         );
     }

@@ -4,9 +4,12 @@ import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
+import hsts.common.ExamVersionPayload;
+import hsts.common.RejectExamPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
+import hsts.common.UpdateExamPayload;
 import hsts.common.type.ExamStatus;
 import org.junit.Test;
 
@@ -71,6 +74,108 @@ public class ExamClientControllerTest {
             assertEquals(0, requestUserId.getInt(request));
         }
         assertEquals(5, sender.getSendCalls());
+    }
+
+    @Test
+    public void workflowMethodsSendExactRequestsAndReturnExactExamWithoutIdentity()
+            throws Exception {
+        RecordingSender sender = new RecordingSender();
+        ExamClientController controller = new ExamClientController(sender::send);
+        ExamDTO result = exam(31);
+        UpdateExamPayload updatePayload = updatePayload();
+        ExamVersionPayload submitPayload = new ExamVersionPayload(31, 2);
+        ExamVersionPayload approvePayload = new ExamVersionPayload(31, 2);
+        RejectExamPayload rejectPayload = new RejectExamPayload(
+                31,
+                2,
+                "Keep this reason unchanged"
+        );
+        sender.setResponse(Response.success("Success", result));
+
+        assertSame(result, controller.updateExam(updatePayload).join());
+        assertRequest(sender.lastRequest(), RequestType.UPDATE_EXAM, updatePayload);
+
+        assertSame(result, controller.submitExamForApproval(submitPayload).join());
+        assertRequest(
+                sender.lastRequest(),
+                RequestType.SUBMIT_EXAM_FOR_APPROVAL,
+                submitPayload
+        );
+
+        assertSame(result, controller.approveExam(approvePayload).join());
+        assertRequest(sender.lastRequest(), RequestType.APPROVE_EXAM, approvePayload);
+
+        assertSame(result, controller.rejectExam(rejectPayload).join());
+        assertRequest(sender.lastRequest(), RequestType.REJECT_EXAM, rejectPayload);
+
+        assertEquals(2, updatePayload.getExpectedVersionNo());
+        assertEquals(2, submitPayload.getExpectedVersionNo());
+        assertEquals(2, approvePayload.getExpectedVersionNo());
+        assertEquals(2, rejectPayload.getExpectedVersionNo());
+        assertEquals("Keep this reason unchanged", rejectPayload.getReason());
+        assertEquals(4, sender.getSendCalls());
+
+        Field requestUserId = Request.class.getDeclaredField("userId");
+        requestUserId.setAccessible(true);
+        for (Request request : sender.requests()) {
+            assertEquals(0, requestUserId.getInt(request));
+        }
+    }
+
+    @Test
+    public void workflowMethodsRejectNullAndWrongSuccessfulPayloadsWithExactMessages() {
+        RecordingSender sender = new RecordingSender();
+        ExamClientController controller = new ExamClientController(sender::send);
+
+        for (Object invalidPayload : new Object[]{"wrong payload", null}) {
+            sender.setResponse(Response.success("Success", invalidPayload));
+            assertFutureError(
+                    () -> controller.updateExam(updatePayload()),
+                    "Invalid update-exam response from server"
+            );
+            assertFutureError(
+                    () -> controller.submitExamForApproval(new ExamVersionPayload(31, 2)),
+                    "Invalid submit-exam response from server"
+            );
+            assertFutureError(
+                    () -> controller.approveExam(new ExamVersionPayload(31, 2)),
+                    "Invalid approve-exam response from server"
+            );
+            assertFutureError(
+                    () -> controller.rejectExam(
+                            new RejectExamPayload(31, 2, "Reason")
+                    ),
+                    "Invalid reject-exam response from server"
+            );
+        }
+    }
+
+    @Test
+    public void workflowMethodsPreserveExactServerErrorsAndSubmitOnlyOnce() {
+        RecordingSender sender = new RecordingSender();
+        ExamClientController controller = new ExamClientController(sender::send);
+        sender.setResponse(Response.error("Exam version conflict"));
+
+        assertFutureError(
+                () -> controller.updateExam(updatePayload()),
+                "Exam version conflict"
+        );
+        assertFutureError(
+                () -> controller.submitExamForApproval(new ExamVersionPayload(31, 2)),
+                "Exam version conflict"
+        );
+        assertFutureError(
+                () -> controller.approveExam(new ExamVersionPayload(31, 2)),
+                "Exam version conflict"
+        );
+        assertFutureError(
+                () -> controller.rejectExam(new RejectExamPayload(31, 2, "Reason")),
+                "Exam version conflict"
+        );
+
+        assertEquals(4, sender.getSendCalls());
+        assertEquals(RequestType.SUBMIT_EXAM_FOR_APPROVAL,
+                sender.requests().get(1).getType());
     }
 
     @Test
@@ -236,6 +341,18 @@ public class ExamClientControllerTest {
                 "",
                 "Read carefully",
                 List.of(new ExamQuestionSelectionPayload(41, 2, 1, 100))
+        );
+    }
+
+    private static UpdateExamPayload updatePayload() {
+        return new UpdateExamPayload(
+                31,
+                2,
+                "Revised exam",
+                75,
+                "Teacher notes",
+                "Read carefully",
+                List.of(new ExamQuestionSelectionPayload(41, 3, 1, 100))
         );
     }
 
