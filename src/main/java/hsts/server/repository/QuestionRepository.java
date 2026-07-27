@@ -3,6 +3,7 @@ package hsts.server.repository;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.UpdateQuestionPayload;
 import hsts.server.entity.Question;
 
 import java.sql.Connection;
@@ -115,6 +116,30 @@ public class QuestionRepository {
             VALUES (?, ?, ?, ?)
             """;
 
+    private static final String LOCK_QUESTION_VERSION_SQL = """
+            SELECT current_version_no
+            FROM questions
+            WHERE question_id = ?
+            FOR UPDATE
+            """;
+
+    private static final String UPDATE_CURRENT_QUESTION_SQL = """
+            UPDATE questions
+            SET content = ?,
+                topic = ?,
+                type = ?,
+                difficulty = ?,
+                illustration_path = ?,
+                answer_option_1 = ?,
+                answer_option_2 = ?,
+                answer_option_3 = ?,
+                answer_option_4 = ?,
+                correct_option_number = ?,
+                current_version_no = ?,
+                updated_at = ?
+            WHERE question_id = ? AND current_version_no = ?
+            """;
+
     public QuestionRepository() {
         this(new DatabaseController());
     }
@@ -164,6 +189,67 @@ public class QuestionRepository {
 
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to create question", e);
+        }
+    }
+
+    public int updateWithNewVersion(int updatedByUserId, UpdateQuestionPayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Question update data is required");
+        }
+
+        try (Connection connection = databaseController.getConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            boolean transactionStarted = false;
+            Throwable transactionFailure = null;
+
+            try {
+                connection.setAutoCommit(false);
+                transactionStarted = true;
+
+                int currentVersionNo = lockCurrentVersion(connection, payload.getQuestionId());
+                if (payload.getExpectedVersionNo() > 0
+                        && payload.getExpectedVersionNo() != currentVersionNo) {
+                    throw new IllegalStateException("Question version conflict");
+                }
+
+                int newVersionNo = currentVersionNo + 1;
+                LocalDateTime updatedAt = LocalDateTime.now();
+                insertUpdatedQuestionVersion(
+                        connection,
+                        updatedByUserId,
+                        payload,
+                        newVersionNo,
+                        updatedAt
+                );
+                insertUpdatedAnswerOptions(connection, payload, newVersionNo);
+                updateCurrentQuestion(
+                        connection,
+                        payload,
+                        currentVersionNo,
+                        newVersionNo,
+                        updatedAt
+                );
+                connection.commit();
+                return newVersionNo;
+
+            } catch (SQLException e) {
+                transactionFailure = e;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, e);
+                }
+                throw new IllegalStateException("Failed to update question version", e);
+            } catch (RuntimeException e) {
+                transactionFailure = e;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, e);
+                }
+                throw e;
+            } finally {
+                restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to update question version", e);
         }
     }
 
@@ -492,6 +578,88 @@ public class QuestionRepository {
                 if (statement.executeUpdate() != 1) {
                     throw new SQLException("Answer option insert did not affect exactly one row");
                 }
+            }
+        }
+    }
+
+    private int lockCurrentVersion(Connection connection, int questionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(LOCK_QUESTION_VERSION_SQL)) {
+            statement.setInt(1, questionId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new IllegalArgumentException("Question not found: " + questionId);
+                }
+                return resultSet.getInt("current_version_no");
+            }
+        }
+    }
+
+    private void insertUpdatedQuestionVersion(Connection connection, int updatedByUserId,
+                                              UpdateQuestionPayload payload, int newVersionNo,
+                                              LocalDateTime updatedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(CREATE_QUESTION_VERSION_SQL)) {
+            statement.setInt(1, payload.getQuestionId());
+            statement.setInt(2, newVersionNo);
+            statement.setString(3, payload.getContent());
+            statement.setString(4, payload.getTopic());
+            statement.setString(5, "MULTIPLE_CHOICE");
+            statement.setString(6, payload.getDifficulty());
+            statement.setString(7, payload.getIllustrationPath());
+            statement.setInt(8, payload.getCorrectOptionNumber());
+            statement.setInt(9, updatedByUserId);
+            statement.setObject(10, updatedAt);
+
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException("Question version insert did not affect exactly one row");
+            }
+        }
+    }
+
+    private void insertUpdatedAnswerOptions(Connection connection, UpdateQuestionPayload payload,
+                                            int newVersionNo) throws SQLException {
+        String[] optionTexts = {
+                payload.getAnswerOption1(),
+                payload.getAnswerOption2(),
+                payload.getAnswerOption3(),
+                payload.getAnswerOption4()
+        };
+
+        try (PreparedStatement statement = connection.prepareStatement(CREATE_ANSWER_OPTION_SQL)) {
+            for (int optionNumber = 1; optionNumber <= optionTexts.length; optionNumber++) {
+                statement.setInt(1, payload.getQuestionId());
+                statement.setInt(2, newVersionNo);
+                statement.setInt(3, optionNumber);
+                statement.setString(4, optionTexts[optionNumber - 1]);
+
+                if (statement.executeUpdate() != 1) {
+                    throw new SQLException("Answer option insert did not affect exactly one row");
+                }
+            }
+        }
+    }
+
+    private void updateCurrentQuestion(Connection connection, UpdateQuestionPayload payload,
+                                       int currentVersionNo, int newVersionNo,
+                                       LocalDateTime updatedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(UPDATE_CURRENT_QUESTION_SQL)) {
+            statement.setString(1, payload.getContent());
+            statement.setString(2, payload.getTopic());
+            statement.setString(3, "MULTIPLE_CHOICE");
+            statement.setString(4, payload.getDifficulty());
+            statement.setString(5, payload.getIllustrationPath());
+            statement.setString(6, payload.getAnswerOption1());
+            statement.setString(7, payload.getAnswerOption2());
+            statement.setString(8, payload.getAnswerOption3());
+            statement.setString(9, payload.getAnswerOption4());
+            statement.setInt(10, payload.getCorrectOptionNumber());
+            statement.setInt(11, newVersionNo);
+            statement.setObject(12, updatedAt);
+            statement.setInt(13, payload.getQuestionId());
+            statement.setInt(14, currentVersionNo);
+
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Question version conflict");
             }
         }
     }
