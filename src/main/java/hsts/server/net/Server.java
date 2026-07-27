@@ -107,7 +107,11 @@ public class Server extends AbstractServer {
                      ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY,
                      LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM, GENERATE_EXAM,
                      LIST_PENDING_EXAMS, GET_PENDING_EXAM, UPDATE_EXAM,
-                     SUBMIT_EXAM_FOR_APPROVAL, APPROVE_EXAM, REJECT_EXAM ->
+                     SUBMIT_EXAM_FOR_APPROVAL, APPROVE_EXAM, REJECT_EXAM,
+                     SCHEDULE_EXAM_EXECUTION, LIST_MY_EXAM_EXECUTIONS,
+                     VALIDATE_EXECUTION_CODE, START_EXAM_ATTEMPT,
+                     GET_ACTIVE_EXAM_ATTEMPT, SAVE_EXAM_ANSWER,
+                     SUBMIT_EXAM_ATTEMPT, EXTEND_SUBMISSION_TIME ->
                         Response.error("Authentication context required");
             };
 
