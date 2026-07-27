@@ -21,6 +21,8 @@ public class ExamExecutionRepositoryEntityReadTest {
     private static final String MANAGER_MARKER =
             "WHERE execution.created_by_user_id = ?";
     private static final String STUDENT_MARKER = "JOIN users student";
+    private static final String STUDENT_ID_MARKER =
+            "WHERE execution.execution_id = ?";
     private static final String DECILES_MARKER = "FROM exam_execution_deciles";
 
     @Test
@@ -138,6 +140,117 @@ public class ExamExecutionRepositoryEntityReadTest {
         assertTrue(repository.findEntityByCodeForStudent(1001, "AB-1").isEmpty());
         assertTrue(repository.findEntityByCodeForStudent(1001, "ABCDE").isEmpty());
         assertEquals(0, database.connectionRequests);
+    }
+
+    @Test
+    public void studentEntityReadByIdScopesEnrollmentAndHydratesAuthoritativeState() {
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        Map<Object, Object> row = closedEntityRow();
+        ExamRepositoryJdbcTestSupport.StatementPlan entityQuery = database.plan(
+                STUDENT_ID_MARKER
+        ).queryRows(row);
+        ExamRepositoryJdbcTestSupport.StatementPlan deciles = database.plan(
+                DECILES_MARKER
+        ).queryRows(
+                decile(1, 0), decile(2, 0), decile(3, 1), decile(4, 0),
+                decile(5, 0), decile(6, 1), decile(7, 0), decile(8, 1),
+                decile(9, 0), decile(10, 1)
+        );
+
+        ExamExecution execution = new ExamExecutionRepository(database)
+                .findEntityForStudent(1001, 81)
+                .orElseThrow();
+
+        assertEquals(Map.of(1, 1001, 2, 81), entityQuery.queryExecutions.get(0));
+        assertEquals(Map.of(1, 81), deciles.queryExecutions.get(0));
+        assertEquals(81, execution.getExecutionId());
+        assertEquals("A1B2", execution.getExecutionCode());
+        assertEquals(40, execution.getExamId());
+        assertEquals(3, execution.getExamVersionNo());
+        assertEquals(openingTime(), execution.getOpeningTime());
+        assertEquals(closingTime(), execution.getClosingTime());
+        assertEquals(75, execution.getDurationMinutes());
+        assertEquals(ExecutionStatus.CLOSED, execution.getStatus());
+        assertEquals(1002, execution.getCreatedByUserId());
+        assertEquals(createdAt(), execution.getCreatedAt());
+        assertEquals(updatedAt(), execution.getUpdatedAt());
+        assertEquals(closedAt(), execution.getClosedAt());
+        assertEquals(new BigDecimal("82.50"), execution.getAverageScoreValue());
+        assertEquals(new BigDecimal("80.00"), execution.getMedianScoreValue());
+        assertEquals(4, execution.getStartedCount());
+        assertEquals(3, execution.getSubmittedCount());
+        assertEquals(1, execution.getAutoSubmittedCount());
+        assertEquals(List.of(0, 0, 1, 0, 0, 1, 0, 1, 0, 1),
+                execution.getDecileDistribution());
+        assertTrue(execution.getExamSubmissions().isEmpty());
+        assertThrows(UnsupportedOperationException.class,
+                () -> execution.getExamSubmissions().add(null));
+
+        String sql = normalized(entityQuery.sql);
+        assertTrue(sql.contains("STUDENT.ROLE = 'STUDENT'"));
+        assertTrue(sql.contains("STUDENT.STATUS = 'ACTIVE'"));
+        assertTrue(sql.contains("JOIN STUDENT_COURSES ENROLLMENT"));
+        assertTrue(sql.contains("ENROLLMENT.STUDENT_USER_ID = STUDENT.USER_ID"));
+        assertTrue(sql.contains("ENROLLMENT.COURSE_ID = EXAM.COURSE_ID"));
+        assertTrue(sql.contains("WHERE EXECUTION.EXECUTION_ID = ?"));
+        assertTrue(sql.contains("VERSION.VERSION_NO = EXECUTION.EXAM_VERSION_NO"));
+        assertTrue(sql.contains("EXECUTION.UPDATED_AT"));
+        assertFalse(sql.contains("CURRENT_VERSION_NO"));
+        assertFalse(sql.contains("EXECUTION.EXECUTION_CODE = ?"));
+        assertFalse(sql.contains("STUDENT_PROFILES"));
+        assertFalse(sql.contains("IDENTITY_NUMBER_HASH"));
+        assertFalse(sql.contains("EXAM_SUBMISSIONS"));
+        assertFalse(sql.contains("STUDENT_ANSWERS"));
+        assertFalse(sql.contains("QUESTION_VERSIONS"));
+        assertFalse(sql.contains("ANSWER_OPTIONS"));
+        assertFalse(sql.contains("PASSWORD"));
+    }
+
+    @Test
+    public void studentEntityReadByIdReturnsEmptyWhenMissingOrUnauthorized() {
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        ExamRepositoryJdbcTestSupport.StatementPlan entityQuery = database.plan(
+                STUDENT_ID_MARKER
+        ).queryRows().queryRows();
+        ExamExecutionRepository repository = new ExamExecutionRepository(database);
+
+        assertTrue(repository.findEntityForStudent(1001, 99).isEmpty());
+        assertTrue(repository.findEntityForStudent(1004, 81).isEmpty());
+        assertEquals(Map.of(1, 1001, 2, 99), entityQuery.queryExecutions.get(0));
+        assertEquals(Map.of(1, 1004, 2, 81), entityQuery.queryExecutions.get(1));
+        assertEquals(1, database.plans.size());
+    }
+
+    @Test
+    public void studentEntityReadByIdRejectsMalformedStateAndPreservesJdbcCause() {
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController malformedDatabase =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        Map<Object, Object> malformed = openEntityRow();
+        malformed.put("status", "UNKNOWN");
+        malformedDatabase.plan(STUDENT_ID_MARKER).queryRows(malformed);
+
+        IllegalArgumentException malformedFailure = assertThrows(
+                IllegalArgumentException.class,
+                () -> new ExamExecutionRepository(malformedDatabase)
+                        .findEntityForStudent(1001, 81)
+        );
+        assertEquals("Execution status is invalid: 81", malformedFailure.getMessage());
+
+        SQLException cause = new SQLException("student execution read failed");
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController failedDatabase =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        failedDatabase.connectionFailure = cause;
+
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> new ExamExecutionRepository(failedDatabase)
+                        .findEntityForStudent(1001, 81)
+        );
+        assertEquals("Failed to load student exam execution entity",
+                failure.getMessage());
+        assertSame(cause, failure.getCause());
     }
 
     @Test

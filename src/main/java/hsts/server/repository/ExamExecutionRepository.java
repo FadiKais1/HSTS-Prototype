@@ -107,7 +107,7 @@ public class ExamExecutionRepository {
               AND execution.execution_id = ?
             """;
 
-    private static final String STUDENT_EXECUTION_ENTITY_SQL = EXECUTION_ENTITY_SELECT + """
+    private static final String STUDENT_EXECUTION_ENTITY_SELECT = EXECUTION_ENTITY_SELECT + """
             JOIN users student
               ON student.user_id = ?
              AND student.role = 'STUDENT'
@@ -115,7 +115,16 @@ public class ExamExecutionRepository {
             JOIN student_courses enrollment
               ON enrollment.student_user_id = student.user_id
              AND enrollment.course_id = exam.course_id
+            """;
+
+    private static final String STUDENT_EXECUTION_ENTITY_SQL =
+            STUDENT_EXECUTION_ENTITY_SELECT + """
             WHERE execution.execution_code = ?
+            """;
+
+    private static final String STUDENT_EXECUTION_ENTITY_BY_ID_SQL =
+            STUDENT_EXECUTION_ENTITY_SELECT + """
+            WHERE execution.execution_id = ?
             """;
 
     private static final String EXECUTION_DECILES_SQL = """
@@ -344,6 +353,25 @@ public class ExamExecutionRepository {
              )) {
             statement.setInt(1, authenticatedUserId);
             statement.setString(2, normalizedCode);
+            return loadEntity(connection, statement);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load student exam execution entity",
+                    exception
+            );
+        }
+    }
+
+    public Optional<ExamExecution> findEntityForStudent(
+            int authenticatedStudentUserId,
+            int executionId
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     STUDENT_EXECUTION_ENTITY_BY_ID_SQL
+             )) {
+            statement.setInt(1, authenticatedStudentUserId);
+            statement.setInt(2, executionId);
             return loadEntity(connection, statement);
         } catch (SQLException exception) {
             throw new IllegalStateException(
