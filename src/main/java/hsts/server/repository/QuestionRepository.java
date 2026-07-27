@@ -1,5 +1,6 @@
 package hsts.server.repository;
 
+import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.server.entity.Question;
@@ -8,6 +9,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -64,12 +67,104 @@ public class QuestionRepository {
              AND option_4.option_number = 4
             """;
 
+    private static final String CREATE_QUESTION_SQL = """
+            INSERT INTO questions (
+                content,
+                topic,
+                type,
+                difficulty,
+                status,
+                illustration_path,
+                answer_option_1,
+                answer_option_2,
+                answer_option_3,
+                answer_option_4,
+                correct_option_number,
+                course_id,
+                created_by_user_id,
+                current_version_no,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+    private static final String CREATE_QUESTION_VERSION_SQL = """
+            INSERT INTO question_versions (
+                question_id,
+                version_no,
+                content,
+                topic,
+                question_type,
+                difficulty,
+                illustration_path,
+                correct_option_number,
+                created_by_user_id,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+    private static final String CREATE_ANSWER_OPTION_SQL = """
+            INSERT INTO answer_options (
+                question_id,
+                version_no,
+                option_number,
+                option_text
+            )
+            VALUES (?, ?, ?, ?)
+            """;
+
     public QuestionRepository() {
         this(new DatabaseController());
     }
 
     public QuestionRepository(DatabaseController databaseController) {
         this.databaseController = databaseController;
+    }
+
+    public int create(int createdByUserId, CreateQuestionPayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Question data is required");
+        }
+        if (payload.getDifficulty() == null) {
+            throw new IllegalArgumentException("Question difficulty is required");
+        }
+
+        try (Connection connection = databaseController.getConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            boolean transactionStarted = false;
+            Throwable transactionFailure = null;
+
+            try {
+                connection.setAutoCommit(false);
+                transactionStarted = true;
+
+                LocalDateTime createdAt = LocalDateTime.now();
+                int questionId = insertCurrentQuestion(
+                        connection,
+                        createdByUserId,
+                        payload,
+                        createdAt
+                );
+                insertQuestionVersion(connection, questionId, createdByUserId, payload, createdAt);
+                insertAnswerOptions(connection, questionId, payload);
+                connection.commit();
+                return questionId;
+
+            } catch (SQLException | RuntimeException e) {
+                transactionFailure = e;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, e);
+                }
+                throw new IllegalStateException("Failed to create question", e);
+            } finally {
+                restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to create question", e);
+        }
     }
 
     public List<QuestionDTO> findCurrentForTeacher(int authenticatedUserId,
@@ -313,5 +408,112 @@ public class QuestionRepository {
                 resultSet.getInt("subject_id"),
                 resultSet.getInt("version_no")
         );
+    }
+
+    private int insertCurrentQuestion(Connection connection, int createdByUserId,
+                                      CreateQuestionPayload payload,
+                                      LocalDateTime createdAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                CREATE_QUESTION_SQL,
+                Statement.RETURN_GENERATED_KEYS
+        )) {
+            statement.setString(1, payload.getContent());
+            statement.setString(2, payload.getTopic());
+            statement.setString(3, "MULTIPLE_CHOICE");
+            statement.setString(4, payload.getDifficulty().name());
+            statement.setString(5, "ACTIVE");
+            statement.setString(6, payload.getIllustrationPath());
+            statement.setString(7, payload.getAnswerOption1());
+            statement.setString(8, payload.getAnswerOption2());
+            statement.setString(9, payload.getAnswerOption3());
+            statement.setString(10, payload.getAnswerOption4());
+            statement.setInt(11, payload.getCorrectOptionNumber());
+            statement.setInt(12, payload.getCourseId());
+            statement.setInt(13, createdByUserId);
+            statement.setInt(14, 1);
+            statement.setObject(15, createdAt);
+            statement.setObject(16, createdAt);
+
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException("Question insert did not affect exactly one row");
+            }
+
+            try (ResultSet generatedKeys = statement.getGeneratedKeys()) {
+                if (!generatedKeys.next()) {
+                    throw new SQLException("Question insert did not return a generated key");
+                }
+
+                int questionId = generatedKeys.getInt(1);
+                if (questionId <= 0) {
+                    throw new SQLException("Question insert returned an invalid generated key");
+                }
+                return questionId;
+            }
+        }
+    }
+
+    private void insertQuestionVersion(Connection connection, int questionId,
+                                       int createdByUserId, CreateQuestionPayload payload,
+                                       LocalDateTime createdAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(CREATE_QUESTION_VERSION_SQL)) {
+            statement.setInt(1, questionId);
+            statement.setInt(2, 1);
+            statement.setString(3, payload.getContent());
+            statement.setString(4, payload.getTopic());
+            statement.setString(5, "MULTIPLE_CHOICE");
+            statement.setString(6, payload.getDifficulty().name());
+            statement.setString(7, payload.getIllustrationPath());
+            statement.setInt(8, payload.getCorrectOptionNumber());
+            statement.setInt(9, createdByUserId);
+            statement.setObject(10, createdAt);
+
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException("Question version insert did not affect exactly one row");
+            }
+        }
+    }
+
+    private void insertAnswerOptions(Connection connection, int questionId,
+                                     CreateQuestionPayload payload) throws SQLException {
+        String[] optionTexts = {
+                payload.getAnswerOption1(),
+                payload.getAnswerOption2(),
+                payload.getAnswerOption3(),
+                payload.getAnswerOption4()
+        };
+
+        try (PreparedStatement statement = connection.prepareStatement(CREATE_ANSWER_OPTION_SQL)) {
+            for (int optionNumber = 1; optionNumber <= optionTexts.length; optionNumber++) {
+                statement.setInt(1, questionId);
+                statement.setInt(2, 1);
+                statement.setInt(3, optionNumber);
+                statement.setString(4, optionTexts[optionNumber - 1]);
+
+                if (statement.executeUpdate() != 1) {
+                    throw new SQLException("Answer option insert did not affect exactly one row");
+                }
+            }
+        }
+    }
+
+    private void rollbackWithSuppressed(Connection connection, Throwable originalFailure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            originalFailure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    private void restoreAutoCommit(Connection connection, boolean originalAutoCommit,
+                                   Throwable originalFailure) throws SQLException {
+        try {
+            connection.setAutoCommit(originalAutoCommit);
+        } catch (SQLException restorationFailure) {
+            if (originalFailure != null) {
+                originalFailure.addSuppressed(restorationFailure);
+                return;
+            }
+            throw restorationFailure;
+        }
     }
 }
