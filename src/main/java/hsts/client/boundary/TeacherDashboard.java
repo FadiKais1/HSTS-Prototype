@@ -39,13 +39,18 @@ public class TeacherDashboard {
     @FXML
     private Button examManagementButton;
     private Runnable examManagementHandler;
+    @FXML
+    private Button examSchedulingButton;
+    private Runnable examSchedulingHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
         questionBankHandler = null;
         examManagementHandler = null;
         approvalRequestsHandler = null;
+        examSchedulingHandler = null;
         updateApprovalRequestsState();
+        updateExamSchedulingState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -54,7 +59,9 @@ public class TeacherDashboard {
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
         examManagementHandler = null;
         approvalRequestsHandler = null;
+        examSchedulingHandler = null;
         updateApprovalRequestsState();
+        updateExamSchedulingState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -64,7 +71,9 @@ public class TeacherDashboard {
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
         approvalRequestsHandler = null;
+        examSchedulingHandler = null;
         updateApprovalRequestsState();
+        updateExamSchedulingState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -74,7 +83,22 @@ public class TeacherDashboard {
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
         this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
+        examSchedulingHandler = null;
         updateApprovalRequestsState();
+        updateExamSchedulingState();
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable questionBankHandler,
+                          Runnable examManagementHandler, Runnable approvalRequestsHandler,
+                          Runnable examSchedulingHandler) {
+        configureDashboard(stage, client, loginResult, logoutHandler);
+        this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
+        this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
+        this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
+        this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
+        updateApprovalRequestsState();
+        updateExamSchedulingState();
     }
 
     @FXML
@@ -145,6 +169,23 @@ public class TeacherDashboard {
         }
     }
 
+    @FXML
+    private void handleExamScheduling() {
+        if (examSchedulingHandler == null
+                || loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showError("Exam scheduling is unavailable");
+            return;
+        }
+
+        try {
+            examSchedulingHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Exam scheduling is unavailable");
+        }
+    }
+
     private void configureDashboard(Stage stage, Client client, LoginResult loginResult,
                                     Runnable logoutHandler) {
         this.stage = Objects.requireNonNull(stage);
@@ -159,6 +200,7 @@ public class TeacherDashboard {
             roleLabel.setText(loginResult.getRole().name());
         }
         updateApprovalRequestsState();
+        updateExamSchedulingState();
         showError("");
     }
 
@@ -170,6 +212,17 @@ public class TeacherDashboard {
         approvalRequestsButton.setManaged(coordinator);
         approvalRequestsButton.setVisible(coordinator);
         approvalRequestsButton.setDisable(!coordinator || approvalRequestsHandler == null);
+    }
+
+    private void updateExamSchedulingState() {
+        if (examSchedulingButton == null || loginResult == null) {
+            return;
+        }
+        UserRole role = loginResult.getRole();
+        boolean manager = role == UserRole.TEACHER || role == UserRole.COORDINATOR;
+        examSchedulingButton.setManaged(manager);
+        examSchedulingButton.setVisible(manager);
+        examSchedulingButton.setDisable(!manager || examSchedulingHandler == null);
     }
 
     private void showError(String message) {

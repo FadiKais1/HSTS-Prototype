@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.DatePicker?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Spinner?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="hsts.client.boundary.ExamSchedulingPage"
+            prefWidth="1240" prefHeight="760"
+            style="-fx-background-color: #f4f7fb;">
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="16"
+              style="-fx-background-color: white; -fx-border-color: transparent transparent #dbe3ef transparent;">
+            <padding><Insets top="16" right="24" bottom="16" left="24"/></padding>
+            <VBox spacing="3">
+                <Label text="Exam Scheduling"
+                       style="-fx-font-size: 23px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                <HBox spacing="8">
+                    <Label fx:id="userLabel" text="Authenticated user"
+                           style="-fx-text-fill: #4b5563;"/>
+                    <Label text="·" style="-fx-text-fill: #9ca3af;"/>
+                    <Label fx:id="roleLabel" text="TEACHER"
+                           style="-fx-text-fill: #b45309; -fx-font-weight: bold;"/>
+                </HBox>
+            </VBox>
+            <Region HBox.hgrow="ALWAYS"/>
+            <ProgressIndicator fx:id="busyIndicator" prefWidth="28" prefHeight="28"
+                               managed="false" visible="false"/>
+            <Button fx:id="refreshButton" text="Refresh" onAction="#handleRefresh"
+                    style="-fx-background-color: #e5e7eb; -fx-background-radius: 8; -fx-font-weight: bold; -fx-padding: 9 16;"/>
+            <Button fx:id="backButton" text="Back" onAction="#handleBack"
+                    style="-fx-background-color: #374151; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 16;"/>
+        </HBox>
+    </top>
+    <center>
+        <ScrollPane fitToWidth="true" hbarPolicy="AS_NEEDED" vbarPolicy="AS_NEEDED"
+                    style="-fx-background-color: transparent; -fx-background: transparent;">
+            <content>
+                <VBox spacing="18">
+                    <padding><Insets top="24" right="24" bottom="28" left="24"/></padding>
+
+                    <VBox spacing="14"
+                          style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 22;">
+                        <Label text="Schedule an approved exam"
+                               style="-fx-font-size: 19px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <Label text="Choose the immutable approved version and set its opening and closing times."
+                               wrapText="true" style="-fx-text-fill: #6b7280;"/>
+                        <VBox spacing="6">
+                            <Label text="Approved exam" style="-fx-font-weight: bold;"/>
+                            <ComboBox fx:id="approvedExamComboBox" maxWidth="Infinity"
+                                      promptText="No approved exam selected"/>
+                        </VBox>
+                        <HBox spacing="22">
+                            <VBox spacing="6">
+                                <Label text="Opening date and time" style="-fx-font-weight: bold;"/>
+                                <HBox spacing="7" alignment="CENTER_LEFT">
+                                    <DatePicker fx:id="openingDatePicker" prefWidth="150"/>
+                                    <Spinner fx:id="openingHourSpinner" prefWidth="78" editable="false"/>
+                                    <Label text=":"/>
+                                    <Spinner fx:id="openingMinuteSpinner" prefWidth="78" editable="false"/>
+                                </HBox>
+                            </VBox>
+                            <VBox spacing="6">
+                                <Label text="Closing date and time" style="-fx-font-weight: bold;"/>
+                                <HBox spacing="7" alignment="CENTER_LEFT">
+                                    <DatePicker fx:id="closingDatePicker" prefWidth="150"/>
+                                    <Spinner fx:id="closingHourSpinner" prefWidth="78" editable="false"/>
+                                    <Label text=":"/>
+                                    <Spinner fx:id="closingMinuteSpinner" prefWidth="78" editable="false"/>
+                                </HBox>
+                            </VBox>
+                            <Region HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="scheduleButton" text="Schedule Execution"
+                                    onAction="#handleSchedule" prefHeight="42"
+                                    style="-fx-background-color: #b45309; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 10 18;"/>
+                        </HBox>
+                    </VBox>
+
+                    <VBox spacing="8"
+                          style="-fx-background-color: #fffbeb; -fx-background-radius: 14; -fx-border-color: #f59e0b; -fx-border-radius: 14; -fx-padding: 20;">
+                        <Label text="Generated execution code"
+                               style="-fx-text-fill: #92400e; -fx-font-weight: bold;"/>
+                        <Label fx:id="generatedCodeLabel" text="—"
+                               style="-fx-font-size: 32px; -fx-font-weight: bold; -fx-text-fill: #78350f;"/>
+                        <Label fx:id="generatedDetailsLabel"
+                               text="Schedule an approved exam to generate a code."
+                               wrapText="true" style="-fx-text-fill: #92400e;"/>
+                    </VBox>
+
+                    <Label fx:id="feedbackLabel" text="Loading..." wrapText="true"
+                           maxWidth="Infinity"
+                           style="-fx-background-color: #eef2ff; -fx-background-radius: 8; -fx-text-fill: #3730a3; -fx-padding: 10;"/>
+
+                    <VBox spacing="10"
+                          style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 18;">
+                        <Label text="My scheduled executions"
+                               style="-fx-font-size: 19px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <TableView fx:id="executionTable" prefHeight="330">
+                            <columns>
+                                <TableColumn fx:id="executionIdColumn" text="ID" prefWidth="55"/>
+                                <TableColumn fx:id="examTitleColumn" text="Exam" prefWidth="175"/>
+                                <TableColumn fx:id="examCodeColumn" text="Exam Code" prefWidth="90"/>
+                                <TableColumn fx:id="versionColumn" text="Version" prefWidth="70"/>
+                                <TableColumn fx:id="executionCodeColumn" text="Execution Code" prefWidth="105"/>
+                                <TableColumn fx:id="openingColumn" text="Opens" prefWidth="135"/>
+                                <TableColumn fx:id="closingColumn" text="Closes" prefWidth="135"/>
+                                <TableColumn fx:id="durationColumn" text="Minutes" prefWidth="75"/>
+                                <TableColumn fx:id="statusColumn" text="Status" prefWidth="95"/>
+                            </columns>
+                            <placeholder>
+                                <Label text="No scheduled executions."/>
+                            </placeholder>
+                        </TableView>
+                    </VBox>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </center>
+</BorderPane>

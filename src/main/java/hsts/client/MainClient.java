@@ -3,6 +3,7 @@ package hsts.client;
 import hsts.client.boundary.LoginPage;
 import hsts.client.boundary.ApprovalRequestsPage;
 import hsts.client.boundary.ExamBuilderPage;
+import hsts.client.boundary.ExamSchedulingPage;
 import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.StudentDashboard;
@@ -154,7 +155,8 @@ public class MainClient extends Application {
                 this::logout,
                 () -> showQuestionBank(loginResult),
                 () -> showExamBuilder(loginResult),
-                () -> showApprovalRequests(loginResult)
+                () -> showApprovalRequests(loginResult),
+                () -> showExamScheduling(loginResult)
         );
     }
 
@@ -219,6 +221,35 @@ public class MainClient extends Application {
             try {
                 showTeacherDashboard(loginResult);
                 showNavigationError("Unable to open approval requests");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void showExamScheduling(LoginResult loginResult) {
+        if (loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showNavigationError("Exam scheduling is available only to teachers and coordinators");
+            return;
+        }
+        try {
+            ExamSchedulingPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/exam-scheduling-page.fxml",
+                    "HSTS Exam Management System - Exam Scheduling"
+            );
+            controller.configure(
+                    stage,
+                    client,
+                    loginResult,
+                    () -> returnToTeacherDashboard(loginResult)
+            );
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showTeacherDashboard(loginResult);
+                showNavigationError("Unable to open exam scheduling");
             } catch (IOException | RuntimeException restoreException) {
                 cleanupAfterNavigationFailure();
             }
