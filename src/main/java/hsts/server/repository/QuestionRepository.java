@@ -1,10 +1,8 @@
 package hsts.server.repository;
 
-import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionVersionDTO;
-import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
@@ -242,30 +240,6 @@ public class QuestionRepository {
         this.databaseController = databaseController;
     }
 
-    public int create(int createdByUserId, CreateQuestionPayload payload) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Question data is required");
-        }
-        if (payload.getDifficulty() == null) {
-            throw new IllegalArgumentException("Question difficulty is required");
-        }
-
-        QuestionPersistenceData data = new QuestionPersistenceData(
-                payload.getContent(),
-                payload.getTopic(),
-                QuestionType.MULTIPLE_CHOICE.name(),
-                payload.getDifficulty().name(),
-                QuestionStatus.ACTIVE.name(),
-                payload.getIllustrationPath(),
-                payload.getAnswerOption1(),
-                payload.getAnswerOption2(),
-                payload.getAnswerOption3(),
-                payload.getAnswerOption4(),
-                payload.getCorrectOptionNumber()
-        );
-        return createQuestion(createdByUserId, payload.getCourseId(), data);
-    }
-
     public int create(int authenticatedUserId, int courseId, Question question) {
         if (question == null) {
             throw new IllegalArgumentException("Question data is required");
@@ -320,32 +294,6 @@ public class QuestionRepository {
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to create question", e);
         }
-    }
-
-    public int updateWithNewVersion(int updatedByUserId, UpdateQuestionPayload payload) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Question update data is required");
-        }
-
-        QuestionPersistenceData data = new QuestionPersistenceData(
-                payload.getContent(),
-                payload.getTopic(),
-                QuestionType.MULTIPLE_CHOICE.name(),
-                payload.getDifficulty(),
-                payload.getStatus(),
-                payload.getIllustrationPath(),
-                payload.getAnswerOption1(),
-                payload.getAnswerOption2(),
-                payload.getAnswerOption3(),
-                payload.getAnswerOption4(),
-                payload.getCorrectOptionNumber()
-        );
-        return updateQuestionVersion(
-                updatedByUserId,
-                payload.getQuestionId(),
-                payload.getExpectedVersionNo(),
-                data
-        );
     }
 
     public int updateWithNewVersion(int authenticatedUserId, int questionId,
@@ -624,61 +572,15 @@ public class QuestionRepository {
         }
     }
 
+    /**
+     * COMPATIBILITY-ONLY: retained for existing repository subclasses. Legacy
+     * single-row updates bypass immutable version and answer-option history.
+     */
+    @Deprecated
     public boolean updateQuestion(Question question) {
-        String sql = """
-                UPDATE questions
-                SET content = ?,
-                    topic = ?,
-                    type = 'MULTIPLE_CHOICE',
-                    difficulty = ?,
-                    status = ?,
-                    illustration_path = ?,
-                    answer_option_1 = ?,
-                    answer_option_2 = ?,
-                    answer_option_3 = ?,
-                    answer_option_4 = ?,
-                    correct_option_number = ?
-                WHERE question_id = ?
-                """;
-
-        try (Connection connection = databaseController.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, question.getContent());
-            statement.setString(2, question.getTopic());
-            statement.setString(3, question.getDifficulty());
-            statement.setString(4, question.getStatus());
-            statement.setString(5, question.getIllustrationPath());
-            statement.setString(6, question.getAnswerOption1());
-            statement.setString(7, question.getAnswerOption2());
-            statement.setString(8, question.getAnswerOption3());
-            statement.setString(9, question.getAnswerOption4());
-            statement.setInt(10, question.getCorrectOptionNumber());
-            statement.setInt(11, question.getQuestionId());
-
-            int updatedRows = statement.executeUpdate();
-            return updatedRows == 1;
-
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to update question", e);
-        }
-    }
-
-    public boolean updateQuestionContent(int questionId, String newContent) {
-        String sql = "UPDATE questions SET content = ? WHERE question_id = ?";
-
-        try (Connection connection = databaseController.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, newContent);
-            statement.setInt(2, questionId);
-
-            int updatedRows = statement.executeUpdate();
-            return updatedRows == 1;
-
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to update question", e);
-        }
+        throw new UnsupportedOperationException(
+                "Legacy question mutation is not supported"
+        );
     }
 
     private Question mapRowToQuestion(ResultSet resultSet) throws SQLException {

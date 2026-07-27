@@ -168,7 +168,6 @@ public class ExamManagementScopedUpdateTest {
         assertEquals(7, questions.getLastExpectedVersionNo());
         assertEquals(ExamManagementScopedUpdateTest.CREATED_AT,
                 normalized.getCreatedAt());
-        assertEquals(0, questions.getPayloadUpdateCalls());
     }
 
     @Test
@@ -223,7 +222,6 @@ public class ExamManagementScopedUpdateTest {
                 QuestionStatus.INACTIVE,
                 questions.getLastUpdatedQuestion().getQuestionStatus()
         );
-        assertEquals(0, questions.getPayloadUpdateCalls());
     }
 
     @Test
@@ -265,25 +263,6 @@ public class ExamManagementScopedUpdateTest {
         assertEquals("Question content cannot be empty", exception.getMessage());
         assertEquals(0, questions.getFindCalls());
         assertEquals(0, questions.getUpdateCalls());
-    }
-
-    @Test
-    public void contextFreeGetAndUpdateRetainLegacyRepositoryBehavior() {
-        InMemoryQuestionRepository questions = new InMemoryQuestionRepository(
-                new Question(
-                        9, "Old", "Topic", "MULTIPLE_CHOICE", "EASY", "ACTIVE", "",
-                        "One", "Two", "Three", "Four", 1
-                )
-        );
-        ExamManagementService service = new ExamManagementService(questions);
-
-        QuestionDTO before = service.getQuestionById(9);
-        QuestionDTO after = service.updateQuestion(validPayload(9, 0));
-
-        assertEquals("Old", before.getContent());
-        assertEquals("Content", after.getContent());
-        assertEquals(1, questions.getUpdateCalls());
-        assertEquals(2, questions.getFindByIdCalls());
     }
 
     private static ExamManagementService service(RecordingQuestionRepository questions,
@@ -352,7 +331,6 @@ public class ExamManagementScopedUpdateTest {
         private int lastFindQuestionId;
         private int lastUpdatedByUserId;
         private int lastExpectedVersionNo;
-        private int payloadUpdateCalls;
 
         @Override
         public Optional<QuestionDTO> findCurrentByIdForTeacher(int authenticatedUserId,
@@ -400,13 +378,6 @@ public class ExamManagementScopedUpdateTest {
                     : 1;
         }
 
-        @Override
-        public int updateWithNewVersion(int updatedByUserId,
-                                        UpdateQuestionPayload payload) {
-            payloadUpdateCalls++;
-            throw new AssertionError("Authenticated update used payload repository path");
-        }
-
         private void setAccessibleQuestion(QuestionDTO accessibleQuestion) {
             this.accessibleQuestion = accessibleQuestion;
             this.accessibleEntity = entity(accessibleQuestion);
@@ -448,9 +419,6 @@ public class ExamManagementScopedUpdateTest {
             return lastExpectedVersionNo;
         }
 
-        private int getPayloadUpdateCalls() {
-            return payloadUpdateCalls;
-        }
     }
 
     private static Question entity(QuestionDTO dto) {

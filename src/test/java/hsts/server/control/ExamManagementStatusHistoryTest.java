@@ -2,7 +2,6 @@ package hsts.server.control;
 
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionVersionDTO;
-import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
@@ -321,7 +320,8 @@ public class ExamManagementStatusHistoryTest {
         }
 
         @Override
-        public int updateWithNewVersion(int updatedByUserId, UpdateQuestionPayload payload) {
+        public int updateWithNewVersion(int updatedByUserId, int questionId,
+                                        int expectedVersionNo, Question question) {
             versionUpdateCalls++;
             return 1;
         }

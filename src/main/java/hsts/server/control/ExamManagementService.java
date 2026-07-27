@@ -154,32 +154,6 @@ public class ExamManagementService {
         throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
     }
 
-    public QuestionDTO updateQuestion(UpdateQuestionPayload payload) {
-        validateQuestionPayload(payload);
-
-        Question question = new Question(
-                payload.getQuestionId(),
-                payload.getContent().trim(),
-                normalizeText(payload.getTopic(), "General"),
-                MULTIPLE_CHOICE,
-                normalizeText(payload.getDifficulty(), "EASY"),
-                normalizeText(payload.getStatus(), "ACTIVE"),
-                normalizeText(payload.getIllustrationPath(), ""),
-                payload.getAnswerOption1().trim(),
-                payload.getAnswerOption2().trim(),
-                payload.getAnswerOption3().trim(),
-                payload.getAnswerOption4().trim(),
-                payload.getCorrectOptionNumber()
-        );
-
-        boolean updated = questionRepository.updateQuestion(question);
-        if (!updated) {
-            throw new IllegalArgumentException("Question not found: " + payload.getQuestionId());
-        }
-
-        return getQuestionById(payload.getQuestionId());
-    }
-
     public QuestionDTO updateQuestion(int authenticatedUserId,
                                       UpdateQuestionPayload payload) {
         requireQuestionBankDependencies();

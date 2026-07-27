@@ -1,6 +1,6 @@
 package hsts.server.repository;
 
-import hsts.common.UpdateQuestionPayload;
+import hsts.server.entity.Question;
 import org.junit.Test;
 
 import java.lang.reflect.Proxy;
@@ -26,9 +26,9 @@ public class QuestionRepositoryVersionedUpdateTest {
         RecordingDatabaseController databaseController = new RecordingDatabaseController(true);
         databaseController.setCurrentVersionNo(4);
         QuestionRepository repository = new QuestionRepository(databaseController);
-        UpdateQuestionPayload payload = payload(4);
+        Question question = question();
 
-        int newVersionNo = repository.updateWithNewVersion(1002, payload);
+        int newVersionNo = repository.updateWithNewVersion(1002, 27, 4, question);
 
         assertEquals(5, newVersionNo);
         assertEquals(1, databaseController.getConnectionCalls());
@@ -46,8 +46,8 @@ public class QuestionRepositoryVersionedUpdateTest {
         Map<Integer, Object> versionParameters = version.getExecutions().get(0);
         assertEquals(27, versionParameters.get(1));
         assertEquals(5, versionParameters.get(2));
-        assertEquals("  Updated content  ", versionParameters.get(3));
-        assertEquals("  Calculus  ", versionParameters.get(4));
+        assertEquals("Updated content", versionParameters.get(3));
+        assertEquals("Calculus", versionParameters.get(4));
         assertEquals("MULTIPLE_CHOICE", versionParameters.get(5));
         assertEquals("HARD", versionParameters.get(6));
         assertEquals("images/updated.png", versionParameters.get(7));
@@ -56,7 +56,7 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         StatementRecord option = databaseController.getStatement("option");
         assertEquals(4, option.getExecutions().size());
-        String[] optionTexts = {" One ", "Two", "Three", "Four"};
+        String[] optionTexts = {"One", "Two", "Three", "Four"};
         for (int index = 0; index < optionTexts.length; index++) {
             Map<Integer, Object> optionParameters = option.getExecutions().get(index);
             assertEquals(27, optionParameters.get(1));
@@ -67,12 +67,12 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         StatementRecord current = databaseController.getStatement("current");
         Map<Integer, Object> currentParameters = current.getExecutions().get(0);
-        assertEquals("  Updated content  ", currentParameters.get(1));
-        assertEquals("  Calculus  ", currentParameters.get(2));
+        assertEquals("Updated content", currentParameters.get(1));
+        assertEquals("Calculus", currentParameters.get(2));
         assertEquals("MULTIPLE_CHOICE", currentParameters.get(3));
         assertEquals("HARD", currentParameters.get(4));
         assertEquals("images/updated.png", currentParameters.get(5));
-        assertEquals(" One ", currentParameters.get(6));
+        assertEquals("One", currentParameters.get(6));
         assertEquals("Two", currentParameters.get(7));
         assertEquals("Three", currentParameters.get(8));
         assertEquals("Four", currentParameters.get(9));
@@ -109,7 +109,7 @@ public class QuestionRepositoryVersionedUpdateTest {
         databaseController.setCurrentVersionNo(8);
         QuestionRepository repository = new QuestionRepository(databaseController);
 
-        assertEquals(9, repository.updateWithNewVersion(1003, payload(0)));
+        assertEquals(9, repository.updateWithNewVersion(1003, 27, 0, question()));
         assertFalse(databaseController.isAutoCommit());
         assertEquals("setAutoCommit:false", databaseController.getEvents().get(0));
         assertEquals("setAutoCommit:false", databaseController.getEvents().get(9));
@@ -123,7 +123,7 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> repository.updateWithNewVersion(1002, payload(4))
+                () -> repository.updateWithNewVersion(1002, 27, 4, question())
         );
 
         assertEquals("Question version conflict", exception.getMessage());
@@ -147,7 +147,7 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
-                () -> repository.updateWithNewVersion(1002, payload(0))
+                () -> repository.updateWithNewVersion(1002, 27, 0, question())
         );
 
         assertEquals("Question not found: 27", exception.getMessage());
@@ -168,7 +168,7 @@ public class QuestionRepositoryVersionedUpdateTest {
 
             IllegalStateException exception = assertThrows(
                     IllegalStateException.class,
-                    () -> repository.updateWithNewVersion(1002, payload(4))
+                    () -> repository.updateWithNewVersion(1002, 27, 4, question())
             );
 
             assertEquals("Failed to update question version", exception.getMessage());
@@ -189,7 +189,7 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> repository.updateWithNewVersion(1002, payload(4))
+                () -> repository.updateWithNewVersion(1002, 27, 4, question())
         );
 
         assertEquals("Question version conflict", exception.getMessage());
@@ -212,7 +212,7 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> repository.updateWithNewVersion(1002, payload(0))
+                () -> repository.updateWithNewVersion(1002, 27, 0, question())
         );
 
         assertEquals("Failed to update question version", exception.getMessage());
@@ -229,18 +229,19 @@ public class QuestionRepositoryVersionedUpdateTest {
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
-                () -> repository.updateWithNewVersion(1002, null)
+                () -> repository.updateWithNewVersion(1002, 27, 0, null)
         );
 
         assertEquals("Question update data is required", exception.getMessage());
         assertEquals(0, databaseController.getConnectionCalls());
     }
 
-    private static UpdateQuestionPayload payload(int expectedVersionNo) {
-        return new UpdateQuestionPayload(
+    private static Question question() {
+        return new Question(
                 27,
                 "  Updated content  ",
                 "  Calculus  ",
+                "MULTIPLE_CHOICE",
                 "HARD",
                 "INACTIVE",
                 "images/updated.png",
@@ -248,8 +249,7 @@ public class QuestionRepositoryVersionedUpdateTest {
                 "Two",
                 "Three",
                 "Four",
-                3,
-                expectedVersionNo
+                3
         );
     }
 

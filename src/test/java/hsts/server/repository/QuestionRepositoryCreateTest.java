@@ -1,7 +1,7 @@
 package hsts.server.repository;
 
-import hsts.common.CreateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
+import hsts.server.entity.Question;
 import org.junit.Test;
 
 import java.lang.reflect.Proxy;
@@ -28,9 +28,9 @@ public class QuestionRepositoryCreateTest {
         RecordingDatabaseController databaseController = new RecordingDatabaseController(true);
         databaseController.setGeneratedQuestionId(42);
         QuestionRepository repository = new QuestionRepository(databaseController);
-        CreateQuestionPayload payload = payload(DifficultyLevel.HARD);
+        Question questionEntity = question(DifficultyLevel.HARD);
 
-        int questionId = repository.create(1002, payload);
+        int questionId = repository.create(1002, 21, questionEntity);
 
         assertEquals(42, questionId);
         assertEquals(1, databaseController.getConnectionCalls());
@@ -47,13 +47,13 @@ public class QuestionRepositoryCreateTest {
         assertEquals(4, option.getExecutions().size());
 
         Map<Integer, Object> questionParameters = question.getExecutions().get(0);
-        assertEquals("  New content  ", questionParameters.get(1));
-        assertEquals("  Calculus  ", questionParameters.get(2));
+        assertEquals("New content", questionParameters.get(1));
+        assertEquals("Calculus", questionParameters.get(2));
         assertEquals("MULTIPLE_CHOICE", questionParameters.get(3));
         assertEquals("HARD", questionParameters.get(4));
         assertEquals("ACTIVE", questionParameters.get(5));
         assertEquals("images/new.png", questionParameters.get(6));
-        assertEquals(" One ", questionParameters.get(7));
+        assertEquals("One", questionParameters.get(7));
         assertEquals("Two", questionParameters.get(8));
         assertEquals("Three", questionParameters.get(9));
         assertEquals("Four", questionParameters.get(10));
@@ -65,8 +65,8 @@ public class QuestionRepositoryCreateTest {
         Map<Integer, Object> versionParameters = version.getExecutions().get(0);
         assertEquals(42, versionParameters.get(1));
         assertEquals(1, versionParameters.get(2));
-        assertEquals("  New content  ", versionParameters.get(3));
-        assertEquals("  Calculus  ", versionParameters.get(4));
+        assertEquals("New content", versionParameters.get(3));
+        assertEquals("Calculus", versionParameters.get(4));
         assertEquals("MULTIPLE_CHOICE", versionParameters.get(5));
         assertEquals("HARD", versionParameters.get(6));
         assertEquals("images/new.png", versionParameters.get(7));
@@ -78,7 +78,7 @@ public class QuestionRepositoryCreateTest {
         assertSame(createdAt, questionParameters.get(16));
         assertSame(createdAt, versionParameters.get(10));
 
-        String[] expectedTexts = {" One ", "Two", "Three", "Four"};
+        String[] expectedTexts = {"One", "Two", "Three", "Four"};
         for (int index = 0; index < 4; index++) {
             Map<Integer, Object> optionParameters = option.getExecutions().get(index);
             assertEquals(42, optionParameters.get(1));
@@ -110,7 +110,7 @@ public class QuestionRepositoryCreateTest {
         RecordingDatabaseController databaseController = new RecordingDatabaseController(false);
         QuestionRepository repository = new QuestionRepository(databaseController);
 
-        assertEquals(17, repository.create(1002, payload(DifficultyLevel.EASY)));
+        assertEquals(17, repository.create(1002, 21, question(DifficultyLevel.EASY)));
         assertFalse(databaseController.isAutoCommit());
         assertEquals("setAutoCommit:false", databaseController.getEvents().get(0));
         assertEquals("setAutoCommit:false", databaseController.getEvents().get(8));
@@ -124,7 +124,7 @@ public class QuestionRepositoryCreateTest {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> repository.create(1002, payload(DifficultyLevel.MEDIUM))
+                () -> repository.create(1002, 21, question(DifficultyLevel.MEDIUM))
         );
 
         assertEquals("Failed to create question", exception.getMessage());
@@ -144,7 +144,7 @@ public class QuestionRepositoryCreateTest {
 
             IllegalStateException exception = assertThrows(
                     IllegalStateException.class,
-                    () -> repository.create(1002, payload(DifficultyLevel.HARD))
+                    () -> repository.create(1002, 21, question(DifficultyLevel.HARD))
             );
 
             assertEquals("Failed to create question", exception.getMessage());
@@ -169,7 +169,7 @@ public class QuestionRepositoryCreateTest {
 
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> repository.create(1002, payload(DifficultyLevel.HARD))
+                () -> repository.create(1002, 21, question(DifficultyLevel.HARD))
         );
 
         assertSame(originalFailure, exception.getCause());
@@ -185,7 +185,7 @@ public class QuestionRepositoryCreateTest {
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
-                () -> repository.create(1002, null)
+                () -> repository.create(1002, 21, null)
         );
 
         assertEquals("Question data is required", exception.getMessage());
@@ -193,25 +193,27 @@ public class QuestionRepositoryCreateTest {
     }
 
     @Test
-    public void nullDifficultyIsRejectedBeforeOpeningConnection() {
-        RecordingDatabaseController databaseController = new RecordingDatabaseController(true);
-        QuestionRepository repository = new QuestionRepository(databaseController);
-
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> repository.create(1002, payload(null))
+    public void legacySingleRowUpdateIsExplicitlyUnsupported() {
+        QuestionRepository repository = new QuestionRepository(
+                new RecordingDatabaseController(true)
         );
 
-        assertEquals("Question difficulty is required", exception.getMessage());
-        assertEquals(0, databaseController.getConnectionCalls());
+        UnsupportedOperationException exception = assertThrows(
+                UnsupportedOperationException.class,
+                () -> repository.updateQuestion(question(DifficultyLevel.HARD))
+        );
+
+        assertEquals("Legacy question mutation is not supported", exception.getMessage());
     }
 
-    private static CreateQuestionPayload payload(DifficultyLevel difficulty) {
-        return new CreateQuestionPayload(
-                21,
+    private static Question question(DifficultyLevel difficulty) {
+        return new Question(
+                0,
                 "  New content  ",
                 "  Calculus  ",
-                difficulty,
+                "MULTIPLE_CHOICE",
+                difficulty.name(),
+                "ACTIVE",
                 "images/new.png",
                 " One ",
                 "Two",

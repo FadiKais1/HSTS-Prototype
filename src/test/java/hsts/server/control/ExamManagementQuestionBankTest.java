@@ -194,7 +194,6 @@ public class ExamManagementQuestionBankTest {
                         .map(AnswerOption::getOptionText)
                         .toList());
         assertEquals(3, normalized.getCorrectOptionNumber());
-        assertEquals(0, questions.getPayloadCreateCalls());
     }
 
     @Test
@@ -504,14 +503,6 @@ public class ExamManagementQuestionBankTest {
             return createdQuestionId;
         }
 
-        private int payloadCreateCalls;
-
-        @Override
-        public int create(int createdByUserId, CreateQuestionPayload payload) {
-            payloadCreateCalls++;
-            throw new AssertionError("Authenticated create used payload repository path");
-        }
-
         @Override
         public Optional<QuestionDTO> findCurrentByIdForTeacher(int authenticatedUserId,
                                                                 int questionId) {
@@ -572,8 +563,5 @@ public class ExamManagementQuestionBankTest {
             return createCalls;
         }
 
-        private int getPayloadCreateCalls() {
-            return payloadCreateCalls;
-        }
     }
 }

@@ -70,7 +70,7 @@ public class ServerTest {
     }
 
     @Test
-    public void updateQuestionReturnsExactSuccessResponse() {
+    public void contextFreeUpdateRequiresAuthenticationContext() {
         Server server = serverWith(question(9, "Old"));
         UpdateQuestionPayload payload = new UpdateQuestionPayload(
                 9, "Updated", "Topic", "HARD", "ACTIVE", "",
@@ -79,10 +79,7 @@ public class ServerTest {
 
         Response response = server.handleRequest(new Request(RequestType.UPDATE_QUESTION, payload));
 
-        assertSuccess(response, "Question updated successfully");
-        QuestionDTO result = (QuestionDTO) response.getPayload();
-        assertEquals("Updated", result.getContent());
-        assertEquals(4, result.getCorrectOptionNumber());
+        assertError(response, "Authentication context required");
     }
 
     @Test
@@ -106,7 +103,7 @@ public class ServerTest {
 
         Response response = server.handleRequest(new Request(RequestType.UPDATE_QUESTION, null));
 
-        assertError(response, "Question update data is missing");
+        assertError(response, "Authentication context required");
     }
 
     @Test
