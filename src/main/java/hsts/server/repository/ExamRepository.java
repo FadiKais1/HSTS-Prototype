@@ -5,6 +5,7 @@ import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
+import hsts.common.UpdateExamPayload;
 import hsts.common.type.ExamStatus;
 
 import java.math.BigDecimal;
@@ -233,6 +234,79 @@ public class ExamRepository {
               AND current_version_no IS NULL
             """;
 
+    private static final String LOCK_TEACHER_CURRENT_EXAM_SQL = """
+            SELECT e.course_id,
+                   e.current_version_no,
+                   ev.status
+            FROM exams e
+            JOIN teacher_courses tc
+              ON tc.course_id = e.course_id
+             AND tc.teacher_user_id = ?
+            JOIN exam_versions ev
+              ON ev.exam_id = e.exam_id
+             AND ev.version_no = e.current_version_no
+            WHERE e.exam_id = ?
+              AND e.created_by_user_id = ?
+            FOR UPDATE
+            """;
+
+    private static final String LOCK_COORDINATOR_CURRENT_EXAM_SQL = """
+            SELECT e.course_id,
+                   e.current_version_no,
+                   ev.status
+            FROM exams e
+            JOIN courses c ON c.course_id = e.course_id
+            JOIN subject_coordinators sc
+              ON sc.subject_id = c.subject_id
+             AND sc.coordinator_user_id = ?
+            JOIN exam_versions ev
+              ON ev.exam_id = e.exam_id
+             AND ev.version_no = e.current_version_no
+            WHERE e.exam_id = ?
+            FOR UPDATE
+            """;
+
+    private static final String UPDATE_CURRENT_VERSION_AFTER_EDIT_SQL = """
+            UPDATE exams
+            SET current_version_no = ?
+            WHERE exam_id = ?
+              AND current_version_no = ?
+            """;
+
+    private static final String SUBMIT_EXAM_VERSION_SQL = """
+            UPDATE exam_versions
+            SET status = ?,
+                submitted_at = ?,
+                reviewed_by_user_id = NULL,
+                reviewed_at = NULL,
+                rejection_reason = NULL
+            WHERE exam_id = ?
+              AND version_no = ?
+              AND status = 'DRAFT'
+            """;
+
+    private static final String APPROVE_EXAM_VERSION_SQL = """
+            UPDATE exam_versions
+            SET status = ?,
+                reviewed_by_user_id = ?,
+                reviewed_at = ?,
+                rejection_reason = NULL
+            WHERE exam_id = ?
+              AND version_no = ?
+              AND status = 'PENDING_APPROVAL'
+            """;
+
+    private static final String REJECT_EXAM_VERSION_SQL = """
+            UPDATE exam_versions
+            SET status = ?,
+                reviewed_by_user_id = ?,
+                reviewed_at = ?,
+                rejection_reason = ?
+            WHERE exam_id = ?
+              AND version_no = ?
+              AND status = 'PENDING_APPROVAL'
+            """;
+
     private final DatabaseController databaseController;
     private final Supplier<String> examCodeGenerator;
 
@@ -374,6 +448,142 @@ public class ExamRepository {
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to create exam", e);
         }
+    }
+
+    public int updateWithNewVersion(int authenticatedUserId, UpdateExamPayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Exam update data is missing");
+        }
+
+        return executeInTransaction("Failed to update exam version", connection -> {
+            LockedExam currentExam = lockTeacherCurrentExam(
+                    connection,
+                    authenticatedUserId,
+                    payload.getExamId()
+            ).orElseThrow(() -> new IllegalArgumentException(
+                    "Exam not found: " + payload.getExamId()
+            ));
+
+            requireExpectedVersion(currentExam, payload.getExpectedVersionNo());
+            if (currentExam.status == ExamStatus.PENDING_APPROVAL) {
+                throw new IllegalStateException("Pending exam cannot be edited");
+            }
+
+            for (ExamQuestionSelectionPayload selection : payload.getQuestions()) {
+                requireAvailableQuestion(
+                        connection,
+                        authenticatedUserId,
+                        currentExam.courseId,
+                        selection
+                );
+            }
+
+            int newVersionNo = currentExam.versionNo + 1;
+            BigDecimal totalScore = calculateTotalScore(payload.getQuestions());
+            LocalDateTime createdAt = LocalDateTime.now();
+            insertUpdatedExamVersion(
+                    connection,
+                    authenticatedUserId,
+                    payload,
+                    newVersionNo,
+                    totalScore,
+                    createdAt
+            );
+            insertExamQuestions(
+                    connection,
+                    payload.getExamId(),
+                    newVersionNo,
+                    payload.getQuestions()
+            );
+            updateCurrentVersionAfterEdit(
+                    connection,
+                    payload.getExamId(),
+                    currentExam.versionNo,
+                    newVersionNo
+            );
+            return newVersionNo;
+        });
+    }
+
+    public boolean submitForApproval(int authenticatedUserId, int examId,
+                                     int expectedVersionNo) {
+        return executeInTransaction("Failed to submit exam for approval", connection -> {
+            Optional<LockedExam> lockedExam = lockTeacherCurrentExam(
+                    connection,
+                    authenticatedUserId,
+                    examId
+            );
+            if (lockedExam.isEmpty()) {
+                return false;
+            }
+
+            LockedExam currentExam = lockedExam.get();
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            if (currentExam.status != ExamStatus.DRAFT) {
+                throw new IllegalStateException("Exam is not a draft");
+            }
+
+            updateSubmittedVersion(
+                    connection,
+                    examId,
+                    currentExam.versionNo,
+                    LocalDateTime.now()
+            );
+            return true;
+        });
+    }
+
+    public boolean approve(int authenticatedCoordinatorId, int examId,
+                           int expectedVersionNo) {
+        return executeInTransaction("Failed to approve exam", connection -> {
+            Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
+                    connection,
+                    authenticatedCoordinatorId,
+                    examId
+            );
+            if (lockedExam.isEmpty()) {
+                return false;
+            }
+
+            LockedExam currentExam = lockedExam.get();
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            requirePendingApproval(currentExam);
+            updateApprovedVersion(
+                    connection,
+                    authenticatedCoordinatorId,
+                    examId,
+                    currentExam.versionNo,
+                    LocalDateTime.now()
+            );
+            return true;
+        });
+    }
+
+    public boolean reject(int authenticatedCoordinatorId, int examId,
+                          int expectedVersionNo, String reason) {
+        return executeInTransaction("Failed to reject exam", connection -> {
+            Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
+                    connection,
+                    authenticatedCoordinatorId,
+                    examId
+            );
+            if (lockedExam.isEmpty()) {
+                return false;
+            }
+
+            LockedExam currentExam = lockedExam.get();
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            requirePendingApproval(currentExam);
+            updateRejectedVersion(
+                    connection,
+                    authenticatedCoordinatorId,
+                    examId,
+                    currentExam.versionNo,
+                    reason,
+                    LocalDateTime.now()
+            );
+            return true;
+        });
     }
 
     private Optional<ExamDTO> loadExam(Connection connection, PreparedStatement statement)
@@ -613,12 +823,18 @@ public class ExamRepository {
     private void insertExamQuestions(Connection connection, int examId,
                                      List<ExamQuestionSelectionPayload> questions)
             throws SQLException {
+        insertExamQuestions(connection, examId, 1, questions);
+    }
+
+    private void insertExamQuestions(Connection connection, int examId, int versionNo,
+                                     List<ExamQuestionSelectionPayload> questions)
+            throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 INSERT_EXAM_QUESTION_SQL
         )) {
             for (ExamQuestionSelectionPayload question : questions) {
                 statement.setInt(1, examId);
-                statement.setInt(2, 1);
+                statement.setInt(2, versionNo);
                 statement.setInt(3, question.getOrderNumber());
                 statement.setInt(4, question.getQuestionId());
                 statement.setInt(5, question.getQuestionVersionNo());
@@ -629,6 +845,150 @@ public class ExamRepository {
                             "Exam question insert did not affect exactly one row"
                     );
                 }
+            }
+        }
+    }
+
+    private Optional<LockedExam> lockTeacherCurrentExam(Connection connection,
+                                                         int authenticatedUserId,
+                                                         int examId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                LOCK_TEACHER_CURRENT_EXAM_SQL
+        )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, examId);
+            statement.setInt(3, authenticatedUserId);
+            return readLockedExam(statement);
+        }
+    }
+
+    private Optional<LockedExam> lockCoordinatorCurrentExam(Connection connection,
+                                                             int authenticatedCoordinatorId,
+                                                             int examId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                LOCK_COORDINATOR_CURRENT_EXAM_SQL
+        )) {
+            statement.setInt(1, authenticatedCoordinatorId);
+            statement.setInt(2, examId);
+            return readLockedExam(statement);
+        }
+    }
+
+    private Optional<LockedExam> readLockedExam(PreparedStatement statement)
+            throws SQLException {
+        try (ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                return Optional.empty();
+            }
+            return Optional.of(new LockedExam(
+                    resultSet.getInt("course_id"),
+                    resultSet.getInt("current_version_no"),
+                    ExamStatus.valueOf(resultSet.getString("status"))
+            ));
+        }
+    }
+
+    private void requireExpectedVersion(LockedExam currentExam, int expectedVersionNo) {
+        if (currentExam.versionNo != expectedVersionNo) {
+            throw new IllegalStateException("Exam version conflict");
+        }
+    }
+
+    private void requirePendingApproval(LockedExam currentExam) {
+        if (currentExam.status != ExamStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException("Exam is not pending approval");
+        }
+    }
+
+    private void insertUpdatedExamVersion(Connection connection, int authenticatedUserId,
+                                          UpdateExamPayload payload, int newVersionNo,
+                                          BigDecimal totalScore, LocalDateTime createdAt)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                INSERT_EXAM_VERSION_SQL
+        )) {
+            statement.setInt(1, payload.getExamId());
+            statement.setInt(2, newVersionNo);
+            statement.setString(3, payload.getTitle());
+            statement.setInt(4, payload.getDurationMinutes());
+            statement.setString(5, payload.getTeacherNotes());
+            statement.setString(6, payload.getStudentInstructions());
+            statement.setBigDecimal(7, totalScore);
+            statement.setString(8, ExamStatus.DRAFT.name());
+            statement.setInt(9, authenticatedUserId);
+            statement.setObject(10, createdAt);
+            statement.setNull(11, Types.TIMESTAMP);
+            statement.setNull(12, Types.INTEGER);
+            statement.setNull(13, Types.TIMESTAMP);
+            statement.setNull(14, Types.VARCHAR);
+
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException("Exam version insert did not affect exactly one row");
+            }
+        }
+    }
+
+    private void updateCurrentVersionAfterEdit(Connection connection, int examId,
+                                               int currentVersionNo, int newVersionNo)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_CURRENT_VERSION_AFTER_EDIT_SQL
+        )) {
+            statement.setInt(1, newVersionNo);
+            statement.setInt(2, examId);
+            statement.setInt(3, currentVersionNo);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Exam version conflict");
+            }
+        }
+    }
+
+    private void updateSubmittedVersion(Connection connection, int examId, int versionNo,
+                                        LocalDateTime submittedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                SUBMIT_EXAM_VERSION_SQL
+        )) {
+            statement.setString(1, ExamStatus.PENDING_APPROVAL.name());
+            statement.setObject(2, submittedAt);
+            statement.setInt(3, examId);
+            statement.setInt(4, versionNo);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Exam is not a draft");
+            }
+        }
+    }
+
+    private void updateApprovedVersion(Connection connection, int coordinatorId,
+                                       int examId, int versionNo,
+                                       LocalDateTime reviewedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                APPROVE_EXAM_VERSION_SQL
+        )) {
+            statement.setString(1, ExamStatus.APPROVED.name());
+            statement.setInt(2, coordinatorId);
+            statement.setObject(3, reviewedAt);
+            statement.setInt(4, examId);
+            statement.setInt(5, versionNo);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Exam is not pending approval");
+            }
+        }
+    }
+
+    private void updateRejectedVersion(Connection connection, int coordinatorId,
+                                       int examId, int versionNo, String reason,
+                                       LocalDateTime reviewedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                REJECT_EXAM_VERSION_SQL
+        )) {
+            statement.setString(1, ExamStatus.REJECTED.name());
+            statement.setInt(2, coordinatorId);
+            statement.setObject(3, reviewedAt);
+            statement.setString(4, reason);
+            statement.setInt(5, examId);
+            statement.setInt(6, versionNo);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Exam is not pending approval");
             }
         }
     }
@@ -663,6 +1023,39 @@ public class ExamRepository {
         return code.toString();
     }
 
+    private <T> T executeInTransaction(String failureMessage,
+                                       TransactionOperation<T> operation) {
+        try (Connection connection = databaseController.getConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            boolean transactionStarted = false;
+            Throwable transactionFailure = null;
+
+            try {
+                connection.setAutoCommit(false);
+                transactionStarted = true;
+                T result = operation.execute(connection);
+                connection.commit();
+                return result;
+            } catch (SQLException exception) {
+                transactionFailure = exception;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, exception);
+                }
+                throw new IllegalStateException(failureMessage, exception);
+            } catch (RuntimeException exception) {
+                transactionFailure = exception;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, exception);
+                }
+                throw exception;
+            } finally {
+                restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException(failureMessage, exception);
+        }
+    }
+
     private void rollbackWithSuppressed(Connection connection, Throwable originalFailure) {
         try {
             connection.rollback();
@@ -681,6 +1074,23 @@ public class ExamRepository {
                 return;
             }
             throw restorationFailure;
+        }
+    }
+
+    @FunctionalInterface
+    private interface TransactionOperation<T> {
+        T execute(Connection connection) throws SQLException;
+    }
+
+    private static final class LockedExam {
+        private final int courseId;
+        private final int versionNo;
+        private final ExamStatus status;
+
+        private LockedExam(int courseId, int versionNo, ExamStatus status) {
+            this.courseId = courseId;
+            this.versionNo = versionNo;
+            this.status = status;
         }
     }
 }
