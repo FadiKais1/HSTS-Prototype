@@ -1,5 +1,7 @@
 package hsts.server.repository;
 
+import hsts.common.QuestionDTO;
+import hsts.common.QuestionFilterPayload;
 import hsts.server.entity.Question;
 
 import java.sql.Connection;
@@ -8,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 public class QuestionRepository {
@@ -18,12 +21,108 @@ public class QuestionRepository {
 
     private final DatabaseController databaseController;
 
+    private static final String NORMALIZED_QUESTION_SELECT = """
+            SELECT q.question_id,
+                   q.course_id,
+                   c.subject_id,
+                   qv.version_no,
+                   qv.content,
+                   qv.topic,
+                   qv.question_type AS type,
+                   qv.difficulty,
+                   q.status,
+                   qv.illustration_path,
+                   option_1.option_text AS answer_option_1,
+                   option_2.option_text AS answer_option_2,
+                   option_3.option_text AS answer_option_3,
+                   option_4.option_text AS answer_option_4,
+                   qv.correct_option_number
+            FROM questions q
+            JOIN question_versions qv
+              ON qv.question_id = q.question_id
+             AND qv.version_no = q.current_version_no
+            JOIN courses c ON c.course_id = q.course_id
+            JOIN subjects s ON s.subject_id = c.subject_id
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+             AND tc.teacher_user_id = ?
+            JOIN answer_options option_1
+              ON option_1.question_id = qv.question_id
+             AND option_1.version_no = qv.version_no
+             AND option_1.option_number = 1
+            JOIN answer_options option_2
+              ON option_2.question_id = qv.question_id
+             AND option_2.version_no = qv.version_no
+             AND option_2.option_number = 2
+            JOIN answer_options option_3
+              ON option_3.question_id = qv.question_id
+             AND option_3.version_no = qv.version_no
+             AND option_3.option_number = 3
+            JOIN answer_options option_4
+              ON option_4.question_id = qv.question_id
+             AND option_4.version_no = qv.version_no
+             AND option_4.option_number = 4
+            """;
+
     public QuestionRepository() {
         this(new DatabaseController());
     }
 
     public QuestionRepository(DatabaseController databaseController) {
         this.databaseController = databaseController;
+    }
+
+    public List<QuestionDTO> findCurrentForTeacher(int authenticatedUserId,
+                                                   QuestionFilterPayload filter) {
+        StringBuilder sql = new StringBuilder(NORMALIZED_QUESTION_SELECT);
+        sql.append("WHERE 1 = 1\n");
+        appendFilters(sql, filter);
+        sql.append("ORDER BY q.question_id");
+
+        List<QuestionDTO> questions = new ArrayList<>();
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+
+            statement.setInt(1, authenticatedUserId);
+            bindFilters(statement, 2, filter);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    questions.add(mapRowToQuestionDto(resultSet));
+                }
+            }
+
+            return questions;
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load assigned questions", e);
+        }
+    }
+
+    public Optional<QuestionDTO> findCurrentByIdForTeacher(int authenticatedUserId,
+                                                            int questionId) {
+        String sql = NORMALIZED_QUESTION_SELECT
+                + "WHERE q.question_id = ?\n"
+                + "ORDER BY q.question_id";
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, questionId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return Optional.of(mapRowToQuestionDto(resultSet));
+                }
+
+                return Optional.empty();
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load assigned question by id", e);
+        }
     }
 
     public List<Question> findAll() {
@@ -137,6 +236,82 @@ public class QuestionRepository {
                 resultSet.getString("answer_option_3"),
                 resultSet.getString("answer_option_4"),
                 resultSet.getInt("correct_option_number")
+        );
+    }
+
+    private void appendFilters(StringBuilder sql, QuestionFilterPayload filter) {
+        if (filter == null) {
+            return;
+        }
+
+        if (filter.getCourseId() != null) {
+            sql.append("AND q.course_id = ?\n");
+        }
+        if (filter.getSubjectId() != null) {
+            sql.append("AND c.subject_id = ?\n");
+        }
+        if (normalizedTopic(filter) != null) {
+            sql.append("AND LOWER(qv.topic) LIKE ?\n");
+        }
+        if (filter.getDifficulty() != null) {
+            sql.append("AND qv.difficulty = ?\n");
+        }
+        if (filter.getStatus() != null) {
+            sql.append("AND q.status = ?\n");
+        }
+    }
+
+    private void bindFilters(PreparedStatement statement, int startIndex,
+                             QuestionFilterPayload filter) throws SQLException {
+        if (filter == null) {
+            return;
+        }
+
+        int parameterIndex = startIndex;
+        if (filter.getCourseId() != null) {
+            statement.setInt(parameterIndex++, filter.getCourseId());
+        }
+        if (filter.getSubjectId() != null) {
+            statement.setInt(parameterIndex++, filter.getSubjectId());
+        }
+
+        String topic = normalizedTopic(filter);
+        if (topic != null) {
+            statement.setString(parameterIndex++, "%" + topic + "%");
+        }
+        if (filter.getDifficulty() != null) {
+            statement.setString(parameterIndex++, filter.getDifficulty().name());
+        }
+        if (filter.getStatus() != null) {
+            statement.setString(parameterIndex, filter.getStatus().name());
+        }
+    }
+
+    private String normalizedTopic(QuestionFilterPayload filter) {
+        String topic = filter.getTopic();
+        if (topic == null || topic.trim().isEmpty()) {
+            return null;
+        }
+        return topic.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private QuestionDTO mapRowToQuestionDto(ResultSet resultSet) throws SQLException {
+        return new QuestionDTO(
+                resultSet.getInt("question_id"),
+                resultSet.getString("content"),
+                resultSet.getString("topic"),
+                resultSet.getString("type"),
+                resultSet.getString("difficulty"),
+                resultSet.getString("status"),
+                resultSet.getString("illustration_path"),
+                resultSet.getString("answer_option_1"),
+                resultSet.getString("answer_option_2"),
+                resultSet.getString("answer_option_3"),
+                resultSet.getString("answer_option_4"),
+                resultSet.getInt("correct_option_number"),
+                resultSet.getInt("course_id"),
+                resultSet.getInt("subject_id"),
+                resultSet.getInt("version_no")
         );
     }
 }
