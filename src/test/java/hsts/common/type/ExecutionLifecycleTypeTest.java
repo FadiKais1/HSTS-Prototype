@@ -63,7 +63,13 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.GET_ACTIVE_EXAM_ATTEMPT,
                         RequestType.SAVE_EXAM_ANSWER,
                         RequestType.SUBMIT_EXAM_ATTEMPT,
-                        RequestType.EXTEND_SUBMISSION_TIME
+                        RequestType.EXTEND_SUBMISSION_TIME,
+                        RequestType.LIST_EXECUTION_SUBMISSIONS,
+                        RequestType.GET_SUBMISSION_FOR_REVIEW,
+                        RequestType.REVIEW_SUBMISSION_GRADE,
+                        RequestType.PUBLISH_SUBMISSION_GRADE,
+                        RequestType.LIST_MY_PUBLISHED_GRADES,
+                        RequestType.GET_MY_PUBLISHED_GRADE
                 },
                 RequestType.values()
         );

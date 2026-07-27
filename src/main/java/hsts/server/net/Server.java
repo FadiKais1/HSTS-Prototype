@@ -123,7 +123,10 @@ public class Server extends AbstractServer {
                      SCHEDULE_EXAM_EXECUTION, LIST_MY_EXAM_EXECUTIONS,
                      VALIDATE_EXECUTION_CODE, START_EXAM_ATTEMPT,
                      GET_ACTIVE_EXAM_ATTEMPT, SAVE_EXAM_ANSWER,
-                     SUBMIT_EXAM_ATTEMPT, EXTEND_SUBMISSION_TIME ->
+                     SUBMIT_EXAM_ATTEMPT, EXTEND_SUBMISSION_TIME,
+                     LIST_EXECUTION_SUBMISSIONS, GET_SUBMISSION_FOR_REVIEW,
+                     REVIEW_SUBMISSION_GRADE, PUBLISH_SUBMISSION_GRADE,
+                     LIST_MY_PUBLISHED_GRADES, GET_MY_PUBLISHED_GRADE ->
                         Response.error("Authentication context required");
             };
 
