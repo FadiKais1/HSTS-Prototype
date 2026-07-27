@@ -9,6 +9,7 @@ import hsts.common.QuestionVersionDTO;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
+import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
@@ -80,6 +81,49 @@ public class QuestionClientControllerTest {
         assertEquals(RequestType.CREATE_QUESTION, request.getType());
         assertSame(payload, request.getPayload());
         assertSame(question, result);
+    }
+
+    @Test
+    public void versionedUpdateSendsExactPayloadAndReturnsQuestionWithoutUserId() throws Exception {
+        RecordingSender sender = new RecordingSender();
+        QuestionDTO question = question(14);
+        sender.setResponse(Response.success("Question updated successfully", question));
+        QuestionClientController controller = new QuestionClientController(sender::send);
+        UpdateQuestionPayload payload = updatePayload();
+
+        QuestionDTO result = controller.updateQuestion(payload).join();
+
+        Request request = sender.lastRequest();
+        assertEquals(RequestType.UPDATE_QUESTION, request.getType());
+        assertSame(payload, request.getPayload());
+        assertSame(question, result);
+        Field requestUserId = Request.class.getDeclaredField("userId");
+        requestUserId.setAccessible(true);
+        assertEquals(0, requestUserId.getInt(request));
+    }
+
+    @Test
+    public void versionedUpdatePreservesServerErrorAndRejectsInvalidSuccessPayload() {
+        RecordingSender sender = new RecordingSender();
+        QuestionClientController controller = new QuestionClientController(sender::send);
+
+        sender.setResponse(Response.error("Question version conflict"));
+        assertFutureError(
+                () -> controller.updateQuestion(updatePayload()),
+                "Question version conflict"
+        );
+
+        sender.setResponse(Response.success("Question updated successfully", null));
+        assertFutureError(
+                () -> controller.updateQuestion(updatePayload()),
+                "Invalid update-question response from server"
+        );
+
+        sender.setResponse(Response.success("Question updated successfully", "wrong payload"));
+        assertFutureError(
+                () -> controller.updateQuestion(updatePayload()),
+                "Invalid update-question response from server"
+        );
     }
 
     @Test
@@ -271,6 +315,13 @@ public class QuestionClientControllerTest {
         return new CreateQuestionPayload(
                 7, "Content", "Topic", DifficultyLevel.MEDIUM, "",
                 "One", "Two", "Three", "Four", 2
+        );
+    }
+
+    private static UpdateQuestionPayload updatePayload() {
+        return new UpdateQuestionPayload(
+                14, "Updated", "Topic", "MEDIUM", "ACTIVE", "",
+                "One", "Two", "Three", "Four", 2, 6
         );
     }
 

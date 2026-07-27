@@ -7,7 +7,6 @@
 <BorderPane xmlns:fx="http://javafx.com/fxml"
             fx:controller="hsts.client.boundary.QuestionBankPageController"
             style="-fx-background-color: #f4f7fb;">
-
     <center>
         <ScrollPane fitToWidth="true" pannable="true"
                     style="-fx-background: #f4f7fb; -fx-background-color: #f4f7fb;">
@@ -18,164 +17,171 @@
 
                 <HBox alignment="CENTER_LEFT" spacing="14">
                     <VBox spacing="4" HBox.hgrow="ALWAYS">
-                        <Label text="HSTS Exam Management System"
+                        <Label text="Question Bank"
                                style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-                        <Label text="Question Bank Prototype - FXML Multiple Choice Editor"
-                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
-                        <Label text="Edit question attributes, status, illustration path, four answer options, and the correct answer number."
-                               wrapText="true"
-                               style="-fx-font-size: 13px; -fx-text-fill: #4b5563;"/>
+                        <Label text="Assigned courses, normalized questions, immutable versions"
+                               style="-fx-font-size: 15px; -fx-text-fill: #2563eb; -fx-font-weight: bold;"/>
                     </VBox>
                     <Button text="Back to Dashboard" onAction="#handleBack"
                             style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
                 </HBox>
 
-                <GridPane hgap="18" vgap="8"
-                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
-                    <padding>
-                        <Insets top="14" right="14" bottom="14" left="14"/>
-                    </padding>
-
-                    <Label text="Prototype Runtime Status"
-                           style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #111827;"
-                           GridPane.columnIndex="0" GridPane.rowIndex="0" GridPane.columnSpan="4"/>
-
-                    <Label text="Server:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
-                    <Label fx:id="serverStatusValue" text="-" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-
-                    <Label text="Database:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="1"/>
-                    <Label fx:id="databaseStatusValue" text="-" GridPane.columnIndex="3" GridPane.rowIndex="1"/>
-
-                    <Label text="Questions loaded:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
-                    <Label fx:id="questionsCountValue" text="0" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-
-                    <Label text="Current action:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="2"/>
-                    <Label fx:id="currentActionValue" text="Ready" GridPane.columnIndex="3" GridPane.rowIndex="2"/>
+                <GridPane hgap="12" vgap="10"
+                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 14;">
+                    <Label text="Server" style="-fx-font-weight: bold;"
+                           GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                    <Label fx:id="serverStatusValue" text="Not configured"
+                           GridPane.columnIndex="1" GridPane.rowIndex="0" GridPane.columnSpan="2"/>
+                    <Label text="Questions" style="-fx-font-weight: bold;"
+                           GridPane.columnIndex="3" GridPane.rowIndex="0"/>
+                    <Label fx:id="questionsCountValue" text="0"
+                           GridPane.columnIndex="4" GridPane.rowIndex="0"/>
+                    <Label text="Current action" style="-fx-font-weight: bold;"
+                           GridPane.columnIndex="5" GridPane.rowIndex="0"/>
+                    <Label fx:id="currentActionValue" text="Waiting"
+                           GridPane.columnIndex="6" GridPane.rowIndex="0"/>
                 </GridPane>
 
+                <VBox spacing="10"
+                      style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 14;">
+                    <Label text="Server-side Filters"
+                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <GridPane hgap="10" vgap="8">
+                        <Label text="Assigned course" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                        <ComboBox fx:id="courseFilterComboBox" prefWidth="260"
+                                  GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+                        <Label text="Subject" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+                        <ComboBox fx:id="subjectFilterComboBox" prefWidth="180"
+                                  GridPane.columnIndex="3" GridPane.rowIndex="0"/>
+                        <CheckBox fx:id="allCoursesForSubjectCheckBox"
+                                  text="All assigned courses in subject"
+                                  GridPane.columnIndex="4" GridPane.rowIndex="0" GridPane.columnSpan="2"/>
+
+                        <Label text="Topic contains" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                        <TextField fx:id="topicFilterField" promptText="All topics"
+                                   GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                        <Label text="Difficulty" GridPane.columnIndex="2" GridPane.rowIndex="1"/>
+                        <ComboBox fx:id="difficultyFilterComboBox" prefWidth="140"
+                                  GridPane.columnIndex="3" GridPane.rowIndex="1"/>
+                        <Label text="Status" GridPane.columnIndex="4" GridPane.rowIndex="1"/>
+                        <ComboBox fx:id="statusFilterComboBox" prefWidth="140"
+                                  GridPane.columnIndex="5" GridPane.rowIndex="1"/>
+                    </GridPane>
+                    <HBox spacing="10">
+                        <Button fx:id="applyFiltersButton" text="Apply / Refresh"
+                                onAction="#handleApplyFilters"
+                                style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 14 8 14; -fx-background-radius: 8;"/>
+                        <Button fx:id="clearFiltersButton" text="Clear Filters"
+                                onAction="#handleClearFilters"
+                                style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 8 14 8 14; -fx-background-radius: 8;"/>
+                    </HBox>
+                </VBox>
+
                 <HBox spacing="10">
-                    <Button text="1. Load Questions" onAction="#handleLoadQuestions"
+                    <Button fx:id="createButton" text="Create Question"
+                            onAction="#handleCreateQuestion"
                             style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
-                    <Button text="2. Save Full Question Update" onAction="#handleUpdateQuestion"
+                    <Button fx:id="updateButton" text="Save Versioned Update"
+                            onAction="#handleUpdateQuestion"
                             style="-fx-background-color: #059669; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
-                    <Button text="3. Re-read From Database" onAction="#handleRereadQuestion"
-                            style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
-                    <Button text="Clear Selection" onAction="#handleClearSelection"
+                    <Button fx:id="statusActionButton" text="Activate / Deactivate"
+                            onAction="#handleToggleStatus"
+                            style="-fx-background-color: #d97706; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button fx:id="historyButton" text="Version History"
+                            onAction="#handleShowHistory"
+                            style="-fx-background-color: #7c3aed; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button fx:id="clearSelectionButton" text="Clear Selection"
+                            onAction="#handleClearSelection"
                             style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
                 </HBox>
 
-                <SplitPane dividerPositions="0.34">
-                    <VBox spacing="10"
-                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
-                        <padding>
-                            <Insets top="14" right="14" bottom="14" left="14"/>
-                        </padding>
-
-                        <Label text="Questions List"
-                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-                        <Label text="Select a question. The full editable version appears on the right."
-                               wrapText="true"
-                               style="-fx-font-size: 12px; -fx-text-fill: #6b7280;"/>
-
-                        <TableView fx:id="tableView" prefHeight="430">
-                            <columns>
-                                <TableColumn fx:id="idColumn" text="ID" prefWidth="55"/>
-                                <TableColumn fx:id="topicColumn" text="Topic" prefWidth="130"/>
-                                <TableColumn fx:id="difficultyColumn" text="Difficulty" prefWidth="100"/>
-                                <TableColumn fx:id="statusColumn" text="Status" prefWidth="100"/>
-                            </columns>
-                        </TableView>
-                    </VBox>
-
-                    <VBox spacing="10"
-                          style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
-                        <padding>
-                            <Insets top="14" right="14" bottom="14" left="14"/>
-                        </padding>
-
-                        <Label text="Selected Question Editor"
-                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-
-                        <GridPane hgap="12" vgap="8">
-                            <Label text="Question ID:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-                            <Label fx:id="selectedIdValue" text="-" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-
-                            <Label text="Type:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
-                            <Label fx:id="selectedTypeValue" text="MULTIPLE_CHOICE" GridPane.columnIndex="3" GridPane.rowIndex="0"/>
-
-                            <Label text="Topic:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
-                            <TextField fx:id="topicField" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-
-                            <Label text="Difficulty:" style="-fx-font-weight: bold;" GridPane.columnIndex="2" GridPane.rowIndex="1"/>
-                            <ComboBox fx:id="difficultyComboBox" GridPane.columnIndex="3" GridPane.rowIndex="1"/>
-
-                            <Label text="Status:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
-                            <ComboBox fx:id="statusComboBox" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-
-                            <Label text="Illustration path/URL:" style="-fx-font-weight: bold;" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
-                            <TextField fx:id="illustrationPathField" GridPane.columnIndex="1" GridPane.rowIndex="3" GridPane.columnSpan="3"/>
-                        </GridPane>
-
-                        <Separator/>
-
-                        <Label text="Question Content:" style="-fx-font-weight: bold;"/>
-                        <TextArea fx:id="contentArea" prefRowCount="5" wrapText="true"/>
-
-                        <Separator/>
-
-                        <Label text="Answer Options - choose the correct answer"
-                               style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-
-                        <VBox spacing="8">
-                            <HBox spacing="10" alignment="CENTER_LEFT"
-                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
-                                <Label text="Option 1:" minWidth="70"/>
-                                <TextField fx:id="option1Field" HBox.hgrow="ALWAYS"/>
-                                <RadioButton fx:id="option1Radio" text="Correct"/>
-                            </HBox>
-
-                            <HBox spacing="10" alignment="CENTER_LEFT"
-                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
-                                <Label text="Option 2:" minWidth="70"/>
-                                <TextField fx:id="option2Field" HBox.hgrow="ALWAYS"/>
-                                <RadioButton fx:id="option2Radio" text="Correct"/>
-                            </HBox>
-
-                            <HBox spacing="10" alignment="CENTER_LEFT"
-                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
-                                <Label text="Option 3:" minWidth="70"/>
-                                <TextField fx:id="option3Field" HBox.hgrow="ALWAYS"/>
-                                <RadioButton fx:id="option3Radio" text="Correct"/>
-                            </HBox>
-
-                            <HBox spacing="10" alignment="CENTER_LEFT"
-                                  style="-fx-background-color: #f8fafc; -fx-border-color: #dbe3ef; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8;">
-                                <Label text="Option 4:" minWidth="70"/>
-                                <TextField fx:id="option4Field" HBox.hgrow="ALWAYS"/>
-                                <RadioButton fx:id="option4Radio" text="Correct"/>
-                            </HBox>
-                        </VBox>
-
-                        <Label text="Inactive questions stay in the database but should not be used in new exams."
-                               wrapText="true"
-                               style="-fx-background-color: #eff6ff; -fx-text-fill: #1d4ed8; -fx-font-size: 12px; -fx-padding: 8; -fx-background-radius: 8;"/>
-                    </VBox>
-                </SplitPane>
-
                 <VBox spacing="8"
-                      style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12;">
-                    <padding>
-                        <Insets top="14" right="14" bottom="14" left="14"/>
-                    </padding>
-
-                    <Label text="Activity Log"
-                           style="-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-                    <Label fx:id="statusLabel" text="Ready"
-                           style="-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #2563eb;"/>
-                    <TextArea fx:id="activityLogArea" editable="false" wrapText="true" prefRowCount="5"
-                              style="-fx-font-family: Consolas; -fx-font-size: 12px; -fx-control-inner-background: #f8fafc;"/>
+                      style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 14;">
+                    <Label text="Normalized Questions"
+                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <TableView fx:id="tableView" prefHeight="330">
+                        <columns>
+                            <TableColumn fx:id="idColumn" text="ID" prefWidth="55"/>
+                            <TableColumn fx:id="contentColumn" text="Content" prefWidth="260"/>
+                            <TableColumn fx:id="courseColumn" text="Course" prefWidth="150"/>
+                            <TableColumn fx:id="subjectColumn" text="Subject" prefWidth="130"/>
+                            <TableColumn fx:id="topicColumn" text="Topic" prefWidth="120"/>
+                            <TableColumn fx:id="difficultyColumn" text="Difficulty" prefWidth="90"/>
+                            <TableColumn fx:id="statusColumn" text="Status" prefWidth="90"/>
+                            <TableColumn fx:id="versionColumn" text="Version" prefWidth="75"/>
+                        </columns>
+                    </TableView>
                 </VBox>
 
+                <VBox spacing="10"
+                      style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 14;">
+                    <Label text="Selected Question Editor"
+                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <GridPane hgap="12" vgap="8">
+                        <Label text="Question ID" style="-fx-font-weight: bold;"
+                               GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                        <Label fx:id="selectedIdValue" text="-"
+                               GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+                        <Label text="Course" style="-fx-font-weight: bold;"
+                               GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+                        <Label fx:id="selectedCourseValue" text="-"
+                               GridPane.columnIndex="3" GridPane.rowIndex="0"/>
+                        <Label text="Subject" style="-fx-font-weight: bold;"
+                               GridPane.columnIndex="4" GridPane.rowIndex="0"/>
+                        <Label fx:id="selectedSubjectValue" text="-"
+                               GridPane.columnIndex="5" GridPane.rowIndex="0"/>
+
+                        <Label text="Version" style="-fx-font-weight: bold;"
+                               GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                        <Label fx:id="selectedVersionValue" text="-"
+                               GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                        <Label text="Type" style="-fx-font-weight: bold;"
+                               GridPane.columnIndex="2" GridPane.rowIndex="1"/>
+                        <Label fx:id="selectedTypeValue" text="MULTIPLE_CHOICE"
+                               GridPane.columnIndex="3" GridPane.rowIndex="1"/>
+                        <Label text="Status" GridPane.columnIndex="4" GridPane.rowIndex="1"/>
+                        <ComboBox fx:id="statusComboBox" GridPane.columnIndex="5" GridPane.rowIndex="1"/>
+
+                        <Label text="Topic *" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+                        <TextField fx:id="topicField" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                        <Label text="Difficulty *" GridPane.columnIndex="2" GridPane.rowIndex="2"/>
+                        <ComboBox fx:id="difficultyComboBox" GridPane.columnIndex="3" GridPane.rowIndex="2"/>
+                        <Label text="Illustration path" GridPane.columnIndex="4" GridPane.rowIndex="2"/>
+                        <TextField fx:id="illustrationPathField" GridPane.columnIndex="5" GridPane.rowIndex="2"/>
+                    </GridPane>
+
+                    <Label text="Content *" style="-fx-font-weight: bold;"/>
+                    <TextArea fx:id="contentArea" prefRowCount="4" wrapText="true"/>
+
+                    <Label text="Four answer options — select the correct answer"
+                           style="-fx-font-weight: bold;"/>
+                    <GridPane hgap="10" vgap="8">
+                        <Label text="Option 1 *" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+                        <TextField fx:id="option1Field" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+                        <RadioButton fx:id="option1Radio" text="Correct"
+                                     GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+                        <Label text="Option 2 *" GridPane.columnIndex="3" GridPane.rowIndex="0"/>
+                        <TextField fx:id="option2Field" GridPane.columnIndex="4" GridPane.rowIndex="0"/>
+                        <RadioButton fx:id="option2Radio" text="Correct"
+                                     GridPane.columnIndex="5" GridPane.rowIndex="0"/>
+
+                        <Label text="Option 3 *" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+                        <TextField fx:id="option3Field" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                        <RadioButton fx:id="option3Radio" text="Correct"
+                                     GridPane.columnIndex="2" GridPane.rowIndex="1"/>
+                        <Label text="Option 4 *" GridPane.columnIndex="3" GridPane.rowIndex="1"/>
+                        <TextField fx:id="option4Field" GridPane.columnIndex="4" GridPane.rowIndex="1"/>
+                        <RadioButton fx:id="option4Radio" text="Correct"
+                                     GridPane.columnIndex="5" GridPane.rowIndex="1"/>
+                    </GridPane>
+                </VBox>
+
+                <VBox spacing="6"
+                      style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 14;">
+                    <Label text="Feedback" style="-fx-font-weight: bold;"/>
+                    <Label fx:id="statusLabel" text="Ready" wrapText="true"
+                           style="-fx-text-fill: #2563eb; -fx-font-weight: bold;"/>
+                </VBox>
             </VBox>
         </ScrollPane>
     </center>

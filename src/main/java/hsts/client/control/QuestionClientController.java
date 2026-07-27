@@ -117,6 +117,17 @@ public class QuestionClientController {
         );
     }
 
+    public CompletableFuture<QuestionDTO> updateQuestion(UpdateQuestionPayload payload) {
+        return sendRequest(
+                new Request(RequestType.UPDATE_QUESTION, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        QuestionDTO.class,
+                        "Invalid update-question response from server"
+                )
+        );
+    }
+
     public CompletableFuture<QuestionDTO> activateQuestion(int questionId) {
         return sendRequest(
                 new Request(
