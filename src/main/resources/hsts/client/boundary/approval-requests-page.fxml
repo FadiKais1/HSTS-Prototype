@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="hsts.client.boundary.ApprovalRequestsPage"
+            prefWidth="1280" prefHeight="820"
+            style="-fx-background-color: #f4f7fb;">
+    <top>
+        <VBox style="-fx-background-color: white; -fx-border-color: transparent transparent #dbe3ef transparent;">
+            <HBox alignment="CENTER_LEFT" spacing="12">
+                <padding><Insets top="14" right="22" bottom="12" left="22"/></padding>
+                <VBox spacing="2">
+                    <Label text="Coordinator Approval Box"
+                           style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <Label text="Review submitted exam versions before explicitly approving or rejecting them."
+                           style="-fx-text-fill: #64748b;"/>
+                </VBox>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="refreshButton" text="Refresh" onAction="#handleRefresh"/>
+                <Button fx:id="openButton" text="Open" onAction="#handleOpen"
+                        style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                <Button fx:id="approveButton" text="Approve" onAction="#handleApprove"
+                        style="-fx-background-color: #15803d; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                <Button fx:id="rejectButton" text="Reject" onAction="#handleReject"
+                        style="-fx-background-color: #b91c1c; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                <Button fx:id="backButton" text="Back" onAction="#handleBack"/>
+            </HBox>
+            <Label fx:id="feedbackLabel" text="Waiting for authenticated coordinator."
+                   wrapText="true" maxWidth="Infinity"
+                   style="-fx-background-color: #eff6ff; -fx-text-fill: #1d4ed8; -fx-padding: 8 22;"/>
+        </VBox>
+    </top>
+    <center>
+        <SplitPane dividerPositions="0.38">
+            <items>
+                <VBox spacing="9" minWidth="430" prefWidth="480"
+                      style="-fx-background-color: white; -fx-padding: 15;">
+                    <Label text="Pending Exams"
+                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <Label text="Server ordering is preserved. Select an exam and choose Open."
+                           wrapText="true" style="-fx-text-fill: #64748b;"/>
+                    <TableView fx:id="pendingExamTable" VBox.vgrow="ALWAYS">
+                        <columns>
+                            <TableColumn fx:id="examCodeColumn" text="Code" prefWidth="70"/>
+                            <TableColumn fx:id="titleColumn" text="Title" prefWidth="130"/>
+                            <TableColumn fx:id="courseColumn" text="Course" prefWidth="110"/>
+                            <TableColumn fx:id="subjectColumn" text="Subject" prefWidth="100"/>
+                            <TableColumn fx:id="creatorColumn" text="Creator" prefWidth="115"/>
+                            <TableColumn fx:id="versionColumn" text="Ver." prefWidth="48"/>
+                            <TableColumn fx:id="totalColumn" text="Score" prefWidth="58"/>
+                            <TableColumn fx:id="submittedColumn" text="Submitted" prefWidth="120"/>
+                            <TableColumn fx:id="statusColumn" text="Status" prefWidth="125"/>
+                        </columns>
+                    </TableView>
+                </VBox>
+                <ScrollPane fitToWidth="true" pannable="true">
+                    <content>
+                        <VBox spacing="13" style="-fx-padding: 16; -fx-background-color: #f4f7fb;">
+                            <VBox spacing="10"
+                                  style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 15;">
+                                <Label text="Read-only Exam Details"
+                                       style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <GridPane hgap="12" vgap="7">
+                                    <Label text="Exam ID" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                                    <Label fx:id="examIdValue" text="-" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+                                    <Label text="Code" GridPane.rowIndex="0" GridPane.columnIndex="2"/>
+                                    <Label fx:id="examCodeValue" text="-" GridPane.rowIndex="0" GridPane.columnIndex="3"/>
+                                    <Label text="Title" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                                    <Label fx:id="titleValue" text="-" wrapText="true"
+                                           GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+                                    <Label text="Course / Subject" GridPane.rowIndex="1" GridPane.columnIndex="2"/>
+                                    <Label fx:id="courseSubjectValue" text="-" wrapText="true"
+                                           GridPane.rowIndex="1" GridPane.columnIndex="3"/>
+                                    <Label text="Creator" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                                    <Label fx:id="creatorValue" text="-" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+                                    <Label text="Version" GridPane.rowIndex="2" GridPane.columnIndex="2"/>
+                                    <Label fx:id="versionValue" text="-" GridPane.rowIndex="2" GridPane.columnIndex="3"/>
+                                    <Label text="Duration" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+                                    <Label fx:id="durationValue" text="-" GridPane.rowIndex="3" GridPane.columnIndex="1"/>
+                                    <Label text="Total score" GridPane.rowIndex="3" GridPane.columnIndex="2"/>
+                                    <Label fx:id="totalValue" text="-" GridPane.rowIndex="3" GridPane.columnIndex="3"/>
+                                    <Label text="Status" GridPane.rowIndex="4" GridPane.columnIndex="0"/>
+                                    <Label fx:id="statusValue" text="-" GridPane.rowIndex="4" GridPane.columnIndex="1"/>
+                                    <Label text="Submitted" GridPane.rowIndex="4" GridPane.columnIndex="2"/>
+                                    <Label fx:id="submittedValue" text="-" GridPane.rowIndex="4" GridPane.columnIndex="3"/>
+                                    <Label text="Rejection reason" GridPane.rowIndex="5" GridPane.columnIndex="0"/>
+                                    <Label fx:id="rejectionReasonValue" text="" wrapText="true"
+                                           GridPane.rowIndex="5" GridPane.columnIndex="1" GridPane.columnSpan="3"/>
+                                </GridPane>
+                                <HBox spacing="12">
+                                    <VBox spacing="4" HBox.hgrow="ALWAYS">
+                                        <Label text="Teacher-only notes" style="-fx-font-weight: bold;"/>
+                                        <TextArea fx:id="teacherNotesArea" editable="false" wrapText="true"
+                                                  prefRowCount="3"/>
+                                    </VBox>
+                                    <VBox spacing="4" HBox.hgrow="ALWAYS">
+                                        <Label text="Student-visible instructions" style="-fx-font-weight: bold;"/>
+                                        <TextArea fx:id="studentInstructionsArea" editable="false" wrapText="true"
+                                                  prefRowCount="3"/>
+                                    </VBox>
+                                </HBox>
+                            </VBox>
+                            <VBox spacing="8"
+                                  style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 15;">
+                                <Label text="Immutable Question Snapshots"
+                                       style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <Label text="Each row shows the exact question version stored with this exam."
+                                       style="-fx-text-fill: #64748b;"/>
+                                <Separator/>
+                                <TableView fx:id="questionTable" editable="false" prefHeight="350">
+                                    <columns>
+                                        <TableColumn fx:id="questionOrderColumn" text="#" prefWidth="38"/>
+                                        <TableColumn fx:id="questionIdColumn" text="ID" prefWidth="48"/>
+                                        <TableColumn fx:id="questionVersionColumn" text="Ver." prefWidth="48"/>
+                                        <TableColumn fx:id="questionContentColumn" text="Content" prefWidth="220"/>
+                                        <TableColumn fx:id="questionTopicColumn" text="Topic" prefWidth="85"/>
+                                        <TableColumn fx:id="questionDifficultyColumn" text="Difficulty" prefWidth="80"/>
+                                        <TableColumn fx:id="questionScoreColumn" text="Score" prefWidth="60"/>
+                                        <TableColumn fx:id="option1Column" text="Option 1" prefWidth="110"/>
+                                        <TableColumn fx:id="option2Column" text="Option 2" prefWidth="110"/>
+                                        <TableColumn fx:id="option3Column" text="Option 3" prefWidth="110"/>
+                                        <TableColumn fx:id="option4Column" text="Option 4" prefWidth="110"/>
+                                        <TableColumn fx:id="correctOptionColumn" text="Correct" prefWidth="65"/>
+                                    </columns>
+                                </TableView>
+                            </VBox>
+                        </VBox>
+                    </content>
+                </ScrollPane>
+            </items>
+        </SplitPane>
+    </center>
+</BorderPane>

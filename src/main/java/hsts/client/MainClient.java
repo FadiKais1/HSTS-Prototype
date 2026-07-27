@@ -1,6 +1,7 @@
 package hsts.client;
 
 import hsts.client.boundary.LoginPage;
+import hsts.client.boundary.ApprovalRequestsPage;
 import hsts.client.boundary.ExamBuilderPage;
 import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.QuestionBankPageController;
@@ -11,6 +12,7 @@ import hsts.client.net.Client;
 import hsts.common.LoginResult;
 import hsts.common.Request;
 import hsts.common.RequestType;
+import hsts.common.type.UserRole;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
@@ -151,7 +153,8 @@ public class MainClient extends Application {
                 loginResult,
                 this::logout,
                 () -> showQuestionBank(loginResult),
-                () -> showExamBuilder(loginResult)
+                () -> showExamBuilder(loginResult),
+                () -> showApprovalRequests(loginResult)
         );
     }
 
@@ -194,6 +197,28 @@ public class MainClient extends Application {
             try {
                 showTeacherDashboard(loginResult);
                 showNavigationError("Unable to open exam management");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void showApprovalRequests(LoginResult loginResult) {
+        if (loginResult == null || loginResult.getRole() != UserRole.COORDINATOR) {
+            showNavigationError("Approval requests are available only to coordinators");
+            return;
+        }
+        try {
+            ApprovalRequestsPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/approval-requests-page.fxml",
+                    "HSTS Exam Management System - Approval Box"
+            );
+            controller.configure(stage, client, () -> returnToTeacherDashboard(loginResult));
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showTeacherDashboard(loginResult);
+                showNavigationError("Unable to open approval requests");
             } catch (IOException | RuntimeException restoreException) {
                 cleanupAfterNavigationFailure();
             }

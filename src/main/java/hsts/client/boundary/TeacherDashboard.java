@@ -34,6 +34,7 @@ public class TeacherDashboard {
     private Button questionBankButton;
     @FXML
     private Button approvalRequestsButton;
+    private Runnable approvalRequestsHandler;
     private Runnable questionBankHandler;
     @FXML
     private Button examManagementButton;
@@ -43,6 +44,8 @@ public class TeacherDashboard {
         configureDashboard(stage, client, loginResult, logoutHandler);
         questionBankHandler = null;
         examManagementHandler = null;
+        approvalRequestsHandler = null;
+        updateApprovalRequestsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -50,6 +53,8 @@ public class TeacherDashboard {
         configureDashboard(stage, client, loginResult, logoutHandler);
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
         examManagementHandler = null;
+        approvalRequestsHandler = null;
+        updateApprovalRequestsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -58,6 +63,18 @@ public class TeacherDashboard {
         configureDashboard(stage, client, loginResult, logoutHandler);
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
+        approvalRequestsHandler = null;
+        updateApprovalRequestsState();
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable questionBankHandler,
+                          Runnable examManagementHandler, Runnable approvalRequestsHandler) {
+        configureDashboard(stage, client, loginResult, logoutHandler);
+        this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
+        this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
+        this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
+        updateApprovalRequestsState();
     }
 
     @FXML
@@ -112,6 +129,22 @@ public class TeacherDashboard {
         }
     }
 
+    @FXML
+    private void handleApprovalRequests() {
+        if (approvalRequestsHandler == null
+                || loginResult == null
+                || loginResult.getRole() != UserRole.COORDINATOR) {
+            showError("Approval requests are unavailable");
+            return;
+        }
+
+        try {
+            approvalRequestsHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Approval requests are unavailable");
+        }
+    }
+
     private void configureDashboard(Stage stage, Client client, LoginResult loginResult,
                                     Runnable logoutHandler) {
         this.stage = Objects.requireNonNull(stage);
@@ -125,12 +158,18 @@ public class TeacherDashboard {
         if (roleLabel != null) {
             roleLabel.setText(loginResult.getRole().name());
         }
-        if (approvalRequestsButton != null) {
-            boolean coordinator = loginResult.getRole() == UserRole.COORDINATOR;
-            approvalRequestsButton.setManaged(coordinator);
-            approvalRequestsButton.setVisible(coordinator);
-        }
+        updateApprovalRequestsState();
         showError("");
+    }
+
+    private void updateApprovalRequestsState() {
+        if (approvalRequestsButton == null || loginResult == null) {
+            return;
+        }
+        boolean coordinator = loginResult.getRole() == UserRole.COORDINATOR;
+        approvalRequestsButton.setManaged(coordinator);
+        approvalRequestsButton.setVisible(coordinator);
+        approvalRequestsButton.setDisable(!coordinator || approvalRequestsHandler == null);
     }
 
     private void showError(String message) {

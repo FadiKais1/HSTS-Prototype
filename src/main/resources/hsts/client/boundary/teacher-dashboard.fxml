@@ -47,7 +47,9 @@
                         onAction="#handleExamManagement" maxWidth="Infinity" prefHeight="46"
                         style="-fx-background-color: #0f766e; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button fx:id="approvalRequestsButton" text="Approval Requests" disable="true"
-                        managed="false" visible="false" maxWidth="Infinity" prefHeight="46"/>
+                        managed="false" visible="false" onAction="#handleApprovalRequests"
+                        maxWidth="Infinity" prefHeight="46"
+                        style="-fx-background-color: #7c3aed; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button text="Reports" disable="true" maxWidth="Infinity" prefHeight="46"/>
             </VBox>
         </StackPane>
