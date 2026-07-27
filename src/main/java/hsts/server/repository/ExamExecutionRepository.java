@@ -4,6 +4,7 @@ import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.type.ExecutionStatus;
+import hsts.server.entity.ExamExecution;
 
 import java.security.SecureRandom;
 import java.sql.Connection;
@@ -63,9 +64,66 @@ public class ExamExecutionRepository {
                 median_score,
                 started_count,
                 submitted_count,
-                auto_submitted_count
+                auto_submitted_count,
+                updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+    private static final String EXECUTION_ENTITY_SELECT = """
+            SELECT execution.execution_id,
+                   execution.execution_code,
+                   execution.exam_id,
+                   execution.exam_version_no,
+                   execution.opening_time,
+                   execution.closing_time,
+                   execution.duration_minutes,
+                   execution.status,
+                   execution.created_by_user_id,
+                   execution.created_at,
+                   execution.updated_at,
+                   execution.closed_at,
+                   execution.average_score,
+                   execution.median_score,
+                   execution.started_count,
+                   execution.submitted_count,
+                   execution.auto_submitted_count
+            FROM exam_executions execution
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            """;
+
+    private static final String MANAGER_EXECUTION_ENTITY_SQL = EXECUTION_ENTITY_SELECT + """
+            JOIN users manager
+              ON manager.user_id = ?
+             AND manager.role IN ('TEACHER', 'COORDINATOR')
+             AND manager.status = 'ACTIVE'
+            JOIN teacher_courses assignment
+              ON assignment.teacher_user_id = manager.user_id
+             AND assignment.course_id = exam.course_id
+            WHERE execution.created_by_user_id = ?
+              AND execution.execution_id = ?
+            """;
+
+    private static final String STUDENT_EXECUTION_ENTITY_SQL = EXECUTION_ENTITY_SELECT + """
+            JOIN users student
+              ON student.user_id = ?
+             AND student.role = 'STUDENT'
+             AND student.status = 'ACTIVE'
+            JOIN student_courses enrollment
+              ON enrollment.student_user_id = student.user_id
+             AND enrollment.course_id = exam.course_id
+            WHERE execution.execution_code = ?
+            """;
+
+    private static final String EXECUTION_DECILES_SQL = """
+            SELECT decile_number,
+                   submission_count
+            FROM exam_execution_deciles
+            WHERE execution_id = ?
+            ORDER BY decile_number ASC
             """;
 
     private static final String EXECUTION_SUMMARY_SELECT = """
@@ -171,6 +229,43 @@ public class ExamExecutionRepository {
             throw new IllegalArgumentException("Execution scheduling data is missing");
         }
 
+        return persistSchedule(
+                authenticatedManagerId,
+                new SchedulingCommand(
+                        payload.getExamId(),
+                        payload.getExamVersionNo(),
+                        payload.getOpeningTime(),
+                        payload.getClosingTime()
+                )
+        ).getExecutionId();
+    }
+
+    public ExamExecution schedule(int authenticatedUserId, int examId,
+                                  int examVersionNo, LocalDateTime openingTime,
+                                  LocalDateTime closingTime) {
+        if (openingTime == null || closingTime == null) {
+            throw new IllegalArgumentException("Opening and closing times are required");
+        }
+        if (!closingTime.isAfter(openingTime)) {
+            throw new IllegalArgumentException(
+                    "Execution closing time must be after opening time"
+            );
+        }
+
+        return persistSchedule(
+                authenticatedUserId,
+                new SchedulingCommand(
+                        examId,
+                        examVersionNo,
+                        openingTime,
+                        closingTime
+                )
+        );
+    }
+
+    private ExamExecution persistSchedule(int authenticatedManagerId,
+                                          SchedulingCommand command) {
+
         try (Connection connection = databaseController.getConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
             boolean transactionStarted = false;
@@ -183,17 +278,17 @@ public class ExamExecutionRepository {
                 int durationMinutes = loadApprovedDuration(
                         connection,
                         authenticatedManagerId,
-                        payload
+                        command
                 );
-                int executionId = insertWithUniqueCode(
+                ExamExecution execution = insertWithUniqueCode(
                         connection,
                         authenticatedManagerId,
-                        payload,
+                        command,
                         durationMinutes,
                         LocalDateTime.now()
                 );
                 connection.commit();
-                return executionId;
+                return execution;
             } catch (SQLException exception) {
                 transactionFailure = exception;
                 if (transactionStarted) {
@@ -211,6 +306,50 @@ public class ExamExecutionRepository {
             }
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to schedule exam execution", exception);
+        }
+    }
+
+    public Optional<ExamExecution> findEntityForManager(
+            int authenticatedUserId,
+            int executionId
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     MANAGER_EXECUTION_ENTITY_SQL
+             )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, authenticatedUserId);
+            statement.setInt(3, executionId);
+            return loadEntity(connection, statement);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load manager exam execution entity",
+                    exception
+            );
+        }
+    }
+
+    public Optional<ExamExecution> findEntityByCodeForStudent(
+            int authenticatedUserId,
+            String executionCode
+    ) {
+        String normalizedCode = normalizeExecutionCode(executionCode);
+        if (normalizedCode == null) {
+            return Optional.empty();
+        }
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     STUDENT_EXECUTION_ENTITY_SQL
+             )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setString(2, normalizedCode);
+            return loadEntity(connection, statement);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load student exam execution entity",
+                    exception
+            );
         }
     }
 
@@ -287,14 +426,14 @@ public class ExamExecutionRepository {
     }
 
     private int loadApprovedDuration(Connection connection, int authenticatedManagerId,
-                                     ScheduleExamExecutionPayload payload)
+                                     SchedulingCommand command)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 LOCK_APPROVED_EXAM_VERSION_SQL
         )) {
-            statement.setInt(1, payload.getExamVersionNo());
+            statement.setInt(1, command.examVersionNo());
             statement.setInt(2, authenticatedManagerId);
-            statement.setInt(3, payload.getExamId());
+            statement.setInt(3, command.examId());
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
@@ -307,21 +446,29 @@ public class ExamExecutionRepository {
         }
     }
 
-    private int insertWithUniqueCode(Connection connection, int authenticatedManagerId,
-                                     ScheduleExamExecutionPayload payload,
-                                     int durationMinutes, LocalDateTime createdAt)
+    private ExamExecution insertWithUniqueCode(Connection connection,
+                                               int authenticatedManagerId,
+                                               SchedulingCommand command,
+                                               int durationMinutes,
+                                               LocalDateTime createdAt)
             throws SQLException {
         SQLException lastCollision = null;
 
         for (int attempt = 0; attempt < MAX_EXECUTION_CODE_ATTEMPTS; attempt++) {
             try {
+                ExamExecution proposedExecution = ExamExecution.schedule(
+                        command.examId(),
+                        command.examVersionNo(),
+                        executionCodeGenerator.get(),
+                        command.openingTime(),
+                        command.closingTime(),
+                        durationMinutes,
+                        authenticatedManagerId,
+                        createdAt
+                );
                 return insertExecution(
                         connection,
-                        executionCodeGenerator.get(),
-                        authenticatedManagerId,
-                        payload,
-                        durationMinutes,
-                        createdAt
+                        proposedExecution
                 );
             } catch (SQLException exception) {
                 if (!isExecutionCodeCollision(exception)) {
@@ -334,30 +481,29 @@ public class ExamExecutionRepository {
         throw lastCollision;
     }
 
-    private int insertExecution(Connection connection, String executionCode,
-                                int authenticatedManagerId,
-                                ScheduleExamExecutionPayload payload,
-                                int durationMinutes, LocalDateTime createdAt)
+    private ExamExecution insertExecution(Connection connection,
+                                          ExamExecution proposedExecution)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 INSERT_EXECUTION_SQL,
                 Statement.RETURN_GENERATED_KEYS
         )) {
-            statement.setString(1, executionCode);
-            statement.setInt(2, payload.getExamId());
-            statement.setInt(3, payload.getExamVersionNo());
-            statement.setObject(4, payload.getOpeningTime());
-            statement.setObject(5, payload.getClosingTime());
-            statement.setInt(6, durationMinutes);
-            statement.setString(7, ExecutionStatus.SCHEDULED.name());
-            statement.setInt(8, authenticatedManagerId);
-            statement.setObject(9, createdAt);
+            statement.setString(1, proposedExecution.getExecutionCode());
+            statement.setInt(2, proposedExecution.getExamId());
+            statement.setInt(3, proposedExecution.getExamVersionNo());
+            statement.setObject(4, proposedExecution.getOpeningTime());
+            statement.setObject(5, proposedExecution.getClosingTime());
+            statement.setInt(6, proposedExecution.getDurationMinutes());
+            statement.setString(7, proposedExecution.getStatus().name());
+            statement.setInt(8, proposedExecution.getCreatedByUserId());
+            statement.setObject(9, proposedExecution.getCreatedAt());
             statement.setNull(10, Types.TIMESTAMP);
             statement.setNull(11, Types.DECIMAL);
             statement.setNull(12, Types.DECIMAL);
             statement.setInt(13, 0);
             statement.setInt(14, 0);
             statement.setInt(15, 0);
+            statement.setObject(16, proposedExecution.getUpdatedAt());
 
             if (statement.executeUpdate() != 1) {
                 throw new SQLException("Execution insert did not affect exactly one row");
@@ -372,9 +518,124 @@ public class ExamExecutionRepository {
                 if (executionId <= 0) {
                     throw new SQLException("Execution insert returned an invalid generated key");
                 }
-                return executionId;
+                return ExamExecution.rehydrate(
+                        executionId,
+                        proposedExecution.getExecutionCode(),
+                        proposedExecution.getExamId(),
+                        proposedExecution.getExamVersionNo(),
+                        proposedExecution.getOpeningTime(),
+                        proposedExecution.getClosingTime(),
+                        proposedExecution.getDurationMinutes(),
+                        proposedExecution.getStatus(),
+                        proposedExecution.getCreatedByUserId(),
+                        proposedExecution.getCreatedAt(),
+                        null,
+                        null,
+                        null,
+                        List.of(),
+                        0,
+                        0,
+                        0,
+                        proposedExecution.getUpdatedAt(),
+                        List.of()
+                );
             }
         }
+    }
+
+    private Optional<ExamExecution> loadEntity(Connection connection,
+                                               PreparedStatement statement)
+            throws SQLException {
+        ExecutionEntityData data;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                return Optional.empty();
+            }
+            data = mapEntityData(resultSet);
+        }
+
+        return Optional.of(data.rehydrate(loadDecileDistribution(
+                connection,
+                data.executionId()
+        )));
+    }
+
+    private ExecutionEntityData mapEntityData(ResultSet resultSet) throws SQLException {
+        int executionId = resultSet.getInt("execution_id");
+        return new ExecutionEntityData(
+                executionId,
+                resultSet.getString("execution_code"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getObject("opening_time", LocalDateTime.class),
+                resultSet.getObject("closing_time", LocalDateTime.class),
+                resultSet.getInt("duration_minutes"),
+                parseExecutionStatus(resultSet.getString("status"), executionId),
+                resultSet.getInt("created_by_user_id"),
+                resultSet.getObject("created_at", LocalDateTime.class),
+                resultSet.getObject("updated_at", LocalDateTime.class),
+                resultSet.getObject("closed_at", LocalDateTime.class),
+                resultSet.getBigDecimal("average_score"),
+                resultSet.getBigDecimal("median_score"),
+                resultSet.getInt("started_count"),
+                resultSet.getInt("submitted_count"),
+                resultSet.getInt("auto_submitted_count")
+        );
+    }
+
+    private List<Integer> loadDecileDistribution(Connection connection,
+                                                  int executionId)
+            throws SQLException {
+        List<Integer> distribution = new ArrayList<>();
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                EXECUTION_DECILES_SQL
+        )) {
+            statement.setInt(1, executionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                int expectedDecile = 1;
+                while (resultSet.next()) {
+                    if (resultSet.getInt("decile_number") != expectedDecile) {
+                        throw new IllegalArgumentException(
+                                "Execution decile distribution is invalid: " + executionId
+                        );
+                    }
+                    distribution.add(resultSet.getInt("submission_count"));
+                    expectedDecile++;
+                }
+            }
+        }
+
+        if (!distribution.isEmpty() && distribution.size() != 10) {
+            throw new IllegalArgumentException(
+                    "Execution decile distribution is invalid: " + executionId
+            );
+        }
+        return List.copyOf(distribution);
+    }
+
+    private ExecutionStatus parseExecutionStatus(String value, int executionId) {
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Execution status is missing: " + executionId
+            );
+        }
+        try {
+            return ExecutionStatus.valueOf(value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(
+                    "Execution status is invalid: " + executionId,
+                    exception
+            );
+        }
+    }
+
+    private String normalizeExecutionCode(String executionCode) {
+        if (executionCode == null) {
+            return null;
+        }
+        String normalized = executionCode.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("[A-Z0-9]{4}") ? normalized : null;
     }
 
     private ExamExecutionSummaryDTO mapSummary(ResultSet resultSet) throws SQLException {
@@ -453,6 +714,55 @@ public class ExamExecutionRepository {
                 return;
             }
             throw restorationFailure;
+        }
+    }
+
+    private record SchedulingCommand(int examId, int examVersionNo,
+                                     LocalDateTime openingTime,
+                                     LocalDateTime closingTime) {
+    }
+
+    private record ExecutionEntityData(
+            int executionId,
+            String executionCode,
+            int examId,
+            int examVersionNo,
+            LocalDateTime openingTime,
+            LocalDateTime closingTime,
+            int durationMinutes,
+            ExecutionStatus status,
+            int createdByUserId,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            LocalDateTime closedAt,
+            java.math.BigDecimal averageScore,
+            java.math.BigDecimal medianScore,
+            int startedCount,
+            int submittedCount,
+            int autoSubmittedCount
+    ) {
+        private ExamExecution rehydrate(List<Integer> decileDistribution) {
+            return ExamExecution.rehydrate(
+                    executionId,
+                    executionCode,
+                    examId,
+                    examVersionNo,
+                    openingTime,
+                    closingTime,
+                    durationMinutes,
+                    status,
+                    createdByUserId,
+                    createdAt,
+                    closedAt,
+                    averageScore,
+                    medianScore,
+                    decileDistribution,
+                    startedCount,
+                    submittedCount,
+                    autoSubmittedCount,
+                    updatedAt,
+                    List.of()
+            );
         }
     }
 }
