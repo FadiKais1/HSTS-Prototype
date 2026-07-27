@@ -15,11 +15,13 @@ import hsts.common.RejectExamPayload;
 import hsts.common.UpdateExamPayload;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
+import hsts.common.type.ExamStatus;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
 import hsts.common.type.UserRole;
 import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Exam;
+import hsts.server.entity.ExamQuestion;
 import hsts.server.entity.Question;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
@@ -243,18 +245,23 @@ public class ExamManagementService {
         authorizeExamManager(authenticatedUserId);
         requireExamRepository();
         validateCreateExamPayload(payload);
-        validateExamQuestions(authenticatedUserId, payload);
-
-        CreateExamPayload normalizedPayload = new CreateExamPayload(
+        List<ExamQuestion> examQuestions = loadExamQuestionSnapshots(
+                authenticatedUserId,
                 payload.getCourseId(),
+                payload.getQuestions()
+        );
+
+        Exam exam = Exam.createDraft(
+                payload.getCourseId(),
+                authenticatedUserId,
                 payload.getTitle().trim(),
                 payload.getDurationMinutes(),
                 normalizeText(payload.getTeacherNotes(), ""),
                 payload.getStudentInstructions().trim(),
-                payload.getQuestions()
+                examQuestions
         );
 
-        int examId = examRepository.create(authenticatedUserId, normalizedPayload);
+        int examId = examRepository.create(authenticatedUserId, exam);
         return examRepository.findByIdForTeacher(authenticatedUserId, examId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Exam not found: " + examId
@@ -331,7 +338,7 @@ public class ExamManagementService {
             throw new IllegalArgumentException("Exam update data is missing");
         }
 
-        ExamDTO currentExam = getExamForTeacher(
+        Exam currentExam = requireCurrentExamForTeacher(
                 authenticatedUserId,
                 payload.getExamId()
         );
@@ -341,23 +348,20 @@ public class ExamManagementService {
                 payload.getStudentInstructions(),
                 payload.getQuestions()
         );
-        validateExamQuestions(
+        List<ExamQuestion> examQuestions = loadExamQuestionSnapshots(
                 authenticatedUserId,
                 currentExam.getCourseId(),
                 payload.getQuestions()
         );
 
-        UpdateExamPayload normalizedPayload = new UpdateExamPayload(
+        requireExpectedExamVersion(currentExam, payload.getExpectedVersionNo());
+        Exam updatedExam = createUpdatedDraft(currentExam, payload, examQuestions);
+        examRepository.updateWithNewVersion(
+                authenticatedUserId,
                 payload.getExamId(),
                 payload.getExpectedVersionNo(),
-                payload.getTitle().trim(),
-                payload.getDurationMinutes(),
-                normalizeText(payload.getTeacherNotes(), ""),
-                payload.getStudentInstructions().trim(),
-                payload.getQuestions()
+                updatedExam
         );
-
-        examRepository.updateWithNewVersion(authenticatedUserId, normalizedPayload);
         return getExamForTeacher(authenticatedUserId, payload.getExamId());
     }
 
@@ -369,10 +373,15 @@ public class ExamManagementService {
             throw new IllegalArgumentException("Exam version data is missing");
         }
 
-        boolean submitted = examRepository.submitForApproval(
+        Exam exam = requireCurrentExamForTeacher(authenticatedUserId, payload.getExamId());
+        requireExpectedExamVersion(exam, payload.getExpectedVersionNo());
+        if (exam.getStatus() != ExamStatus.DRAFT) {
+            throw new IllegalStateException("Exam is not a draft");
+        }
+        exam.submitForApproval();
+        boolean submitted = examRepository.persistSubmissionForApproval(
                 authenticatedUserId,
-                payload.getExamId(),
-                payload.getExpectedVersionNo()
+                exam
         );
         if (!submitted) {
             throw new IllegalArgumentException("Exam not found: " + payload.getExamId());
@@ -388,10 +397,15 @@ public class ExamManagementService {
             throw new IllegalArgumentException("Exam version data is missing");
         }
 
-        boolean approved = examRepository.approve(
+        Exam exam = requireCurrentExamForCoordinator(
                 authenticatedCoordinatorId,
-                payload.getExamId(),
-                payload.getExpectedVersionNo()
+                payload.getExamId()
+        );
+        requireExpectedExamVersion(exam, payload.getExpectedVersionNo());
+        exam.approve(authenticatedCoordinatorId);
+        boolean approved = examRepository.persistApproval(
+                authenticatedCoordinatorId,
+                exam
         );
         if (!approved) {
             throw new IllegalArgumentException("Exam not found: " + payload.getExamId());
@@ -410,11 +424,15 @@ public class ExamManagementService {
             throw new IllegalArgumentException("Rejection reason is required");
         }
 
-        boolean rejected = examRepository.reject(
+        Exam exam = requireCurrentExamForCoordinator(
                 authenticatedCoordinatorId,
-                payload.getExamId(),
-                payload.getExpectedVersionNo(),
-                payload.getReason().trim()
+                payload.getExamId()
+        );
+        requireExpectedExamVersion(exam, payload.getExpectedVersionNo());
+        exam.reject(authenticatedCoordinatorId, payload.getReason().trim());
+        boolean rejected = examRepository.persistRejection(
+                authenticatedCoordinatorId,
+                exam
         );
         if (!rejected) {
             throw new IllegalArgumentException("Exam not found: " + payload.getExamId());
@@ -734,6 +752,120 @@ public class ExamManagementService {
         return selections;
     }
 
+    private List<ExamQuestion> loadExamQuestionSnapshots(
+            int authenticatedUserId,
+            int courseId,
+            List<ExamQuestionSelectionPayload> selections
+    ) {
+        validateExamQuestions(authenticatedUserId, courseId, selections);
+
+        List<ExamQuestion> examQuestions = new ArrayList<>(selections.size());
+        for (ExamQuestionSelectionPayload selection : selections) {
+            int questionId = selection.getQuestionId();
+            Question question = questionRepository.findCurrentEntityByIdForTeacher(
+                    authenticatedUserId,
+                    questionId
+            ).orElseThrow(() -> unavailableQuestion(questionId));
+
+            QuestionDTO confirmedQuestion = questionRepository.findCurrentByIdForTeacher(
+                    authenticatedUserId,
+                    questionId
+            ).orElseThrow(() -> unavailableQuestion(questionId));
+            if (question.getQuestionId() != questionId
+                    || question.getQuestionStatus() != QuestionStatus.ACTIVE
+                    || confirmedQuestion.getCourseId() != courseId
+                    || !QuestionStatus.ACTIVE.name().equals(confirmedQuestion.getStatus())
+                    || confirmedQuestion.getVersionNo()
+                    != selection.getQuestionVersionNo()) {
+                throw unavailableQuestion(questionId);
+            }
+
+            examQuestions.add(ExamQuestion.select(
+                    selection.getQuestionVersionNo(),
+                    selection.getOrderNumber(),
+                    BigDecimal.valueOf(selection.getScore()),
+                    question
+            ));
+        }
+        return examQuestions;
+    }
+
+    private Exam createUpdatedDraft(Exam currentExam,
+                                    UpdateExamPayload payload,
+                                    List<ExamQuestion> examQuestions) {
+        if (currentExam.getStatus() == ExamStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException("Pending exam cannot be edited");
+        }
+
+        String title = payload.getTitle().trim();
+        String teacherNotes = normalizeText(payload.getTeacherNotes(), "");
+        String studentInstructions = payload.getStudentInstructions().trim();
+        if (currentExam.getStatus() == ExamStatus.APPROVED
+                || currentExam.getStatus() == ExamStatus.REJECTED) {
+            currentExam.startNewDraftVersion(
+                    title,
+                    payload.getDurationMinutes(),
+                    teacherNotes,
+                    studentInstructions,
+                    examQuestions
+            );
+            return currentExam;
+        }
+
+        currentExam.updateMetadata(
+                title,
+                payload.getDurationMinutes(),
+                teacherNotes,
+                studentInstructions
+        );
+        for (ExamQuestion existingQuestion : currentExam.getExamQuestions()) {
+            currentExam.removeExamQuestion(existingQuestion.getQuestionId());
+        }
+        for (ExamQuestion examQuestion : examQuestions) {
+            currentExam.addExamQuestion(examQuestion);
+        }
+
+        return Exam.rehydrate(
+                currentExam.getExamId(),
+                currentExam.getExamCode(),
+                currentExam.getCourseId(),
+                currentExam.getCreatedByUserId(),
+                currentExam.getCurrentVersionNo() + 1,
+                currentExam.getTitle(),
+                currentExam.getDurationMinutes(),
+                currentExam.getTeacherNotes(),
+                currentExam.getStudentInstructions(),
+                ExamStatus.DRAFT,
+                currentExam.getCreatedAt(),
+                currentExam.getUpdatedAt(),
+                null,
+                null,
+                null,
+                null,
+                currentExam.getExamQuestions()
+        );
+    }
+
+    private Exam requireCurrentExamForTeacher(int authenticatedUserId, int examId) {
+        return examRepository.findCurrentEntityForTeacher(authenticatedUserId, examId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Exam not found: " + examId
+                ));
+    }
+
+    private Exam requireCurrentExamForCoordinator(int authenticatedUserId, int examId) {
+        return examRepository.findCurrentEntityForCoordinator(authenticatedUserId, examId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Exam not found: " + examId
+                ));
+    }
+
+    private void requireExpectedExamVersion(Exam exam, int expectedVersionNo) {
+        if (exam.getCurrentVersionNo() != expectedVersionNo) {
+            throw new IllegalStateException("Exam version conflict");
+        }
+    }
+
     private void validateQuestionOrder(List<ExamQuestionSelectionPayload> questions) {
         boolean[] seenOrders = new boolean[questions.size() + 1];
         for (ExamQuestionSelectionPayload question : questions) {
@@ -746,15 +878,6 @@ public class ExamManagementService {
             }
             seenOrders[orderNumber] = true;
         }
-    }
-
-    private void validateExamQuestions(int authenticatedUserId,
-                                       CreateExamPayload payload) {
-        validateExamQuestions(
-                authenticatedUserId,
-                payload.getCourseId(),
-                payload.getQuestions()
-        );
     }
 
     private void validateExamQuestions(int authenticatedUserId, int courseId,

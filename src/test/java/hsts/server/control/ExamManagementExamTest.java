@@ -4,10 +4,18 @@ import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
+import hsts.common.GenerateExamPayload;
 import hsts.common.QuestionDTO;
+import hsts.common.QuestionFilterPayload;
+import hsts.common.type.DifficultyLevel;
 import hsts.common.type.ExamStatus;
+import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.AnswerOption;
+import hsts.server.entity.Exam;
+import hsts.server.entity.ExamQuestion;
 import hsts.server.entity.Question;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
@@ -17,6 +25,7 @@ import hsts.server.repository.UserRepository;
 import hsts.server.support.InMemoryQuestionRepository;
 import org.junit.Test;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 
@@ -271,9 +281,13 @@ public class ExamManagementExamTest {
             exams.setTeacherExam(created);
             questions.addQuestion(question(12, 7, 3, "ACTIVE"));
             questions.addQuestion(question(11, 7, 2, "ACTIVE"));
+            questions.addQuestion(question(14, 7, 5, "ACTIVE"));
+            questions.addQuestion(question(13, 7, 4, "ACTIVE"));
             List<ExamQuestionSelectionPayload> selections = List.of(
-                    selection(12, 3, 2, 66.67),
-                    selection(11, 2, 1, 33.33)
+                    selection(12, 3, 2, 20),
+                    selection(11, 2, 1, 30),
+                    selection(14, 5, 4, 10),
+                    selection(13, 4, 3, 40)
             );
             ExamManagementService service = service(
                     exams,
@@ -292,21 +306,41 @@ public class ExamManagementExamTest {
             assertEquals(userId, exams.getLastCreateUserId());
             assertEquals(userId, exams.getLastTeacherDetailUserId());
             assertEquals(91, exams.getLastTeacherDetailExamId());
-            assertEquals(List.of(12, 11), questions.getRequestedQuestionIds());
-            assertEquals(List.of(userId, userId), questions.getRequestedUserIds());
+            assertEquals(List.of(12, 11, 14, 13, 12, 11, 14, 13),
+                    questions.getRequestedQuestionIds());
+            assertEquals(List.of(
+                            userId, userId, userId, userId,
+                            userId, userId, userId, userId
+                    ),
+                    questions.getRequestedUserIds());
 
-            CreateExamPayload normalized = exams.getLastCreatePayload();
-            assertEquals(7, normalized.getCourseId());
-            assertEquals("Midterm", normalized.getTitle());
-            assertEquals(90, normalized.getDurationMinutes());
-            assertEquals("", normalized.getTeacherNotes());
-            assertEquals("Read carefully", normalized.getStudentInstructions());
-            assertEquals(2, normalized.getQuestions().size());
-            assertSame(selections.get(0), normalized.getQuestions().get(0));
-            assertSame(selections.get(1), normalized.getQuestions().get(1));
-            assertEquals(66.67, normalized.getQuestions().get(0).getScore(), 0.0);
-            assertEquals(3, normalized.getQuestions().get(0).getQuestionVersionNo());
-            assertEquals(2, normalized.getQuestions().get(0).getOrderNumber());
+            Exam draft = exams.getLastCreateExam();
+            assertEquals(0, draft.getExamId());
+            assertNull(draft.getExamCode());
+            assertEquals(7, draft.getCourseId());
+            assertEquals(userId, draft.getCreatedByUserId());
+            assertEquals(1, draft.getCurrentVersionNo());
+            assertEquals(ExamStatus.DRAFT, draft.getStatus());
+            assertEquals("Midterm", draft.getTitle());
+            assertEquals(90, draft.getDurationMinutes());
+            assertEquals("", draft.getTeacherNotes());
+            assertEquals("Read carefully", draft.getStudentInstructions());
+            assertEquals(0, exams.getPayloadCreateCalls());
+
+            List<ExamQuestion> aggregateQuestions = draft.getExamQuestions();
+            assertEquals(4, aggregateQuestions.size());
+            assertExamQuestion(aggregateQuestions.get(0), 11, 2, 1, "30.0");
+            assertExamQuestion(aggregateQuestions.get(1), 12, 3, 2, "20.0");
+            assertExamQuestion(aggregateQuestions.get(2), 13, 4, 3, "40.0");
+            assertExamQuestion(aggregateQuestions.get(3), 14, 5, 4, "10.0");
+            assertEquals(QuestionType.MULTIPLE_CHOICE,
+                    aggregateQuestions.get(0).getQuestion().getQuestionType());
+            assertEquals(DifficultyLevel.MEDIUM,
+                    aggregateQuestions.get(0).getQuestion().getDifficultyLevel());
+            assertEquals(QuestionStatus.ACTIVE,
+                    aggregateQuestions.get(0).getQuestion().getQuestionStatus());
+            assertEquals(4,
+                    aggregateQuestions.get(0).getQuestion().getAnswerOptions().size());
         }
     }
 
@@ -328,7 +362,54 @@ public class ExamManagementExamTest {
                 List.of(selection(1, 1, 1, 100))
         ));
 
-        assertEquals("Private note", exams.getLastCreatePayload().getTeacherNotes());
+        assertEquals("Private note", exams.getLastCreateExam().getTeacherNotes());
+    }
+
+    @Test
+    public void automaticGenerationReusesEntityCreationWithoutWorkflowTransition() {
+        RecordingExamRepository exams = new RecordingExamRepository();
+        RecordingQuestionRepository questions = new RecordingQuestionRepository();
+        questions.addQuestion(question(21, 7, 2, "ACTIVE"));
+        questions.addQuestion(question(22, 7, 3, "ACTIVE"));
+        questions.addQuestion(question(23, 7, 4, "ACTIVE"));
+        exams.setCreatedExamId(93);
+        exams.setTeacherExam(exam(93, 804));
+        ExamManagementService service = service(
+                exams,
+                questions,
+                user(804, UserRole.COORDINATOR, UserStatus.ACTIVE)
+        );
+
+        service.generateAutomaticExam(
+                804,
+                new GenerateExamPayload(
+                        7,
+                        "Generated exam",
+                        60,
+                        "",
+                        "Instructions",
+                        "Topic",
+                        DifficultyLevel.MEDIUM,
+                        3
+                )
+        );
+
+        Exam draft = exams.getLastCreateExam();
+        assertEquals(ExamStatus.DRAFT, draft.getStatus());
+        assertEquals(1, draft.getCurrentVersionNo());
+        assertNull(draft.getSubmittedAt());
+        assertNull(draft.getReviewedAt());
+        assertEquals(0,
+                draft.getTotalScoreValue().compareTo(new BigDecimal("100.00")));
+        assertEquals(3, draft.getExamQuestions().size());
+        assertEquals(new BigDecimal("33.33"),
+                draft.getExamQuestions().get(0).getScoreValue());
+        assertEquals(new BigDecimal("33.33"),
+                draft.getExamQuestions().get(1).getScoreValue());
+        assertEquals(new BigDecimal("33.34"),
+                draft.getExamQuestions().get(2).getScoreValue());
+        assertEquals(1, exams.getCreateCalls());
+        assertEquals(0, exams.getPayloadCreateCalls());
     }
 
     @Test
@@ -494,6 +575,40 @@ public class ExamManagementExamTest {
         );
     }
 
+    private static Question questionEntity(QuestionDTO question) {
+        return Question.rehydrate(
+                question.getQuestionId(),
+                question.getContent(),
+                QuestionType.valueOf(question.getType()),
+                DifficultyLevel.valueOf(question.getDifficulty()),
+                QuestionStatus.valueOf(question.getStatus()),
+                LocalDateTime.of(2026, 7, 1, 9, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 30),
+                question.getTopic(),
+                question.getIllustrationPath(),
+                List.of(
+                        new AnswerOption(1, question.getAnswerOption1(),
+                                question.getCorrectOptionNumber() == 1),
+                        new AnswerOption(2, question.getAnswerOption2(),
+                                question.getCorrectOptionNumber() == 2),
+                        new AnswerOption(3, question.getAnswerOption3(),
+                                question.getCorrectOptionNumber() == 3),
+                        new AnswerOption(4, question.getAnswerOption4(),
+                                question.getCorrectOptionNumber() == 4)
+                )
+        );
+    }
+
+    private static void assertExamQuestion(ExamQuestion selection, int questionId,
+                                           int versionNo, int orderNumber,
+                                           String score) {
+        assertEquals(questionId, selection.getQuestionId());
+        assertEquals(versionNo, selection.getQuestionVersionNo());
+        assertEquals(orderNumber, selection.getOrderNumber());
+        assertEquals(new BigDecimal(score), selection.getScoreValue());
+        assertEquals(questionId, selection.getQuestion().getQuestionId());
+    }
+
     private static ExamSummaryDTO summary(int examId, int creatorId) {
         return new ExamSummaryDTO(
                 examId, "ABC123", 7, "Course", 3, "Subject", creatorId,
@@ -549,6 +664,26 @@ public class ExamManagementExamTest {
             return Optional.ofNullable(questions.get(questionId));
         }
 
+        @Override
+        public List<QuestionDTO> findCurrentForTeacher(int authenticatedUserId,
+                                                       QuestionFilterPayload filter) {
+            return new ArrayList<>(questions.values());
+        }
+
+        @Override
+        public Optional<Question> findCurrentEntityByIdForTeacher(
+                int authenticatedUserId,
+                int questionId
+        ) {
+            if (findFailure != null) {
+                throw findFailure;
+            }
+            QuestionDTO question = questions.get(questionId);
+            return question == null
+                    ? Optional.empty()
+                    : Optional.of(questionEntity(question));
+        }
+
         private void addQuestion(QuestionDTO question) {
             questions.put(question.getQuestionId(), question);
         }
@@ -577,13 +712,14 @@ public class ExamManagementExamTest {
         private ExamDTO coordinatorExam;
         private RuntimeException listFailure;
         private RuntimeException createFailure;
-        private CreateExamPayload lastCreatePayload;
+        private Exam lastCreateExam;
         private int createdExamId = 1;
         private int teacherListCalls;
         private int pendingCalls;
         private int teacherDetailCalls;
         private int coordinatorDetailCalls;
         private int createCalls;
+        private int payloadCreateCalls;
         private int lastTeacherListUserId;
         private int lastPendingUserId;
         private int lastTeacherDetailUserId;
@@ -626,14 +762,20 @@ public class ExamManagementExamTest {
         }
 
         @Override
-        public int create(int authenticatedUserId, CreateExamPayload payload) {
+        public int create(int authenticatedUserId, Exam exam) {
             createCalls++;
             lastCreateUserId = authenticatedUserId;
-            lastCreatePayload = payload;
+            lastCreateExam = exam;
             if (createFailure != null) {
                 throw createFailure;
             }
             return createdExamId;
+        }
+
+        @Override
+        public int create(int authenticatedUserId, CreateExamPayload payload) {
+            payloadCreateCalls++;
+            throw new AssertionError("Payload repository create must not be used");
         }
 
         private void setTeacherSummaries(List<ExamSummaryDTO> teacherSummaries) {
@@ -701,8 +843,7 @@ public class ExamManagementExamTest {
             return lastCreateUserId;
         }
 
-        private CreateExamPayload getLastCreatePayload() {
-            return lastCreatePayload;
-        }
+        private Exam getLastCreateExam() { return lastCreateExam; }
+        private int getPayloadCreateCalls() { return payloadCreateCalls; }
     }
 }
