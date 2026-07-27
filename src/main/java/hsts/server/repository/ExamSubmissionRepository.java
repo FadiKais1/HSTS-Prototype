@@ -368,6 +368,37 @@ public class ExamSubmissionRepository {
             WHERE submission.submission_id = ?
             """;
 
+    private static final String MANAGER_RESULT_SCOPE_SQL = """
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users manager
+              ON manager.user_id = ?
+             AND manager.status = 'ACTIVE'
+            WHERE submission.submission_id = ?
+              AND (
+                    (manager.role = 'TEACHER' AND EXISTS (
+                        SELECT 1
+                        FROM teacher_courses teacher_assignment
+                        WHERE teacher_assignment.teacher_user_id = manager.user_id
+                          AND teacher_assignment.course_id = exam.course_id
+                    ))
+                 OR (manager.role = 'COORDINATOR' AND EXISTS (
+                        SELECT 1
+                        FROM subject_coordinators coordinator_assignment
+                        WHERE coordinator_assignment.coordinator_user_id = manager.user_id
+                          AND coordinator_assignment.subject_id = course.subject_id
+                    ))
+              )
+            """;
+
+    private static final String MANAGER_RESULT_ENTITY_SQL =
+            SUBMISSION_ENTITY_SELECT + MANAGER_RESULT_SCOPE_SQL;
+
+    private static final String LOCK_MANAGER_RESULT_ENTITY_SQL =
+            MANAGER_RESULT_ENTITY_SQL + """
+            FOR UPDATE
+            """;
+
     private static final String INTERNAL_SUBMISSION_ENTITY_SQL =
             SUBMISSION_ENTITY_SELECT + """
             WHERE submission.submission_id = ?
@@ -448,6 +479,45 @@ public class ExamSubmissionRepository {
             WHERE submission_id = ?
               AND status = 'IN_PROGRESS'
               AND extra_minutes = ?
+            """;
+
+    private static final String UPDATE_REVIEW_SQL = """
+            UPDATE exam_submissions
+            SET status = ?,
+                final_score = ?,
+                teacher_feedback = ?,
+                manual_change_reason = ?,
+                reviewed_by_user_id = ?,
+                reviewed_at = ?,
+                updated_at = ?
+            WHERE submission_id = ?
+              AND status = ?
+              AND automatic_score = ?
+              AND final_score = ?
+              AND reviewed_by_user_id IS NULL
+              AND reviewed_at IS NULL
+              AND published_by_user_id IS NULL
+              AND published_at IS NULL
+              AND updated_at = ?
+            """;
+
+    private static final String UPDATE_PUBLICATION_SQL = """
+            UPDATE exam_submissions
+            SET status = ?,
+                published_by_user_id = ?,
+                published_at = ?,
+                updated_at = ?
+            WHERE submission_id = ?
+              AND status = ?
+              AND automatic_score = ?
+              AND final_score = ?
+              AND reviewed_by_user_id = ?
+              AND reviewed_at = ?
+              AND teacher_feedback <=> ?
+              AND manual_change_reason <=> ?
+              AND published_by_user_id IS NULL
+              AND published_at IS NULL
+              AND updated_at = ?
             """;
 
     private final DatabaseController databaseController;
@@ -883,6 +953,66 @@ public class ExamSubmissionRepository {
         });
     }
 
+    public ExamSubmission persistReview(int managerUserId,
+                                        ExamSubmission submission) {
+        Objects.requireNonNull(submission, "Exam submission is required");
+        requirePersistedSubmissionId(submission);
+        requireReviewEntityState(managerUserId, submission);
+
+        return executeInTransaction(
+                "Failed to persist submission review",
+                "Failed to reload persisted submission review",
+                connection -> {
+                    SubmissionEntityData source = lockManagerResultSubmission(
+                            connection,
+                            managerUserId,
+                            submission.getSubmissionId()
+                    ).orElseThrow(() -> examAttemptNotFound(
+                            submission.getSubmissionId()
+                    ));
+                    requireMatchingSubmissionIdentity(submission, source);
+                    requireReviewSourceState(source, submission);
+                    updateReview(connection, source, submission);
+                    return submission.getSubmissionId();
+                },
+                (connection, submissionId) -> reloadManagerResult(
+                        connection, managerUserId, submissionId
+                )
+        );
+    }
+
+    public ExamSubmission persistPublication(int managerUserId,
+                                             ExamSubmission submission) {
+        Objects.requireNonNull(submission, "Exam submission is required");
+        requirePersistedSubmissionId(submission);
+        requirePublicationEntityState(managerUserId, submission);
+
+        return executeInTransaction(
+                "Failed to persist submission publication",
+                "Failed to reload persisted submission publication",
+                connection -> {
+                    SubmissionEntityData source = lockManagerResultSubmission(
+                            connection,
+                            managerUserId,
+                            submission.getSubmissionId()
+                    ).orElseThrow(() -> examAttemptNotFound(
+                            submission.getSubmissionId()
+                    ));
+                    requireMatchingSubmissionIdentity(submission, source);
+                    if (source.status == SubmissionStatus.PUBLISHED) {
+                        requireMatchingPublishedState(source, submission);
+                        return submission.getSubmissionId();
+                    }
+                    requirePublicationSourceState(source, submission);
+                    updatePublication(connection, source, submission);
+                    return submission.getSubmissionId();
+                },
+                (connection, submissionId) -> reloadManagerResult(
+                        connection, managerUserId, submissionId
+                )
+        );
+    }
+
     private Optional<LockedExecution> lockAvailableExecution(
             Connection connection,
             int authenticatedStudentId,
@@ -1175,6 +1305,49 @@ public class ExamSubmissionRepository {
         }
     }
 
+    private Optional<SubmissionEntityData> lockManagerResultSubmission(
+            Connection connection,
+            int managerUserId,
+            int submissionId
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                LOCK_MANAGER_RESULT_ENTITY_SQL
+        )) {
+            statement.setInt(1, managerUserId);
+            statement.setInt(2, submissionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                SubmissionEntityData data = mapSubmissionEntityData(resultSet);
+                if (resultSet.next()) {
+                    throw new IllegalStateException(
+                            "Duplicate persisted exam submission: " + submissionId
+                    );
+                }
+                return Optional.of(data);
+            }
+        }
+    }
+
+    private ExamSubmission reloadManagerResult(Connection connection,
+                                               int managerUserId,
+                                               int submissionId)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                     MANAGER_RESULT_ENTITY_SQL
+             )) {
+            statement.setInt(1, managerUserId);
+            statement.setInt(2, submissionId);
+            return loadSubmissionEntity(connection, statement).orElseThrow(() ->
+                    new IllegalStateException(
+                            "Persisted exam submission could not be reloaded: "
+                                    + submissionId
+                    )
+            );
+        }
+    }
+
     private ExamSubmission loadInternalEntity(Connection connection,
                                                int submissionId)
             throws SQLException {
@@ -1316,6 +1489,148 @@ public class ExamSubmissionRepository {
                     "Execution state does not match supplied entity"
             );
         }
+    }
+
+    private void requirePersistedSubmissionId(ExamSubmission submission) {
+        if (submission.getSubmissionId() <= 0) {
+            throw new IllegalArgumentException("Persisted submission ID must be positive");
+        }
+    }
+
+    private void requireReviewEntityState(int managerUserId,
+                                          ExamSubmission submission) {
+        if (!isFinalizedUnpublishedStatus(submission.getStatus())
+                || submission.getAutomaticScoreValue().isEmpty()
+                || submission.getServerFinalScore().isEmpty()
+                || submission.getReviewedByUserId() == null
+                || submission.getReviewedAt() == null
+                || submission.getPublishedByUserId() != null
+                || submission.getPublishedAt() != null) {
+            throw new IllegalStateException("Submission review transition is incomplete");
+        }
+        if (submission.getReviewedByUserId() != managerUserId) {
+            throw new IllegalArgumentException(
+                    "Review actor does not match authenticated manager"
+            );
+        }
+        if (!submission.getReviewedAt().equals(submission.getUpdatedAt())) {
+            throw new IllegalStateException("Submission review timestamp is inconsistent");
+        }
+    }
+
+    private void requirePublicationEntityState(int managerUserId,
+                                               ExamSubmission submission) {
+        if (submission.getStatus() != SubmissionStatus.PUBLISHED
+                || submission.getAutomaticScoreValue().isEmpty()
+                || submission.getServerFinalScore().isEmpty()
+                || submission.getReviewedByUserId() == null
+                || submission.getReviewedAt() == null
+                || submission.getPublishedByUserId() == null
+                || submission.getPublishedAt() == null) {
+            throw new IllegalStateException("Submission publication transition is incomplete");
+        }
+        if (submission.getPublishedByUserId() != managerUserId) {
+            throw new IllegalArgumentException(
+                    "Publication actor does not match authenticated manager"
+            );
+        }
+        if (!submission.getPublishedAt().equals(submission.getUpdatedAt())) {
+            throw new IllegalStateException(
+                    "Submission publication timestamp is inconsistent"
+            );
+        }
+    }
+
+    private void requireMatchingSubmissionIdentity(ExamSubmission supplied,
+                                                   SubmissionEntityData persisted) {
+        if (supplied.getSubmissionId() != persisted.submissionId
+                || supplied.getExecutionId() != persisted.executionId
+                || supplied.getExamId() != persisted.examId
+                || supplied.getExamVersionNo() != persisted.examVersionNo
+                || supplied.getStudentUserId() != persisted.studentUserId) {
+            throw new IllegalStateException(
+                    "Submission state does not match persisted attempt"
+            );
+        }
+    }
+
+    private void requireReviewSourceState(SubmissionEntityData source,
+                                          ExamSubmission submission) {
+        if (!isFinalizedUnpublishedStatus(source.status)
+                || source.automaticScore == null
+                || source.finalScore == null
+                || source.reviewedByUserId != null
+                || source.reviewedAt != null
+                || source.teacherFeedback != null
+                || source.manualChangeReason != null
+                || source.publishedByUserId != null
+                || source.publishedAt != null) {
+            throw new IllegalStateException("Submission is not awaiting review");
+        }
+        BigDecimal suppliedAutomatic = submission.getAutomaticScoreValue().orElseThrow();
+        if (source.status != submission.getStatus()
+                || !Objects.equals(source.submittedAt, submission.getSubmittedAt())
+                || !Objects.equals(source.actualDurationMinutes,
+                        submission.getActualDurationMinutes())
+                || !Objects.equals(source.automaticScore, suppliedAutomatic)
+                || !Objects.equals(source.finalScore, source.automaticScore)) {
+            throw new IllegalStateException("Submission review state changed");
+        }
+    }
+
+    private void requirePublicationSourceState(SubmissionEntityData source,
+                                               ExamSubmission submission) {
+        if (!isFinalizedUnpublishedStatus(source.status)
+                || source.automaticScore == null
+                || source.finalScore == null
+                || source.reviewedByUserId == null
+                || source.reviewedAt == null
+                || source.publishedByUserId != null
+                || source.publishedAt != null) {
+            throw new IllegalStateException("Submission is not ready for publication");
+        }
+        if (!matchingReviewAndGradeState(source, submission)
+                || !Objects.equals(source.updatedAt, submission.getReviewedAt())) {
+            throw new IllegalStateException("Submission publication state changed");
+        }
+    }
+
+    private void requireMatchingPublishedState(SubmissionEntityData source,
+                                               ExamSubmission submission) {
+        if (!matchingReviewAndGradeState(source, submission)
+                || !Objects.equals(source.publishedByUserId,
+                        submission.getPublishedByUserId())
+                || !Objects.equals(source.publishedAt, submission.getPublishedAt())
+                || !Objects.equals(source.updatedAt, submission.getUpdatedAt())) {
+            throw new IllegalStateException("Submission publication state changed");
+        }
+    }
+
+    private boolean matchingReviewAndGradeState(SubmissionEntityData source,
+                                                ExamSubmission submission) {
+        return Objects.equals(source.submittedAt, submission.getSubmittedAt())
+                && Objects.equals(source.actualDurationMinutes,
+                        submission.getActualDurationMinutes())
+                && Objects.equals(source.automaticScore,
+                        submission.getAutomaticScoreValue().orElse(null))
+                && Objects.equals(source.finalScore,
+                        submission.getServerFinalScore().orElse(null))
+                && Objects.equals(source.teacherFeedback,
+                        submission.getTeacherFeedback())
+                && Objects.equals(source.manualChangeReason,
+                        submission.getManualChangeReason())
+                && Objects.equals(source.reviewedByUserId,
+                        submission.getReviewedByUserId())
+                && Objects.equals(source.reviewedAt, submission.getReviewedAt());
+    }
+
+    private boolean isFinalizedUnpublishedStatus(SubmissionStatus status) {
+        return status == SubmissionStatus.SUBMITTED
+                || status == SubmissionStatus.AUTO_SUBMITTED;
+    }
+
+    private IllegalArgumentException examAttemptNotFound(int submissionId) {
+        return new IllegalArgumentException("Exam attempt not found: " + submissionId);
     }
 
     private void requireMatchingSubmission(ExamSubmission supplied,
@@ -1486,6 +1801,58 @@ public class ExamSubmissionRepository {
         }
     }
 
+    private void updateReview(Connection connection,
+                              SubmissionEntityData source,
+                              ExamSubmission submission) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_REVIEW_SQL
+        )) {
+            statement.setString(1, submission.getStatus().name());
+            statement.setBigDecimal(
+                    2,
+                    submission.getServerFinalScore().orElseThrow()
+            );
+            statement.setString(3, submission.getTeacherFeedback());
+            statement.setString(4, submission.getManualChangeReason());
+            statement.setInt(5, submission.getReviewedByUserId());
+            statement.setObject(6, submission.getReviewedAt());
+            statement.setObject(7, submission.getUpdatedAt());
+            statement.setInt(8, submission.getSubmissionId());
+            statement.setString(9, source.status.name());
+            statement.setBigDecimal(10, source.automaticScore);
+            statement.setBigDecimal(11, source.finalScore);
+            statement.setObject(12, source.updatedAt);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Submission review state changed");
+            }
+        }
+    }
+
+    private void updatePublication(Connection connection,
+                                   SubmissionEntityData source,
+                                   ExamSubmission submission) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_PUBLICATION_SQL
+        )) {
+            statement.setString(1, submission.getStatus().name());
+            statement.setInt(2, submission.getPublishedByUserId());
+            statement.setObject(3, submission.getPublishedAt());
+            statement.setObject(4, submission.getUpdatedAt());
+            statement.setInt(5, submission.getSubmissionId());
+            statement.setString(6, source.status.name());
+            statement.setBigDecimal(7, source.automaticScore);
+            statement.setBigDecimal(8, source.finalScore);
+            statement.setInt(9, source.reviewedByUserId);
+            statement.setObject(10, source.reviewedAt);
+            statement.setString(11, source.teacherFeedback);
+            statement.setString(12, source.manualChangeReason);
+            statement.setObject(13, source.updatedAt);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Submission publication state changed");
+            }
+        }
+    }
+
     private void persistFinalizedEntity(Connection connection,
                                         SubmissionRecord source,
                                         ExamSubmission submission)
@@ -1602,9 +1969,26 @@ public class ExamSubmissionRepository {
 
     private <T> T executeInTransaction(String failureMessage,
                                        TransactionOperation<T> operation) {
+        return executeInTransaction(
+                failureMessage,
+                failureMessage,
+                operation,
+                (connection, result) -> result
+        );
+    }
+
+    private <T, R> R executeInTransaction(
+            String failureMessage,
+            String postCommitFailureMessage,
+            TransactionOperation<T> operation,
+            PostCommitOperation<T, R> postCommitOperation
+    ) {
         try (Connection connection = databaseController.getConnection()) {
             boolean originalAutoCommit = connection.getAutoCommit();
             boolean transactionStarted = false;
+            boolean transactionCommitted = false;
+            boolean restorationAttempted = false;
+            boolean postCommitStarted = false;
             Throwable transactionFailure = null;
 
             try {
@@ -1612,21 +1996,30 @@ public class ExamSubmissionRepository {
                 transactionStarted = true;
                 T result = operation.execute(connection);
                 connection.commit();
-                return result;
+                transactionCommitted = true;
+                restorationAttempted = true;
+                connection.setAutoCommit(originalAutoCommit);
+                postCommitStarted = true;
+                return postCommitOperation.execute(connection, result);
             } catch (SQLException exception) {
                 transactionFailure = exception;
-                if (transactionStarted) {
+                if (transactionStarted && !transactionCommitted) {
                     rollbackWithSuppressed(connection, exception);
                 }
-                throw new IllegalStateException(failureMessage, exception);
+                throw new IllegalStateException(
+                        postCommitStarted ? postCommitFailureMessage : failureMessage,
+                        exception
+                );
             } catch (RuntimeException exception) {
                 transactionFailure = exception;
-                if (transactionStarted) {
+                if (transactionStarted && !transactionCommitted) {
                     rollbackWithSuppressed(connection, exception);
                 }
                 throw exception;
             } finally {
-                restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
+                if (!restorationAttempted) {
+                    restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
+                }
             }
         } catch (SQLException exception) {
             throw new IllegalStateException(failureMessage, exception);
@@ -1657,6 +2050,11 @@ public class ExamSubmissionRepository {
     @FunctionalInterface
     private interface TransactionOperation<T> {
         T execute(Connection connection) throws SQLException;
+    }
+
+    @FunctionalInterface
+    private interface PostCommitOperation<T, R> {
+        R execute(Connection connection, T result) throws SQLException;
     }
 
     @FunctionalInterface
