@@ -1,7 +1,11 @@
 package hsts.server.control;
 
 import hsts.common.CourseSummaryDTO;
+import hsts.common.CreateExamPayload;
 import hsts.common.CreateQuestionPayload;
+import hsts.common.ExamDTO;
+import hsts.common.ExamQuestionSelectionPayload;
+import hsts.common.ExamSummaryDTO;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionVersionDTO;
@@ -13,10 +17,14 @@ import hsts.server.entity.Exam;
 import hsts.server.entity.Question;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
+import hsts.server.repository.ExamRepository;
 import hsts.server.repository.QuestionRepository;
 import hsts.server.repository.UserRepository;
 
+import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ExamManagementService {
     private static final String MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
@@ -25,19 +33,26 @@ public class ExamManagementService {
     private final QuestionRepository questionRepository;
     private final CourseRepository courseRepository;
     private final UserRepository userRepository;
+    private final ExamRepository examRepository;
 
     public ExamManagementService(QuestionRepository questionRepository) {
-        this.questionRepository = questionRepository;
-        this.courseRepository = null;
-        this.userRepository = null;
+        this(questionRepository, null, null, null);
     }
 
     public ExamManagementService(QuestionRepository questionRepository,
                                  CourseRepository courseRepository,
                                  UserRepository userRepository) {
+        this(questionRepository, courseRepository, userRepository, null);
+    }
+
+    public ExamManagementService(QuestionRepository questionRepository,
+                                 CourseRepository courseRepository,
+                                 UserRepository userRepository,
+                                 ExamRepository examRepository) {
         this.questionRepository = questionRepository;
         this.courseRepository = courseRepository;
         this.userRepository = userRepository;
+        this.examRepository = examRepository;
     }
 
     public List<QuestionDTO> getAllQuestions() {
@@ -199,6 +214,58 @@ public class ExamManagementService {
         return versions;
     }
 
+    public List<ExamSummaryDTO> getMyExams(int authenticatedUserId) {
+        authorizeExamManager(authenticatedUserId);
+        requireExamRepository();
+        return examRepository.findCreatedByTeacher(authenticatedUserId);
+    }
+
+    public List<ExamSummaryDTO> getPendingExams(int authenticatedUserId) {
+        authorizeCoordinator(authenticatedUserId);
+        requireExamRepository();
+        return examRepository.findPendingForCoordinator(authenticatedUserId);
+    }
+
+    public ExamDTO getExamForTeacher(int authenticatedUserId, int examId) {
+        authorizeExamManager(authenticatedUserId);
+        requireExamRepository();
+        return examRepository.findByIdForTeacher(authenticatedUserId, examId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Exam not found: " + examId
+                ));
+    }
+
+    public ExamDTO getExamForCoordinator(int authenticatedUserId, int examId) {
+        authorizeCoordinator(authenticatedUserId);
+        requireExamRepository();
+        return examRepository.findByIdForCoordinator(authenticatedUserId, examId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Exam not found: " + examId
+                ));
+    }
+
+    public ExamDTO createExam(int authenticatedUserId, CreateExamPayload payload) {
+        authorizeExamManager(authenticatedUserId);
+        requireExamRepository();
+        validateCreateExamPayload(payload);
+        validateExamQuestions(authenticatedUserId, payload);
+
+        CreateExamPayload normalizedPayload = new CreateExamPayload(
+                payload.getCourseId(),
+                payload.getTitle().trim(),
+                payload.getDurationMinutes(),
+                normalizeText(payload.getTeacherNotes(), ""),
+                payload.getStudentInstructions().trim(),
+                payload.getQuestions()
+        );
+
+        int examId = examRepository.create(authenticatedUserId, normalizedPayload);
+        return examRepository.findByIdForTeacher(authenticatedUserId, examId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Exam not found: " + examId
+                ));
+    }
+
     public void deactivateQuestion(int questionId) {
         throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
     }
@@ -312,16 +379,38 @@ public class ExamManagementService {
     }
 
     private User authorizeQuestionManager(int userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
-
-        if (!user.isActive()) {
-            throw new IllegalStateException("User account is blocked");
-        }
+        User user = requireActiveUser(userId);
         if (user.getRole() != UserRole.TEACHER && user.getRole() != UserRole.COORDINATOR) {
             throw new IllegalStateException(
                     "Question management requires teacher or coordinator role"
             );
+        }
+        return user;
+    }
+
+    private User authorizeExamManager(int userId) {
+        if (userRepository == null) {
+            requireExamRepository();
+        }
+        return authorizeQuestionManager(userId);
+    }
+
+    private User authorizeCoordinator(int userId) {
+        if (userRepository == null) {
+            requireExamRepository();
+        }
+        User user = requireActiveUser(userId);
+        if (user.getRole() != UserRole.COORDINATOR) {
+            throw new IllegalStateException("Only coordinators can review exams");
+        }
+        return user;
+    }
+
+    private User requireActiveUser(int userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        if (!user.isActive()) {
+            throw new IllegalStateException("User account is blocked");
         }
         return user;
     }
@@ -367,6 +456,94 @@ public class ExamManagementService {
         }
         if (payload.getCorrectOptionNumber() < 1 || payload.getCorrectOptionNumber() > 4) {
             throw new IllegalArgumentException("Correct answer number must be between 1 and 4");
+        }
+    }
+
+    private void validateCreateExamPayload(CreateExamPayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Exam creation data is missing");
+        }
+        if (isBlank(payload.getTitle())) {
+            throw new IllegalArgumentException("Exam title is required");
+        }
+        if (payload.getDurationMinutes() <= 0) {
+            throw new IllegalArgumentException("Exam duration must be positive");
+        }
+        if (isBlank(payload.getStudentInstructions())) {
+            throw new IllegalArgumentException("Student instructions are required");
+        }
+
+        List<ExamQuestionSelectionPayload> questions = payload.getQuestions();
+        if (questions == null || questions.isEmpty()) {
+            throw new IllegalArgumentException("At least one question is required");
+        }
+
+        validateQuestionOrder(questions);
+
+        Set<Integer> questionIds = new HashSet<>();
+        for (ExamQuestionSelectionPayload question : questions) {
+            if (!questionIds.add(question.getQuestionId())) {
+                throw new IllegalArgumentException(
+                        "Duplicate question: " + question.getQuestionId()
+                );
+            }
+        }
+
+        BigDecimal totalScore = BigDecimal.ZERO;
+        for (ExamQuestionSelectionPayload question : questions) {
+            double score = question.getScore();
+            if (!Double.isFinite(score) || score <= 0) {
+                throw new IllegalArgumentException(
+                        "Question score must be positive and finite"
+                );
+            }
+            totalScore = totalScore.add(BigDecimal.valueOf(score));
+        }
+
+        if (totalScore.compareTo(new BigDecimal("100.00")) != 0) {
+            throw new IllegalArgumentException("Exam total score must equal 100");
+        }
+    }
+
+    private void validateQuestionOrder(List<ExamQuestionSelectionPayload> questions) {
+        boolean[] seenOrders = new boolean[questions.size() + 1];
+        for (ExamQuestionSelectionPayload question : questions) {
+            int orderNumber = question.getOrderNumber();
+            if (orderNumber <= 0 || orderNumber > questions.size()
+                    || seenOrders[orderNumber]) {
+                throw new IllegalArgumentException(
+                        "Question order must start at 1 and be contiguous"
+                );
+            }
+            seenOrders[orderNumber] = true;
+        }
+    }
+
+    private void validateExamQuestions(int authenticatedUserId,
+                                       CreateExamPayload payload) {
+        for (ExamQuestionSelectionPayload selection : payload.getQuestions()) {
+            QuestionDTO question = questionRepository.findCurrentByIdForTeacher(
+                    authenticatedUserId,
+                    selection.getQuestionId()
+            ).orElseThrow(() -> unavailableQuestion(selection.getQuestionId()));
+
+            if (question.getCourseId() != payload.getCourseId()
+                    || !QuestionStatus.ACTIVE.name().equals(question.getStatus())
+                    || question.getVersionNo() != selection.getQuestionVersionNo()) {
+                throw unavailableQuestion(selection.getQuestionId());
+            }
+        }
+    }
+
+    private IllegalArgumentException unavailableQuestion(int questionId) {
+        return new IllegalArgumentException(
+                "Question unavailable for exam: " + questionId
+        );
+    }
+
+    private void requireExamRepository() {
+        if (examRepository == null) {
+            throw new IllegalStateException("Exam repository is not configured");
         }
     }
 
