@@ -76,6 +76,24 @@ final class ExamExecutionServiceTestSupport {
                                         RecordingProfileRepository profiles,
                                         RecordingUserRepository users,
                                         RecordingExamRepository exams) {
+        return service(
+                executions,
+                submissions,
+                enrollments,
+                profiles,
+                users,
+                exams,
+                new RecordingGradingService()
+        );
+    }
+
+    static ExamExecutionService service(RecordingExecutionRepository executions,
+                                        RecordingSubmissionRepository submissions,
+                                        RecordingEnrollmentRepository enrollments,
+                                        RecordingProfileRepository profiles,
+                                        RecordingUserRepository users,
+                                        RecordingExamRepository exams,
+                                        RecordingGradingService grading) {
         return new ExamExecutionService(
                 executions,
                 submissions,
@@ -83,6 +101,7 @@ final class ExamExecutionServiceTestSupport {
                 profiles,
                 users,
                 exams,
+                grading,
                 CLOCK
         );
     }
@@ -198,9 +217,14 @@ final class ExamExecutionServiceTestSupport {
 
     static ExamSubmission submission(int studentUserId,
                                      List<StudentAnswer> answers) {
-        LocalDateTime started = NOW.minusMinutes(5);
+        return submission(501, studentUserId, NOW.minusMinutes(5), answers);
+    }
+
+    static ExamSubmission submission(int submissionId, int studentUserId,
+                                     LocalDateTime started,
+                                     List<StudentAnswer> answers) {
         return ExamSubmission.rehydrate(
-                501,
+                submissionId,
                 81,
                 40,
                 3,
@@ -223,6 +247,23 @@ final class ExamExecutionServiceTestSupport {
                 started,
                 started,
                 answers
+        );
+    }
+
+    static StudentAnswer answer(int answerId, int submissionId,
+                                int selectedOptionNumber,
+                                LocalDateTime answeredAt) {
+        return StudentAnswer.rehydrate(
+                answerId,
+                submissionId,
+                17,
+                4,
+                selectedOptionNumber,
+                null,
+                null,
+                null,
+                answeredAt,
+                answeredAt
         );
     }
 
@@ -439,17 +480,22 @@ final class ExamExecutionServiceTestSupport {
         );
         StudentAnswerDTO answer = new StudentAnswerDTO(17, 2, NOW);
         List<Integer> expiredIds = new ArrayList<>();
+        List<ExamSubmission> expiredEntities = new ArrayList<>();
         final Map<Integer, Boolean> autoResults = new LinkedHashMap<>();
         int startCalls;
         int legacyStartCalls;
         int activeCalls;
         int activeEntityCalls;
+        int studentEntityCalls;
         int managerEntityCalls;
         int saveCalls;
         int persistAnswerCalls;
         int submitCalls;
         int expiredCalls;
         int autoCalls;
+        int expiredEntityCalls;
+        int persistStudentCalls;
+        int persistAutomaticCalls;
         int extensionCalls;
         int persistExtensionCalls;
         int lastStudentId;
@@ -460,6 +506,8 @@ final class ExamExecutionServiceTestSupport {
         ExtendSubmissionTimePayload lastExtensionPayload;
         ExamExecution lastExecutionEntity;
         ExamSubmission lastSubmissionEntity;
+        ExamSubmission lastPersistedStudentSubmission;
+        final List<ExamSubmission> persistedAutomaticSubmissions = new ArrayList<>();
         StudentAnswer lastAnswerEntity;
         int lastAddedMinutes;
         String lastReason;
@@ -468,6 +516,8 @@ final class ExamExecutionServiceTestSupport {
         boolean activePresent = true;
         boolean extensionResult = true;
         RuntimeException failure;
+        RuntimeException persistStudentFailure;
+        RuntimeException persistAutomaticFailure;
 
         @Override
         public ExamAttemptDTO startOrResume(int authenticatedStudentId, int executionId,
@@ -513,6 +563,22 @@ final class ExamExecutionServiceTestSupport {
                 int submissionId
         ) {
             activeEntityCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastSubmissionId = submissionId;
+            return activePresent
+                    ? Optional.of(lastSubmissionEntity == null
+                            ? submission(authenticatedStudentUserId, List.of())
+                            : lastSubmissionEntity)
+                    : Optional.empty();
+        }
+
+        @Override
+        public Optional<ExamSubmission> findEntityForStudent(
+                int authenticatedStudentUserId,
+                int submissionId
+        ) {
+            studentEntityCalls++;
             failIfConfigured();
             lastStudentId = authenticatedStudentUserId;
             lastSubmissionId = submissionId;
@@ -596,6 +662,46 @@ final class ExamExecutionServiceTestSupport {
         }
 
         @Override
+        public List<ExamSubmission> findExpiredInProgressEntities(
+                LocalDateTime currentTime
+        ) {
+            expiredEntityCalls++;
+            failIfConfigured();
+            lastTime = currentTime;
+            return List.copyOf(expiredEntities);
+        }
+
+        @Override
+        public ExamSubmission persistStudentSubmission(
+                int authenticatedStudentUserId,
+                ExamSubmission submission
+        ) {
+            persistStudentCalls++;
+            failIfConfigured();
+            if (persistStudentFailure != null) {
+                throw persistStudentFailure;
+            }
+            lastStudentId = authenticatedStudentUserId;
+            lastPersistedStudentSubmission = submission;
+            lastSubmissionEntity = submission;
+            return submission;
+        }
+
+        @Override
+        public ExamSubmission persistAutomaticSubmission(
+                ExamSubmission submission
+        ) {
+            persistAutomaticCalls++;
+            failIfConfigured();
+            if (persistAutomaticFailure != null) {
+                throw persistAutomaticFailure;
+            }
+            persistedAutomaticSubmissions.add(submission);
+            lastSubmissionEntity = submission;
+            return submission;
+        }
+
+        @Override
         public boolean extendTime(int authenticatedManagerId,
                                   ExtendSubmissionTimePayload payload,
                                   LocalDateTime now) {
@@ -627,9 +733,10 @@ final class ExamExecutionServiceTestSupport {
 
         int totalCalls() {
             return startCalls + legacyStartCalls + activeCalls + activeEntityCalls
-                    + managerEntityCalls + saveCalls + persistAnswerCalls
-                    + submitCalls + expiredCalls + autoCalls + extensionCalls
-                    + persistExtensionCalls;
+                    + studentEntityCalls + managerEntityCalls + saveCalls
+                    + persistAnswerCalls + submitCalls + expiredCalls + autoCalls
+                    + expiredEntityCalls + persistStudentCalls
+                    + persistAutomaticCalls + extensionCalls + persistExtensionCalls;
         }
 
         private void failIfConfigured() {
@@ -655,6 +762,35 @@ final class ExamExecutionServiceTestSupport {
             lastExamId = examId;
             lastVersionNo = versionNo;
             return Optional.ofNullable(exact);
+        }
+    }
+
+    static final class RecordingGradingService extends GradingService {
+        int calls;
+        int failAtCall;
+        RuntimeException failure;
+        ExamSubmission lastSubmission;
+        Exam lastExam;
+        LocalDateTime lastTime;
+
+        @Override
+        public ExamSubmission gradeAutomatically(
+                ExamSubmission submission,
+                Exam exactExamVersion,
+                LocalDateTime gradedAt
+        ) {
+            calls++;
+            lastSubmission = submission;
+            lastExam = exactExamVersion;
+            lastTime = gradedAt;
+            if (failure != null && (failAtCall == 0 || failAtCall == calls)) {
+                RuntimeException configured = failure;
+                if (failAtCall != 0) {
+                    failure = null;
+                }
+                throw configured;
+            }
+            return super.gradeAutomatically(submission, exactExamVersion, gradedAt);
         }
     }
 

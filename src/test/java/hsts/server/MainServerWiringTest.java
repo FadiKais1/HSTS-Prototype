@@ -31,12 +31,13 @@ public class MainServerWiringTest {
         assertEquals(1, occurrences(source, "new ExamSubmissionRepository()"));
         assertEquals(1, occurrences(source, "new StudentEnrollmentRepository()"));
         assertEquals(1, occurrences(source, "new StudentProfileRepository()"));
+        assertEquals(1, occurrences(source, "new GradingService()"));
         assertEquals(1, occurrences(source, "new ExamExecutionService("));
         assertTrue(normalized.contains(
                 "new ExamExecutionService( examExecutionRepository, "
                         + "examSubmissionRepository, studentEnrollmentRepository, "
                         + "studentProfileRepository, userRepository, examRepository, "
-                        + "Clock.systemUTC() )"
+                        + "gradingService, Clock.systemUTC() )"
         ));
         assertTrue(normalized.contains(
                 "new Server( port, examManagementService, authService, "

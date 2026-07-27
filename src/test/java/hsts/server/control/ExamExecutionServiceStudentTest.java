@@ -228,14 +228,38 @@ public class ExamExecutionServiceStudentTest {
         assertEquals(40, fixture.exams.lastExamId);
         assertEquals(3, fixture.exams.lastVersionNo);
 
-        ExamAttemptDTO submitted = attempt(SubmissionStatus.SUBMITTED);
-        fixture.submissions.attempt = submitted;
-        assertSame(submitted, fixture.service.submitExam(
+        fixture.submissions.lastSubmissionEntity =
+                ExamExecutionServiceTestSupport.submission(
+                        1101,
+                        java.util.List.of(ExamExecutionServiceTestSupport.answer(
+                                91,
+                                501,
+                                3,
+                                NOW.minusMinutes(1)
+                        ))
+                );
+        fixture.submissions.attempt = attempt(SubmissionStatus.IN_PROGRESS);
+        ExamAttemptDTO submitted = fixture.service.submitExam(
                 1101, new SubmissionIdPayload(501)
-        ));
+        );
+        assertEquals(SubmissionStatus.SUBMITTED, submitted.getStatus());
+        assertEquals(501, submitted.getSubmissionId());
         assertEquals(1101, fixture.submissions.lastStudentId);
         assertEquals(501, fixture.submissions.lastSubmissionId);
         assertEquals(NOW, fixture.submissions.lastTime);
+        assertEquals(1, fixture.submissions.studentEntityCalls);
+        assertEquals(1, fixture.submissions.persistStudentCalls);
+        assertEquals(0, fixture.submissions.submitCalls);
+        assertEquals(1, fixture.grading.calls);
+        assertSame(fixture.exams.exact, fixture.grading.lastExam);
+        assertEquals(NOW, fixture.grading.lastTime);
+        assertEquals(
+                "100.00",
+                fixture.submissions.lastPersistedStudentSubmission
+                        .getAutomaticScoreValue().orElseThrow().toPlainString()
+        );
+        assertTrue(fixture.submissions.lastPersistedStudentSubmission
+                .getStudentAnswers().get(0).isGraded());
     }
 
     @Test
@@ -263,6 +287,56 @@ public class ExamExecutionServiceStudentTest {
                 )
         );
         assertEquals("Exam attempt not found: 777", missing.getMessage());
+
+        IllegalArgumentException missingSubmission = assertThrows(
+                IllegalArgumentException.class,
+                () -> fixture.service.submitExam(
+                        1201, new SubmissionIdPayload(777)
+                )
+        );
+        assertEquals("Exam attempt not found: 777", missingSubmission.getMessage());
+    }
+
+    @Test
+    public void finalizationFailuresBeforeOrDuringPersistenceDoNotUseLegacySubmit() {
+        Fixture missingExamFixture = studentFixture(1271);
+        missingExamFixture.exams.exact = null;
+        IllegalStateException missingExam = assertThrows(
+                IllegalStateException.class,
+                () -> missingExamFixture.service.submitExam(
+                        1271, new SubmissionIdPayload(501)
+                )
+        );
+        assertEquals("Exam version does not match the submission", missingExam.getMessage());
+        assertEquals(0, missingExamFixture.grading.calls);
+        assertEquals(0, missingExamFixture.submissions.persistStudentCalls);
+        assertEquals(0, missingExamFixture.submissions.submitCalls);
+
+        Fixture gradingFixture = studentFixture(1272);
+        RuntimeException gradingFailure = new IllegalStateException("grading failure");
+        gradingFixture.grading.failure = gradingFailure;
+        assertSame(gradingFailure, assertThrows(
+                RuntimeException.class,
+                () -> gradingFixture.service.submitExam(
+                        1272, new SubmissionIdPayload(501)
+                )
+        ));
+        assertEquals(0, gradingFixture.submissions.persistStudentCalls);
+        assertEquals(0, gradingFixture.submissions.submitCalls);
+
+        Fixture persistenceFixture = studentFixture(1273);
+        RuntimeException persistenceFailure =
+                new IllegalStateException("persistence failure");
+        persistenceFixture.submissions.persistStudentFailure = persistenceFailure;
+        assertSame(persistenceFailure, assertThrows(
+                RuntimeException.class,
+                () -> persistenceFixture.service.submitExam(
+                        1273, new SubmissionIdPayload(501)
+                )
+        ));
+        assertEquals(1, persistenceFixture.grading.calls);
+        assertEquals(1, persistenceFixture.submissions.persistStudentCalls);
+        assertEquals(0, persistenceFixture.submissions.submitCalls);
     }
 
     @Test
@@ -332,6 +406,17 @@ public class ExamExecutionServiceStudentTest {
                 )
         );
         assertEquals("Exam repository is not configured", missingRepository.getMessage());
+
+        IllegalStateException missingFinalization = assertThrows(
+                IllegalStateException.class,
+                () -> compatibilityService.submitExam(
+                        1261, new SubmissionIdPayload(501)
+                )
+        );
+        assertEquals(
+                "Exam finalization dependencies are not configured",
+                missingFinalization.getMessage()
+        );
     }
 
     @Test
@@ -454,6 +539,8 @@ public class ExamExecutionServiceStudentTest {
                 new ExamExecutionServiceTestSupport.RecordingProfileRepository();
         ExamExecutionServiceTestSupport.RecordingExamRepository exams =
                 new ExamExecutionServiceTestSupport.RecordingExamRepository();
+        ExamExecutionServiceTestSupport.RecordingGradingService grading =
+                new ExamExecutionServiceTestSupport.RecordingGradingService();
         ExamExecutionServiceTestSupport.RecordingUserRepository users =
                 new ExamExecutionServiceTestSupport.RecordingUserRepository(
                         user(studentId, UserRole.STUDENT, UserStatus.ACTIVE)
@@ -465,12 +552,14 @@ public class ExamExecutionServiceStudentTest {
                         new ExamExecutionServiceTestSupport.RecordingEnrollmentRepository(),
                         profiles,
                         users,
-                        exams
+                        exams,
+                        grading
                 ),
                 executions,
                 submissions,
                 profiles,
-                exams
+                exams,
+                grading
         );
     }
 
@@ -480,19 +569,22 @@ public class ExamExecutionServiceStudentTest {
         private final ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions;
         private final ExamExecutionServiceTestSupport.RecordingProfileRepository profiles;
         private final ExamExecutionServiceTestSupport.RecordingExamRepository exams;
+        private final ExamExecutionServiceTestSupport.RecordingGradingService grading;
 
         private Fixture(
                 ExamExecutionService service,
                 ExamExecutionServiceTestSupport.RecordingExecutionRepository executions,
                 ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions,
                 ExamExecutionServiceTestSupport.RecordingProfileRepository profiles,
-                ExamExecutionServiceTestSupport.RecordingExamRepository exams
+                ExamExecutionServiceTestSupport.RecordingExamRepository exams,
+                ExamExecutionServiceTestSupport.RecordingGradingService grading
         ) {
             this.service = service;
             this.executions = executions;
             this.submissions = submissions;
             this.profiles = profiles;
             this.exams = exams;
+            this.grading = grading;
         }
     }
 }

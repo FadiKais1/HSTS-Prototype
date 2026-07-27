@@ -3,6 +3,7 @@ package hsts.server;
 import hsts.server.control.AuthService;
 import hsts.server.control.ExamExecutionService;
 import hsts.server.control.ExamManagementService;
+import hsts.server.control.GradingService;
 import hsts.server.net.Server;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.DatabaseInitializer;
@@ -42,6 +43,7 @@ public class MainServer {
                 examRepository
         );
         AuthService authService = new AuthService(userRepository);
+        GradingService gradingService = new GradingService();
         ExamExecutionService examExecutionService = new ExamExecutionService(
                 examExecutionRepository,
                 examSubmissionRepository,
@@ -49,6 +51,7 @@ public class MainServer {
                 studentProfileRepository,
                 userRepository,
                 examRepository,
+                gradingService,
                 Clock.systemUTC()
         );
 

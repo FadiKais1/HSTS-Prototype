@@ -36,6 +36,7 @@ public class ExamExecutionService {
     private final ExamExecutionRepository examExecutionRepository;
     private final ExamSubmissionRepository examSubmissionRepository;
     private final ExamRepository examRepository;
+    private final GradingService gradingService;
     private final StudentEnrollmentRepository studentEnrollmentRepository;
     private final StudentProfileRepository studentProfileRepository;
     private final UserRepository userRepository;
@@ -43,7 +44,7 @@ public class ExamExecutionService {
 
     // COMPATIBILITY-ONLY: Preserves legacy skeleton construction.
     public ExamExecutionService() {
-        this(null, null, null, null, null, null, Clock.systemUTC());
+        this(null, null, null, null, null, null, null, Clock.systemUTC());
     }
 
     public ExamExecutionService(
@@ -59,6 +60,7 @@ public class ExamExecutionService {
                 studentEnrollmentRepository,
                 studentProfileRepository,
                 userRepository,
+                null,
                 null,
                 Clock.systemUTC()
         );
@@ -79,6 +81,7 @@ public class ExamExecutionService {
                 studentProfileRepository,
                 userRepository,
                 null,
+                null,
                 clock
         );
     }
@@ -92,9 +95,32 @@ public class ExamExecutionService {
             ExamRepository examRepository,
             Clock clock
     ) {
+        this(
+                examExecutionRepository,
+                examSubmissionRepository,
+                studentEnrollmentRepository,
+                studentProfileRepository,
+                userRepository,
+                examRepository,
+                null,
+                clock
+        );
+    }
+
+    public ExamExecutionService(
+            ExamExecutionRepository examExecutionRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            StudentEnrollmentRepository studentEnrollmentRepository,
+            StudentProfileRepository studentProfileRepository,
+            UserRepository userRepository,
+            ExamRepository examRepository,
+            GradingService gradingService,
+            Clock clock
+    ) {
         this.examExecutionRepository = examExecutionRepository;
         this.examSubmissionRepository = examSubmissionRepository;
         this.examRepository = examRepository;
+        this.gradingService = gradingService;
         this.studentEnrollmentRepository = studentEnrollmentRepository;
         this.studentProfileRepository = studentProfileRepository;
         this.userRepository = userRepository;
@@ -341,25 +367,95 @@ public class ExamExecutionService {
         if (payload == null) {
             throw new IllegalArgumentException("Submission data is missing");
         }
-        return examSubmissionRepository.submit(
+        requireFinalizationDependencies();
+        ExamSubmission submission = examSubmissionRepository.findEntityForStudent(
                 authenticatedStudentId,
-                payload.getSubmissionId(),
-                currentTime()
+                payload.getSubmissionId()
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Exam attempt not found: " + payload.getSubmissionId()
+        ));
+        LocalDateTime currentTime = currentTime();
+        ExamAttemptDTO safeAttempt = examSubmissionRepository.findActiveForStudent(
+                authenticatedStudentId,
+                submission.getSubmissionId(),
+                currentTime
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Exam attempt not found: " + payload.getSubmissionId()
+        ));
+
+        submission.submitManually(currentTime);
+        Exam exactExamVersion = loadExactExamVersion(submission);
+        ExamSubmission gradedSubmission = gradingService.gradeAutomatically(
+                submission,
+                exactExamVersion,
+                currentTime
         );
+        ExamSubmission persistedSubmission =
+                examSubmissionRepository.persistStudentSubmission(
+                        authenticatedStudentId,
+                        gradedSubmission
+                );
+        return mapSafeAttempt(safeAttempt, persistedSubmission);
     }
 
     public int autoSubmitExpired() {
         requireDependencies();
+        requireFinalizationDependencies();
         LocalDateTime currentTime = currentTime();
         int submittedCount = 0;
-        for (int submissionId : examSubmissionRepository.findExpiredSubmissionIds(
-                currentTime
-        )) {
-            if (examSubmissionRepository.autoSubmit(submissionId, currentTime)) {
-                submittedCount++;
+        for (ExamSubmission submission :
+                examSubmissionRepository.findExpiredInProgressEntities(currentTime)) {
+            if (!submission.autoSubmit(currentTime)) {
+                continue;
             }
+            Exam exactExamVersion = loadExactExamVersion(submission);
+            ExamSubmission gradedSubmission = gradingService.gradeAutomatically(
+                    submission,
+                    exactExamVersion,
+                    currentTime
+            );
+            examSubmissionRepository.persistAutomaticSubmission(gradedSubmission);
+            submittedCount++;
         }
         return submittedCount;
+    }
+
+    private Exam loadExactExamVersion(ExamSubmission submission) {
+        Exam exactExamVersion = examRepository.findEntityVersion(
+                submission.getExamId(),
+                submission.getExamVersionNo()
+        ).orElseThrow(() -> new IllegalStateException(
+                "Exam version does not match the submission"
+        ));
+        if (exactExamVersion.getExamId() != submission.getExamId()
+                || exactExamVersion.getCurrentVersionNo()
+                != submission.getExamVersionNo()) {
+            throw new IllegalStateException(
+                    "Exam version does not match the submission"
+            );
+        }
+        return exactExamVersion;
+    }
+
+    private ExamAttemptDTO mapSafeAttempt(ExamAttemptDTO safeAttempt,
+                                          ExamSubmission submission) {
+        return new ExamAttemptDTO(
+                safeAttempt.getSubmissionId(),
+                safeAttempt.getExecutionId(),
+                safeAttempt.getExecutionCode(),
+                safeAttempt.getExamId(),
+                safeAttempt.getExamVersionNo(),
+                safeAttempt.getExamTitle(),
+                safeAttempt.getStudentInstructions(),
+                safeAttempt.getStartedAt(),
+                safeAttempt.getDeadline(),
+                safeAttempt.getAllocatedDurationMinutes(),
+                safeAttempt.getExtraMinutes(),
+                safeAttempt.getRemainingSeconds(),
+                submission.getStatus(),
+                safeAttempt.getQuestions(),
+                safeAttempt.getAnswers()
+        );
     }
 
     public boolean extendStudentTime(int authenticatedManagerId,
@@ -498,6 +594,14 @@ public class ExamExecutionService {
     private void requireExamRepository() {
         if (examRepository == null) {
             throw new IllegalStateException("Exam repository is not configured");
+        }
+    }
+
+    private void requireFinalizationDependencies() {
+        if (examRepository == null || gradingService == null) {
+            throw new IllegalStateException(
+                    "Exam finalization dependencies are not configured"
+            );
         }
     }
 
