@@ -16,7 +16,9 @@ import hsts.common.UpdateExamPayload;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
 import hsts.common.type.UserRole;
+import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Exam;
 import hsts.server.entity.Question;
 import hsts.server.entity.User;
@@ -114,20 +116,30 @@ public class ExamManagementService {
         authorizeQuestionManager(authenticatedUserId);
         requireCourseAssignment(authenticatedUserId, payload.getCourseId());
 
-        CreateQuestionPayload normalizedPayload = new CreateQuestionPayload(
-                payload.getCourseId(),
+        Question question = Question.rehydrate(
+                0,
                 payload.getContent().trim(),
-                normalizeText(payload.getTopic(), "General"),
+                QuestionType.MULTIPLE_CHOICE,
                 payload.getDifficulty(),
+                QuestionStatus.ACTIVE,
+                null,
+                null,
+                normalizeText(payload.getTopic(), "General"),
                 normalizeText(payload.getIllustrationPath(), ""),
-                payload.getAnswerOption1().trim(),
-                payload.getAnswerOption2().trim(),
-                payload.getAnswerOption3().trim(),
-                payload.getAnswerOption4().trim(),
-                payload.getCorrectOptionNumber()
+                answerOptions(
+                        payload.getAnswerOption1().trim(),
+                        payload.getAnswerOption2().trim(),
+                        payload.getAnswerOption3().trim(),
+                        payload.getAnswerOption4().trim(),
+                        payload.getCorrectOptionNumber()
+                )
         );
 
-        int questionId = questionRepository.create(authenticatedUserId, normalizedPayload);
+        int questionId = questionRepository.create(
+                authenticatedUserId,
+                payload.getCourseId(),
+                question
+        );
         return questionRepository.findCurrentByIdForTeacher(authenticatedUserId, questionId)
                 .orElseThrow(() -> new IllegalStateException(
                         "Created question could not be reloaded: " + questionId
@@ -175,27 +187,28 @@ public class ExamManagementService {
         validateQuestionPayload(payload);
 
         int questionId = payload.getQuestionId();
-        questionRepository.findCurrentByIdForTeacher(authenticatedUserId, questionId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Question not found: " + questionId
-                ));
-
-        UpdateQuestionPayload normalizedPayload = new UpdateQuestionPayload(
-                questionId,
-                payload.getContent().trim(),
-                normalizeText(payload.getTopic(), "General"),
-                normalizeText(payload.getDifficulty(), "EASY"),
-                normalizeText(payload.getStatus(), "ACTIVE"),
-                normalizeText(payload.getIllustrationPath(), ""),
-                payload.getAnswerOption1().trim(),
-                payload.getAnswerOption2().trim(),
-                payload.getAnswerOption3().trim(),
-                payload.getAnswerOption4().trim(),
-                payload.getCorrectOptionNumber(),
-                payload.getExpectedVersionNo()
+        Question question = requireCurrentQuestionEntity(
+                authenticatedUserId,
+                questionId
         );
+        question.updateContent(payload.getContent().trim());
+        question.setTopic(normalizeText(payload.getTopic(), "General"));
+        question.setDifficulty(normalizeText(payload.getDifficulty(), "EASY"));
+        question.setIllustrationPath(
+                normalizeText(payload.getIllustrationPath(), "")
+        );
+        question.setAnswerOption1(payload.getAnswerOption1().trim());
+        question.setAnswerOption2(payload.getAnswerOption2().trim());
+        question.setAnswerOption3(payload.getAnswerOption3().trim());
+        question.setAnswerOption4(payload.getAnswerOption4().trim());
+        question.setCorrectOptionNumber(payload.getCorrectOptionNumber());
 
-        questionRepository.updateWithNewVersion(authenticatedUserId, normalizedPayload);
+        questionRepository.updateWithNewVersion(
+                authenticatedUserId,
+                questionId,
+                payload.getExpectedVersionNo(),
+                question
+        );
         return getQuestionById(authenticatedUserId, questionId);
     }
 
@@ -595,15 +608,46 @@ public class ExamManagementService {
         requireQuestionBankDependencies();
         authorizeQuestionManager(authenticatedUserId);
 
+        Question question = requireCurrentQuestionEntity(
+                authenticatedUserId,
+                questionId
+        );
+        if (status == QuestionStatus.ACTIVE) {
+            question.activate();
+        } else {
+            question.deactivate();
+        }
+
         boolean updated = questionRepository.updateStatusForTeacher(
                 authenticatedUserId,
                 questionId,
-                status
+                question.getQuestionStatus()
         );
         if (!updated) {
             throw new IllegalArgumentException("Question not found: " + questionId);
         }
         return getQuestionById(authenticatedUserId, questionId);
+    }
+
+    private Question requireCurrentQuestionEntity(int authenticatedUserId,
+                                                  int questionId) {
+        return questionRepository.findCurrentEntityByIdForTeacher(
+                authenticatedUserId,
+                questionId
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Question not found: " + questionId
+        ));
+    }
+
+    private List<AnswerOption> answerOptions(String option1, String option2,
+                                             String option3, String option4,
+                                             int correctOptionNumber) {
+        return List.of(
+                new AnswerOption(1, option1, correctOptionNumber == 1),
+                new AnswerOption(2, option2, correctOptionNumber == 2),
+                new AnswerOption(3, option3, correctOptionNumber == 3),
+                new AnswerOption(4, option4, correctOptionNumber == 4)
+        );
     }
 
     private void validateCreateQuestionPayload(CreateQuestionPayload payload) {

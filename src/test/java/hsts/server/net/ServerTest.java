@@ -15,6 +15,7 @@ import hsts.common.ResponseStatus;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
 import hsts.server.control.AuthService;
@@ -208,6 +209,21 @@ public class ServerTest {
             assertSuccess(createResponse, "Question created successfully");
             assertEquals(501, ((QuestionDTO) createResponse.getPayload()).getQuestionId());
             assertEquals(authenticatedUserId, questions.getLastCreateUserId());
+            assertEquals(7, questions.getLastCreateCourseId());
+            Question createdQuestion = questions.getLastCreatedQuestion();
+            assertEquals("Created question", createdQuestion.getContent());
+            assertEquals("Algebra", createdQuestion.getTopic());
+            assertSame(QuestionType.MULTIPLE_CHOICE,
+                    createdQuestion.getQuestionType());
+            assertSame(DifficultyLevel.MEDIUM,
+                    createdQuestion.getDifficultyLevel());
+            assertSame(QuestionStatus.ACTIVE,
+                    createdQuestion.getQuestionStatus());
+            assertEquals(List.of("One", "Two", "Three", "Four"),
+                    createdQuestion.getAnswerOptions().stream()
+                            .map(option -> option.getOptionText())
+                            .toList());
+            assertEquals(2, createdQuestion.getCorrectOptionNumber());
         }
     }
 
@@ -621,6 +637,8 @@ public class ServerTest {
         private int lastListUserId;
         private QuestionFilterPayload lastFilter;
         private int lastCreateUserId;
+        private int lastCreateCourseId;
+        private Question lastCreatedQuestion;
 
         @Override
         public List<QuestionDTO> findCurrentForTeacher(int authenticatedUserId,
@@ -631,12 +649,15 @@ public class ServerTest {
         }
 
         @Override
-        public int create(int createdByUserId, CreateQuestionPayload payload) {
-            lastCreateUserId = createdByUserId;
+        public int create(int authenticatedUserId, int courseId,
+                          Question question) {
+            lastCreateUserId = authenticatedUserId;
+            lastCreateCourseId = courseId;
+            lastCreatedQuestion = question;
             int questionId = 501;
             createdQuestions.put(
                     questionId,
-                    normalizedQuestion(questionId, payload.getCourseId(), payload.getContent())
+                    normalizedQuestion(questionId, courseId, question.getContent())
             );
             return questionId;
         }
@@ -661,6 +682,14 @@ public class ServerTest {
 
         private int getLastCreateUserId() {
             return lastCreateUserId;
+        }
+
+        private int getLastCreateCourseId() {
+            return lastCreateCourseId;
+        }
+
+        private Question getLastCreatedQuestion() {
+            return lastCreatedQuestion;
         }
     }
 

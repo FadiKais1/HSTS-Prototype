@@ -6,8 +6,11 @@ import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.AnswerOption;
+import hsts.server.entity.Question;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.QuestionRepository;
@@ -174,17 +177,24 @@ public class ExamManagementQuestionBankTest {
         assertEquals(70, questions.getLastCreateUserId());
         assertEquals(70, questions.getLastReloadUserId());
         assertEquals(88, questions.getLastReloadQuestionId());
-        CreateQuestionPayload normalized = questions.getLastCreatePayload();
-        assertEquals(15, normalized.getCourseId());
+        assertEquals(15, questions.getLastCreateCourseId());
+        Question normalized = questions.getLastCreatedQuestion();
+        assertEquals(0, normalized.getQuestionId());
         assertEquals("Content", normalized.getContent());
         assertEquals("General", normalized.getTopic());
-        assertEquals(DifficultyLevel.MEDIUM, normalized.getDifficulty());
+        assertSame(QuestionType.MULTIPLE_CHOICE, normalized.getQuestionType());
+        assertSame(DifficultyLevel.MEDIUM, normalized.getDifficultyLevel());
+        assertSame(QuestionStatus.ACTIVE, normalized.getQuestionStatus());
         assertEquals("", normalized.getIllustrationPath());
-        assertEquals("One", normalized.getAnswerOption1());
-        assertEquals("Two", normalized.getAnswerOption2());
-        assertEquals("Three", normalized.getAnswerOption3());
-        assertEquals("Four", normalized.getAnswerOption4());
+        assertEquals(List.of(1, 2, 3, 4), normalized.getAnswerOptions().stream()
+                .map(AnswerOption::getOptionId)
+                .toList());
+        assertEquals(List.of("One", "Two", "Three", "Four"),
+                normalized.getAnswerOptions().stream()
+                        .map(AnswerOption::getOptionText)
+                        .toList());
         assertEquals(3, normalized.getCorrectOptionNumber());
+        assertEquals(0, questions.getPayloadCreateCalls());
     }
 
     @Test
@@ -460,12 +470,13 @@ public class ExamManagementQuestionBankTest {
     private static final class FakeQuestionRepository extends QuestionRepository {
         private List<QuestionDTO> questions = new ArrayList<>();
         private QuestionFilterPayload lastFilter;
-        private CreateQuestionPayload lastCreatePayload;
+        private Question lastCreatedQuestion;
         private QuestionDTO reloadedQuestion;
         private RuntimeException listFailure;
         private int createdQuestionId = 1;
         private int lastListUserId;
         private int lastCreateUserId;
+        private int lastCreateCourseId;
         private int lastReloadUserId;
         private int lastReloadQuestionId;
         private int listCalls;
@@ -484,11 +495,21 @@ public class ExamManagementQuestionBankTest {
         }
 
         @Override
-        public int create(int createdByUserId, CreateQuestionPayload payload) {
+        public int create(int authenticatedUserId, int courseId,
+                          Question question) {
             createCalls++;
-            lastCreateUserId = createdByUserId;
-            lastCreatePayload = payload;
+            lastCreateUserId = authenticatedUserId;
+            lastCreateCourseId = courseId;
+            lastCreatedQuestion = question;
             return createdQuestionId;
+        }
+
+        private int payloadCreateCalls;
+
+        @Override
+        public int create(int createdByUserId, CreateQuestionPayload payload) {
+            payloadCreateCalls++;
+            throw new AssertionError("Authenticated create used payload repository path");
         }
 
         @Override
@@ -519,8 +540,8 @@ public class ExamManagementQuestionBankTest {
             return lastFilter;
         }
 
-        private CreateQuestionPayload getLastCreatePayload() {
-            return lastCreatePayload;
+        private Question getLastCreatedQuestion() {
+            return lastCreatedQuestion;
         }
 
         private int getLastListUserId() {
@@ -529,6 +550,10 @@ public class ExamManagementQuestionBankTest {
 
         private int getLastCreateUserId() {
             return lastCreateUserId;
+        }
+
+        private int getLastCreateCourseId() {
+            return lastCreateCourseId;
         }
 
         private int getLastReloadUserId() {
@@ -545,6 +570,10 @@ public class ExamManagementQuestionBankTest {
 
         private int getCreateCalls() {
             return createCalls;
+        }
+
+        private int getPayloadCreateCalls() {
+            return payloadCreateCalls;
         }
     }
 }

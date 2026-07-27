@@ -8,6 +8,8 @@ import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.AnswerOption;
+import hsts.server.entity.Question;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.QuestionRepository;
@@ -30,6 +32,7 @@ public class ExamManagementStatusHistoryTest {
         RecordingQuestionRepository questions = new RecordingQuestionRepository();
         QuestionDTO expected = questionDto(31, "ACTIVE");
         questions.setCurrentQuestion(expected);
+        questions.setCurrentEntity(question(31, QuestionStatus.INACTIVE));
         ExamManagementService service = service(
                 questions,
                 user(101, UserRole.TEACHER, UserStatus.ACTIVE)
@@ -39,7 +42,7 @@ public class ExamManagementStatusHistoryTest {
 
         assertSame(expected, result);
         assertStatusOperation(questions, 101, 31, QuestionStatus.ACTIVE);
-        assertEquals(1, questions.getFindCalls());
+        assertEquals(2, questions.getFindCalls());
         assertEquals(0, questions.getVersionUpdateCalls());
     }
 
@@ -48,6 +51,7 @@ public class ExamManagementStatusHistoryTest {
         RecordingQuestionRepository questions = new RecordingQuestionRepository();
         QuestionDTO expected = questionDto(32, "INACTIVE");
         questions.setCurrentQuestion(expected);
+        questions.setCurrentEntity(question(32, QuestionStatus.ACTIVE));
         ExamManagementService service = service(
                 questions,
                 user(102, UserRole.COORDINATOR, UserStatus.ACTIVE)
@@ -63,7 +67,6 @@ public class ExamManagementStatusHistoryTest {
     @Test
     public void missingOrUnassignedStatusTargetUsesExactNotFoundMessage() {
         RecordingQuestionRepository questions = new RecordingQuestionRepository();
-        questions.setStatusUpdated(false);
         ExamManagementService service = service(
                 questions,
                 user(103, UserRole.TEACHER, UserStatus.ACTIVE)
@@ -75,8 +78,8 @@ public class ExamManagementStatusHistoryTest {
         );
 
         assertEquals("Question not found: 77", exception.getMessage());
-        assertStatusOperation(questions, 103, 77, QuestionStatus.ACTIVE);
-        assertEquals(0, questions.getFindCalls());
+        assertEquals(0, questions.getStatusCalls());
+        assertEquals(1, questions.getFindCalls());
         assertEquals(0, questions.getVersionUpdateCalls());
     }
 
@@ -263,6 +266,7 @@ public class ExamManagementStatusHistoryTest {
     private static final class RecordingQuestionRepository extends QuestionRepository {
         private boolean statusUpdated = true;
         private QuestionDTO currentQuestion;
+        private Question currentEntity;
         private List<QuestionVersionDTO> history = List.of();
         private int statusCalls;
         private int historyCalls;
@@ -295,6 +299,19 @@ public class ExamManagementStatusHistoryTest {
         }
 
         @Override
+        public Optional<Question> findCurrentEntityByIdForTeacher(
+                int authenticatedUserId,
+                int questionId
+        ) {
+            findCalls++;
+            if (currentEntity == null
+                    || currentEntity.getQuestionId() != questionId) {
+                return Optional.empty();
+            }
+            return Optional.of(currentEntity);
+        }
+
+        @Override
         public List<QuestionVersionDTO> findVersionsForTeacher(int authenticatedUserId,
                                                                int questionId) {
             historyCalls++;
@@ -309,12 +326,16 @@ public class ExamManagementStatusHistoryTest {
             return 1;
         }
 
-        private void setStatusUpdated(boolean statusUpdated) {
-            this.statusUpdated = statusUpdated;
-        }
-
         private void setCurrentQuestion(QuestionDTO currentQuestion) {
             this.currentQuestion = currentQuestion;
+            this.currentEntity = question(
+                    currentQuestion.getQuestionId(),
+                    QuestionStatus.valueOf(currentQuestion.getStatus())
+            );
+        }
+
+        private void setCurrentEntity(Question currentEntity) {
+            this.currentEntity = currentEntity;
         }
 
         private void setHistory(List<QuestionVersionDTO> history) {
@@ -330,5 +351,25 @@ public class ExamManagementStatusHistoryTest {
         private QuestionStatus getLastStatus() { return lastStatus; }
         private int getLastHistoryUserId() { return lastHistoryUserId; }
         private int getLastHistoryQuestionId() { return lastHistoryQuestionId; }
+    }
+
+    private static Question question(int questionId, QuestionStatus status) {
+        return Question.rehydrate(
+                questionId,
+                "Content",
+                QuestionType.MULTIPLE_CHOICE,
+                DifficultyLevel.MEDIUM,
+                status,
+                LocalDateTime.of(2026, 1, 1, 9, 0),
+                LocalDateTime.of(2026, 1, 2, 9, 0),
+                "Topic",
+                "",
+                List.of(
+                        new AnswerOption(1, "One", false),
+                        new AnswerOption(2, "Two", true),
+                        new AnswerOption(3, "Three", false),
+                        new AnswerOption(4, "Four", false)
+                )
+        );
     }
 }
