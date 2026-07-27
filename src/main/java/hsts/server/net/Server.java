@@ -1,5 +1,6 @@
 package hsts.server.net;
 
+import hsts.common.CreateExamPayload;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
@@ -99,7 +100,9 @@ public class Server extends AbstractServer {
                 case LOGOUT -> Response.error("Connection context required");
 
                 case GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION,
-                     ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY ->
+                     ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY,
+                     LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM,
+                     LIST_PENDING_EXAMS, GET_PENDING_EXAM ->
                         Response.error("Authentication context required");
             };
 
@@ -201,6 +204,54 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case LIST_MY_EXAMS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Exams loaded successfully",
+                            examManagementService.getMyExams(authenticatedUserId)
+                    );
+                }
+
+                case GET_MY_EXAM -> {
+                    int examId = requireExamIdPayload(request);
+                    yield Response.success(
+                            "Exam loaded successfully",
+                            examManagementService.getExamForTeacher(
+                                    authenticatedUserId,
+                                    examId
+                            )
+                    );
+                }
+
+                case CREATE_EXAM -> {
+                    if (!(request.getPayload() instanceof CreateExamPayload payload)) {
+                        throw new IllegalArgumentException("Exam creation data is missing");
+                    }
+                    yield Response.success(
+                            "Exam created successfully",
+                            examManagementService.createExam(authenticatedUserId, payload)
+                    );
+                }
+
+                case LIST_PENDING_EXAMS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Pending exams loaded successfully",
+                            examManagementService.getPendingExams(authenticatedUserId)
+                    );
+                }
+
+                case GET_PENDING_EXAM -> {
+                    int examId = requireExamIdPayload(request);
+                    yield Response.success(
+                            "Pending exam loaded successfully",
+                            examManagementService.getExamForCoordinator(
+                                    authenticatedUserId,
+                                    examId
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
@@ -255,6 +306,19 @@ public class Server extends AbstractServer {
             throw new IllegalArgumentException("Question ID is required");
         }
         return payload;
+    }
+
+    private int requireExamIdPayload(Request request) {
+        if (!(request.getPayload() instanceof Integer examId)) {
+            throw new IllegalArgumentException("Exam ID is required");
+        }
+        return examId;
+    }
+
+    private void requireEmptyPayload(Request request) {
+        if (request.getPayload() != null) {
+            throw new IllegalArgumentException("Request payload must be empty");
+        }
     }
 
     private boolean isAuthenticated(ConnectionToClient client) {
