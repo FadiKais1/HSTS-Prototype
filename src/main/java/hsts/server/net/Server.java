@@ -1,7 +1,9 @@
 package hsts.server.net;
 
+import hsts.common.CreateQuestionPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
+import hsts.common.QuestionFilterPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
@@ -94,10 +96,53 @@ public class Server extends AbstractServer {
                 }
 
                 case LOGOUT -> Response.error("Connection context required");
+
+                case GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION ->
+                        Response.error("Authentication context required");
             };
 
         } catch (Exception e) {
             return Response.error(e.getMessage());
+        }
+    }
+
+    Response handleAuthenticatedRequest(Request request, int authenticatedUserId) {
+        try {
+            return switch (request.getType()) {
+                case GET_MY_COURSES -> Response.success(
+                        "Courses loaded successfully",
+                        examManagementService.getCoursesForTeacher(authenticatedUserId)
+                );
+
+                case LIST_QUESTIONS -> {
+                    Object requestPayload = request.getPayload();
+                    if (requestPayload != null
+                            && !(requestPayload instanceof QuestionFilterPayload)) {
+                        throw new IllegalArgumentException("Question filter data is invalid");
+                    }
+                    yield Response.success(
+                            "Questions loaded successfully",
+                            examManagementService.getQuestions(
+                                    authenticatedUserId,
+                                    (QuestionFilterPayload) requestPayload
+                            )
+                    );
+                }
+
+                case CREATE_QUESTION -> {
+                    if (!(request.getPayload() instanceof CreateQuestionPayload payload)) {
+                        throw new IllegalArgumentException("Question data is required");
+                    }
+                    yield Response.success(
+                            "Question created successfully",
+                            examManagementService.createQuestion(authenticatedUserId, payload)
+                    );
+                }
+
+                default -> handleRequest(request);
+            };
+        } catch (Exception exception) {
+            return Response.error(exception.getMessage());
         }
     }
 
@@ -132,7 +177,8 @@ public class Server extends AbstractServer {
         } else if (request.getType() == RequestType.LOGOUT) {
             response = logout(client);
         } else {
-            response = handleRequest(request);
+            int authenticatedUserId = (Integer) client.getInfo(AUTHENTICATED_USER_ID);
+            response = handleAuthenticatedRequest(request, authenticatedUserId);
         }
         sendResponse(client, response);
     }

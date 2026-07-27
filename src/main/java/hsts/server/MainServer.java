@@ -3,6 +3,7 @@ package hsts.server;
 import hsts.server.control.AuthService;
 import hsts.server.control.ExamManagementService;
 import hsts.server.net.Server;
+import hsts.server.repository.CourseRepository;
 import hsts.server.repository.DatabaseInitializer;
 import hsts.server.repository.QuestionRepository;
 import hsts.server.repository.UserRepository;
@@ -15,9 +16,13 @@ public class MainServer {
 
         int port = PORT;
         QuestionRepository questionRepository = new QuestionRepository();
-        ExamManagementService examManagementService =
-                new ExamManagementService(questionRepository);
+        CourseRepository courseRepository = new CourseRepository();
         UserRepository userRepository = new UserRepository();
+        ExamManagementService examManagementService = new ExamManagementService(
+                questionRepository,
+                courseRepository,
+                userRepository
+        );
         AuthService authService = new AuthService(userRepository);
 
         Server server = new Server(port, examManagementService, authService);

@@ -7,5 +7,8 @@ public enum RequestType implements Serializable {
     GET_QUESTION_BY_ID,
     UPDATE_QUESTION,
     LOGIN,
-    LOGOUT
+    LOGOUT,
+    GET_MY_COURSES,
+    LIST_QUESTIONS,
+    CREATE_QUESTION
 }
