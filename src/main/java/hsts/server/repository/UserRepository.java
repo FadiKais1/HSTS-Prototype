@@ -2,6 +2,10 @@ package hsts.server.repository;
 
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.Coordinator;
+import hsts.server.entity.Principal;
+import hsts.server.entity.Student;
+import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 
 import java.sql.Connection;
@@ -93,13 +97,26 @@ public class UserRepository {
     }
 
     private User mapRowToUser(ResultSet resultSet) throws SQLException {
-        return new User(
-                resultSet.getInt("user_id"),
-                resultSet.getString("full_name"),
-                resultSet.getString("email"),
-                resultSet.getString("password_hash"),
-                UserRole.valueOf(resultSet.getString("role")),
-                UserStatus.valueOf(resultSet.getString("status"))
-        );
+        int userId = resultSet.getInt("user_id");
+        String fullName = resultSet.getString("full_name");
+        String email = resultSet.getString("email");
+        String passwordHash = resultSet.getString("password_hash");
+        UserRole role = UserRole.valueOf(resultSet.getString("role"));
+        UserStatus status = UserStatus.valueOf(resultSet.getString("status"));
+
+        return switch (role) {
+            case STUDENT -> Student.rehydrate(
+                    userId, fullName, email, passwordHash, status
+            );
+            case TEACHER -> Teacher.rehydrate(
+                    userId, fullName, email, passwordHash, status
+            );
+            case COORDINATOR -> Coordinator.rehydrate(
+                    userId, fullName, email, passwordHash, status
+            );
+            case PRINCIPAL -> Principal.rehydrate(
+                    userId, fullName, email, passwordHash, status
+            );
+        };
     }
 }

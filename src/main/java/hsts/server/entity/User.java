@@ -4,6 +4,7 @@ import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
 
 import java.util.List;
+import java.util.Objects;
 
 public class User {
     private int userId;
@@ -18,16 +19,27 @@ public class User {
 
     // COMPATIBILITY-ONLY: Required by existing skeleton subclasses.
     protected User() {
+        this.notifications = List.of();
     }
 
     public User(int userId, String fullName, String email, String passwordHash,
                 UserRole role, UserStatus status) {
+        this(userId, fullName, email, passwordHash, role, status, List.of());
+    }
+
+    protected User(int userId, String fullName, String email, String passwordHash,
+                   UserRole role, UserStatus status,
+                   List<Notification> notifications) {
         this.userId = userId;
         this.fullName = fullName;
         this.email = email;
         this.passwordHash = passwordHash;
         this.role = role;
         this.status = status;
+        this.notifications = immutableRelationshipCopy(
+                notifications,
+                "Notifications are required"
+        );
     }
 
     public int getUserId() {
@@ -54,11 +66,20 @@ public class User {
         return status;
     }
 
+    public List<Notification> getNotifications() {
+        return notifications;
+    }
+
     public void updateProfile(String fullName, String email) {
-        throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
+        throw new UnsupportedOperationException("User profile data is externally managed");
     }
 
     public boolean isActive() {
         return status == UserStatus.ACTIVE;
+    }
+
+    protected static <T> List<T> immutableRelationshipCopy(List<T> values,
+                                                            String nullMessage) {
+        return List.copyOf(Objects.requireNonNull(values, nullMessage));
     }
 }

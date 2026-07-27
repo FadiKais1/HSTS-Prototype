@@ -16,7 +16,11 @@ import hsts.common.type.UserStatus;
 import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Exam;
 import hsts.server.entity.ExamQuestion;
+import hsts.server.entity.Coordinator;
+import hsts.server.entity.Principal;
 import hsts.server.entity.Question;
+import hsts.server.entity.Student;
+import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.ExamRepository;
@@ -537,14 +541,21 @@ public class ExamManagementExamTest {
     }
 
     private static User user(int userId, UserRole role, UserStatus status) {
-        return new User(
-                userId,
-                "Development User",
-                "user" + userId + "@hsts.local",
-                "stored-hash",
-                role,
-                status
-        );
+        String email = "user" + userId + "@hsts.local";
+        return switch (role) {
+            case STUDENT -> Student.rehydrate(
+                    userId, "Development User", email, "stored-hash", status
+            );
+            case TEACHER -> Teacher.rehydrate(
+                    userId, "Development User", email, "stored-hash", status
+            );
+            case COORDINATOR -> Coordinator.rehydrate(
+                    userId, "Development User", email, "stored-hash", status
+            );
+            case PRINCIPAL -> Principal.rehydrate(
+                    userId, "Development User", email, "stored-hash", status
+            );
+        };
     }
 
     private static CreateExamPayload validPayload() {

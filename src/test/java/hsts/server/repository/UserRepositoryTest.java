@@ -2,6 +2,10 @@ package hsts.server.repository;
 
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.Coordinator;
+import hsts.server.entity.Principal;
+import hsts.server.entity.Student;
+import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 import org.junit.Test;
 
@@ -23,6 +27,44 @@ import static org.junit.Assert.assertTrue;
 
 public class UserRepositoryTest {
     @Test
+    public void everyDatabaseRoleMapsToItsDiagramSubtypeWithExactBaseFields() {
+        Map<UserRole, Class<? extends User>> expectedTypes = new LinkedHashMap<>();
+        expectedTypes.put(UserRole.STUDENT, Student.class);
+        expectedTypes.put(UserRole.TEACHER, Teacher.class);
+        expectedTypes.put(UserRole.COORDINATOR, Coordinator.class);
+        expectedTypes.put(UserRole.PRINCIPAL, Principal.class);
+
+        int userId = 2000;
+        for (Map.Entry<UserRole, Class<? extends User>> expected : expectedTypes.entrySet()) {
+            userId++;
+            RecordingDatabaseController databaseController =
+                    new RecordingDatabaseController(userRow(
+                            userId,
+                            expected.getKey().name(),
+                            userId % 2 == 0 ? "ACTIVE" : "BLOCKED"
+                    ));
+
+            User user = new UserRepository(databaseController)
+                    .findById(userId)
+                    .orElseThrow();
+
+            assertEquals(expected.getValue(), user.getClass());
+            if (expected.getKey() == UserRole.COORDINATOR) {
+                assertTrue(user instanceof Teacher);
+            }
+            assertEquals(userId, user.getUserId());
+            assertEquals("Development User " + userId, user.getFullName());
+            assertEquals("user" + userId + "@hsts.local", user.getEmail());
+            assertEquals("stored-password-hash-" + userId, user.getPasswordHash());
+            assertEquals(expected.getKey(), user.getRole());
+            assertEquals(
+                    userId % 2 == 0 ? UserStatus.ACTIVE : UserStatus.BLOCKED,
+                    user.getStatus()
+            );
+        }
+    }
+
+    @Test
     public void findByEmailNormalizesLookupAndMapsEveryUserAttribute() {
         RecordingDatabaseController databaseController =
                 new RecordingDatabaseController(userRow());
@@ -32,6 +74,7 @@ public class UserRepositoryTest {
 
         assertTrue(result.isPresent());
         User user = result.get();
+        assertEquals(Student.class, user.getClass());
         assertEquals(1001, user.getUserId());
         assertEquals("Development Student", user.getFullName());
         assertEquals("student@hsts.local", user.getEmail());
@@ -119,14 +162,60 @@ public class UserRepositoryTest {
         assertSame(sqlException, exception.getCause());
     }
 
+    @Test
+    public void invalidAndNullRolePreserveEnumParsingFailures() {
+        Map<String, Object> invalidRole = userRow(3001, "UNKNOWN", "ACTIVE");
+        IllegalArgumentException invalid = assertThrows(
+                IllegalArgumentException.class,
+                () -> new UserRepository(new RecordingDatabaseController(invalidRole))
+                        .findById(3001)
+        );
+        assertEquals("No enum constant hsts.common.type.UserRole.UNKNOWN",
+                invalid.getMessage());
+
+        Map<String, Object> nullRole = userRow(3002, null, "ACTIVE");
+        assertThrows(
+                NullPointerException.class,
+                () -> new UserRepository(new RecordingDatabaseController(nullRole))
+                        .findById(3002)
+        );
+    }
+
+    @Test
+    public void invalidAndNullStatusPreserveEnumParsingFailures() {
+        Map<String, Object> invalidStatus = userRow(3003, "STUDENT", "UNKNOWN");
+        IllegalArgumentException invalid = assertThrows(
+                IllegalArgumentException.class,
+                () -> new UserRepository(new RecordingDatabaseController(invalidStatus))
+                        .findByEmail("user3003@hsts.local")
+        );
+        assertEquals("No enum constant hsts.common.type.UserStatus.UNKNOWN",
+                invalid.getMessage());
+
+        Map<String, Object> nullStatus = userRow(3004, "STUDENT", null);
+        assertThrows(
+                NullPointerException.class,
+                () -> new UserRepository(new RecordingDatabaseController(nullStatus))
+                        .findByEmail("user3004@hsts.local")
+        );
+    }
+
     private static Map<String, Object> userRow() {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("user_id", 1001);
+        Map<String, Object> row = userRow(1001, "STUDENT", "ACTIVE");
         row.put("full_name", "Development Student");
         row.put("email", "student@hsts.local");
         row.put("password_hash", "stored-password-hash");
-        row.put("role", "STUDENT");
-        row.put("status", "ACTIVE");
+        return row;
+    }
+
+    private static Map<String, Object> userRow(int userId, String role, String status) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("user_id", userId);
+        row.put("full_name", "Development User " + userId);
+        row.put("email", "user" + userId + "@hsts.local");
+        row.put("password_hash", "stored-password-hash-" + userId);
+        row.put("role", role);
+        row.put("status", status);
         return row;
     }
 

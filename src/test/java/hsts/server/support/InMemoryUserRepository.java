@@ -1,6 +1,10 @@
 package hsts.server.support;
 
 import hsts.common.type.UserStatus;
+import hsts.server.entity.Coordinator;
+import hsts.server.entity.Principal;
+import hsts.server.entity.Student;
+import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 import hsts.server.repository.UserRepository;
 
@@ -50,15 +54,39 @@ public class InMemoryUserRepository extends UserRepository {
             return false;
         }
 
-        users.put(userId, new User(
-                existingUser.getUserId(),
-                existingUser.getFullName(),
-                existingUser.getEmail(),
-                existingUser.getPasswordHash(),
-                existingUser.getRole(),
-                status
-        ));
+        users.put(userId, copyWithStatus(existingUser, status));
         return true;
+    }
+
+    private User copyWithStatus(User user, UserStatus status) {
+        if (user instanceof Coordinator) {
+            return Coordinator.rehydrate(
+                    user.getUserId(), user.getFullName(), user.getEmail(),
+                    user.getPasswordHash(), status
+            );
+        }
+        if (user instanceof Teacher) {
+            return Teacher.rehydrate(
+                    user.getUserId(), user.getFullName(), user.getEmail(),
+                    user.getPasswordHash(), status
+            );
+        }
+        if (user instanceof Student) {
+            return Student.rehydrate(
+                    user.getUserId(), user.getFullName(), user.getEmail(),
+                    user.getPasswordHash(), status
+            );
+        }
+        if (user instanceof Principal) {
+            return Principal.rehydrate(
+                    user.getUserId(), user.getFullName(), user.getEmail(),
+                    user.getPasswordHash(), status
+            );
+        }
+        return new User(
+                user.getUserId(), user.getFullName(), user.getEmail(),
+                user.getPasswordHash(), user.getRole(), status
+        );
     }
 
     public User getUser(int userId) {

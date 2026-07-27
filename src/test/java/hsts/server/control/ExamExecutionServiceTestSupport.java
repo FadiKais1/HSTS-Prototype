@@ -12,6 +12,10 @@ import hsts.common.type.ExecutionStatus;
 import hsts.common.type.SubmissionStatus;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.Coordinator;
+import hsts.server.entity.Principal;
+import hsts.server.entity.Student;
+import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 import hsts.server.repository.ExamExecutionRepository;
 import hsts.server.repository.ExamSubmissionRepository;
@@ -54,14 +58,16 @@ final class ExamExecutionServiceTestSupport {
     }
 
     static User user(int id, UserRole role, UserStatus status) {
-        return new User(
-                id,
-                "Development User " + id,
-                "user" + id + "@hsts.local",
-                "stored-hash",
-                role,
-                status
-        );
+        String fullName = "Development User " + id;
+        String email = "user" + id + "@hsts.local";
+        return switch (role) {
+            case STUDENT -> Student.rehydrate(id, fullName, email, "stored-hash", status);
+            case TEACHER -> Teacher.rehydrate(id, fullName, email, "stored-hash", status);
+            case COORDINATOR -> Coordinator.rehydrate(
+                    id, fullName, email, "stored-hash", status
+            );
+            case PRINCIPAL -> Principal.rehydrate(id, fullName, email, "stored-hash", status);
+        };
     }
 
     static ExamExecutionSummaryDTO summary(int executionId, int creatorId) {

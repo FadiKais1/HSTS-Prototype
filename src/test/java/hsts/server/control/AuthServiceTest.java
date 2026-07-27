@@ -4,11 +4,16 @@ import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
+import hsts.server.entity.Coordinator;
+import hsts.server.entity.Principal;
+import hsts.server.entity.Student;
+import hsts.server.entity.Teacher;
 import hsts.server.entity.User;
 import hsts.server.security.PasswordHasher;
 import hsts.server.support.InMemoryUserRepository;
 import org.junit.Test;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -26,6 +31,40 @@ import static org.junit.Assert.assertTrue;
 public class AuthServiceTest {
     private static final String PASSWORD = "valid-test-password";
     private static final String PASSWORD_HASH = PasswordHasher.hash(PASSWORD);
+
+    @Test
+    public void loginPreservesAllFourHierarchySubtypesAndLoginResultFields() {
+        List<User> users = List.of(
+                Student.rehydrate(1101, "Student", "student1101@hsts.local",
+                        PASSWORD_HASH, UserStatus.ACTIVE),
+                Teacher.rehydrate(1102, "Teacher", "teacher1102@hsts.local",
+                        PASSWORD_HASH, UserStatus.ACTIVE),
+                Coordinator.rehydrate(1103, "Coordinator", "coordinator1103@hsts.local",
+                        PASSWORD_HASH, UserStatus.ACTIVE),
+                Principal.rehydrate(1104, "Principal", "principal1104@hsts.local",
+                        PASSWORD_HASH, UserStatus.ACTIVE)
+        );
+
+        for (User expected : users) {
+            AuthService resultService = serviceWithUser(expected);
+            LoginResult result = resultService.login(new LoginRequestPayload(
+                    expected.getEmail(),
+                    PASSWORD
+            ));
+
+            assertEquals(expected.getUserId(), result.getUserId());
+            assertEquals(expected.getFullName(), result.getFullName());
+            assertEquals(expected.getRole(), result.getRole());
+            assertEquals(expected.getStatus(), result.getStatus());
+            assertNotNull(result.getSessionId());
+
+            User authenticated = serviceWithUser(expected).login(
+                    expected.getEmail(),
+                    PASSWORD
+            );
+            assertEquals(expected.getClass(), authenticated.getClass());
+        }
+    }
 
     @Test
     public void correctLoginReturnsCompleteLoginResult() {
@@ -197,6 +236,7 @@ public class AuthServiceTest {
         service.blockLogin(1001);
 
         assertEquals(UserStatus.BLOCKED, repository.getUser(1001).getStatus());
+        assertEquals(Student.class, repository.getUser(1001).getClass());
         assertEquals(1, repository.getStatusUpdateCalls());
         assertFalse(service.isSessionActive(1001, loginResult.getSessionId()));
 
@@ -288,12 +328,11 @@ public class AuthServiceTest {
     }
 
     private static User user(UserStatus status) {
-        return new User(
+        return Student.rehydrate(
                 1001,
                 "Development Student",
                 "student@hsts.local",
                 PASSWORD_HASH,
-                UserRole.STUDENT,
                 status
         );
     }
