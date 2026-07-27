@@ -3,7 +3,11 @@ package hsts.server.repository;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionVersionDTO;
 import hsts.common.UpdateQuestionPayload;
+import hsts.common.type.DifficultyLevel;
+import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
 import hsts.server.entity.Question;
 
 import java.sql.Connection;
@@ -140,6 +144,66 @@ public class QuestionRepository {
             WHERE question_id = ? AND current_version_no = ?
             """;
 
+    private static final String LOCK_ASSIGNED_QUESTION_STATUS_SQL = """
+            SELECT q.status
+            FROM questions q
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+             AND tc.teacher_user_id = ?
+            WHERE q.question_id = ?
+            FOR UPDATE
+            """;
+
+    private static final String UPDATE_ASSIGNED_QUESTION_STATUS_SQL = """
+            UPDATE questions q
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+            SET q.status = ?
+            WHERE q.question_id = ?
+              AND tc.teacher_user_id = ?
+            """;
+
+    private static final String QUESTION_VERSION_HISTORY_SQL = """
+            SELECT qv.question_id,
+                   qv.version_no,
+                   q.course_id,
+                   qv.content,
+                   qv.topic,
+                   qv.question_type,
+                   qv.difficulty,
+                   qv.illustration_path,
+                   option_1.option_text AS answer_option_1,
+                   option_2.option_text AS answer_option_2,
+                   option_3.option_text AS answer_option_3,
+                   option_4.option_text AS answer_option_4,
+                   qv.correct_option_number,
+                   qv.created_by_user_id,
+                   qv.created_at
+            FROM question_versions qv
+            JOIN questions q ON q.question_id = qv.question_id
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+             AND tc.teacher_user_id = ?
+            JOIN answer_options option_1
+              ON option_1.question_id = qv.question_id
+             AND option_1.version_no = qv.version_no
+             AND option_1.option_number = 1
+            JOIN answer_options option_2
+              ON option_2.question_id = qv.question_id
+             AND option_2.version_no = qv.version_no
+             AND option_2.option_number = 2
+            JOIN answer_options option_3
+              ON option_3.question_id = qv.question_id
+             AND option_3.version_no = qv.version_no
+             AND option_3.option_number = 3
+            JOIN answer_options option_4
+              ON option_4.question_id = qv.question_id
+             AND option_4.version_no = qv.version_no
+             AND option_4.option_number = 4
+            WHERE qv.question_id = ?
+            ORDER BY qv.version_no DESC
+            """;
+
     public QuestionRepository() {
         this(new DatabaseController());
     }
@@ -250,6 +314,89 @@ public class QuestionRepository {
 
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to update question version", e);
+        }
+    }
+
+    public boolean updateStatusForTeacher(int authenticatedUserId, int questionId,
+                                          QuestionStatus status) {
+        if (status == null) {
+            throw new IllegalArgumentException("Question status is required");
+        }
+
+        try (Connection connection = databaseController.getConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            boolean transactionStarted = false;
+            Throwable transactionFailure = null;
+
+            try {
+                connection.setAutoCommit(false);
+                transactionStarted = true;
+
+                Optional<String> currentStatus = lockAssignedQuestionStatus(
+                        connection,
+                        authenticatedUserId,
+                        questionId
+                );
+                if (currentStatus.isEmpty()) {
+                    connection.commit();
+                    return false;
+                }
+                if (status.name().equals(currentStatus.get())) {
+                    connection.commit();
+                    return true;
+                }
+
+                boolean updated = updateAssignedQuestionStatus(
+                        connection,
+                        authenticatedUserId,
+                        questionId,
+                        status
+                );
+                connection.commit();
+                return updated;
+
+            } catch (SQLException e) {
+                transactionFailure = e;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, e);
+                }
+                throw new IllegalStateException("Failed to update question status", e);
+            } catch (RuntimeException e) {
+                transactionFailure = e;
+                if (transactionStarted) {
+                    rollbackWithSuppressed(connection, e);
+                }
+                throw e;
+            } finally {
+                restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to update question status", e);
+        }
+    }
+
+    public List<QuestionVersionDTO> findVersionsForTeacher(int authenticatedUserId,
+                                                            int questionId) {
+        List<QuestionVersionDTO> versions = new ArrayList<>();
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     QUESTION_VERSION_HISTORY_SQL
+             )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, questionId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    versions.add(mapRowToQuestionVersionDto(resultSet));
+                }
+            }
+
+            return versions;
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load question versions", e);
         }
     }
 
@@ -662,6 +809,59 @@ public class QuestionRepository {
                 throw new IllegalStateException("Question version conflict");
             }
         }
+    }
+
+    private Optional<String> lockAssignedQuestionStatus(Connection connection,
+                                                        int authenticatedUserId,
+                                                        int questionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                LOCK_ASSIGNED_QUESTION_STATUS_SQL
+        )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, questionId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.ofNullable(resultSet.getString("status"));
+            }
+        }
+    }
+
+    private boolean updateAssignedQuestionStatus(Connection connection,
+                                                 int authenticatedUserId,
+                                                 int questionId,
+                                                 QuestionStatus status) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_ASSIGNED_QUESTION_STATUS_SQL
+        )) {
+            statement.setString(1, status.name());
+            statement.setInt(2, questionId);
+            statement.setInt(3, authenticatedUserId);
+            return statement.executeUpdate() == 1;
+        }
+    }
+
+    private QuestionVersionDTO mapRowToQuestionVersionDto(ResultSet resultSet)
+            throws SQLException {
+        return new QuestionVersionDTO(
+                resultSet.getInt("question_id"),
+                resultSet.getInt("version_no"),
+                resultSet.getInt("course_id"),
+                resultSet.getString("content"),
+                resultSet.getString("topic"),
+                QuestionType.valueOf(resultSet.getString("question_type")),
+                DifficultyLevel.valueOf(resultSet.getString("difficulty")),
+                resultSet.getString("illustration_path"),
+                resultSet.getString("answer_option_1"),
+                resultSet.getString("answer_option_2"),
+                resultSet.getString("answer_option_3"),
+                resultSet.getString("answer_option_4"),
+                resultSet.getInt("correct_option_number"),
+                resultSet.getInt("created_by_user_id"),
+                resultSet.getObject("created_at", LocalDateTime.class)
+        );
     }
 
     private void rollbackWithSuppressed(Connection connection, Throwable originalFailure) {
