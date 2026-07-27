@@ -2,13 +2,16 @@ package hsts.server.net;
 
 import hsts.common.CreateExamPayload;
 import hsts.common.CreateQuestionPayload;
+import hsts.common.ExamVersionPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionIdPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
+import hsts.common.RejectExamPayload;
 import hsts.common.Response;
+import hsts.common.UpdateExamPayload;
 import hsts.common.UpdateQuestionPayload;
 import hsts.ocsf.AbstractServer;
 import hsts.ocsf.ConnectionToClient;
@@ -102,7 +105,8 @@ public class Server extends AbstractServer {
                 case GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION,
                      ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY,
                      LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM,
-                     LIST_PENDING_EXAMS, GET_PENDING_EXAM ->
+                     LIST_PENDING_EXAMS, GET_PENDING_EXAM, UPDATE_EXAM,
+                     SUBMIT_EXAM_FOR_APPROVAL, APPROVE_EXAM, REJECT_EXAM ->
                         Response.error("Authentication context required");
             };
 
@@ -249,6 +253,49 @@ public class Server extends AbstractServer {
                                     authenticatedUserId,
                                     examId
                             )
+                    );
+                }
+
+                case UPDATE_EXAM -> {
+                    if (!(request.getPayload() instanceof UpdateExamPayload payload)) {
+                        throw new IllegalArgumentException("Exam update data is missing");
+                    }
+                    yield Response.success(
+                            "Exam updated successfully",
+                            examManagementService.updateExam(authenticatedUserId, payload)
+                    );
+                }
+
+                case SUBMIT_EXAM_FOR_APPROVAL -> {
+                    if (!(request.getPayload() instanceof ExamVersionPayload payload)) {
+                        throw new IllegalArgumentException("Exam version data is missing");
+                    }
+                    yield Response.success(
+                            "Exam submitted for approval",
+                            examManagementService.submitExamForApproval(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case APPROVE_EXAM -> {
+                    if (!(request.getPayload() instanceof ExamVersionPayload payload)) {
+                        throw new IllegalArgumentException("Exam version data is missing");
+                    }
+                    yield Response.success(
+                            "Exam approved successfully",
+                            examManagementService.approveExam(authenticatedUserId, payload)
+                    );
+                }
+
+                case REJECT_EXAM -> {
+                    if (!(request.getPayload() instanceof RejectExamPayload payload)) {
+                        throw new IllegalArgumentException("Exam rejection data is missing");
+                    }
+                    yield Response.success(
+                            "Exam rejected successfully",
+                            examManagementService.rejectExam(authenticatedUserId, payload)
                     );
                 }
 

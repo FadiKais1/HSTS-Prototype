@@ -18,5 +18,9 @@ public enum RequestType implements Serializable {
     GET_MY_EXAM,
     CREATE_EXAM,
     LIST_PENDING_EXAMS,
-    GET_PENDING_EXAM
+    GET_PENDING_EXAM,
+    UPDATE_EXAM,
+    SUBMIT_EXAM_FOR_APPROVAL,
+    APPROVE_EXAM,
+    REJECT_EXAM
 }
