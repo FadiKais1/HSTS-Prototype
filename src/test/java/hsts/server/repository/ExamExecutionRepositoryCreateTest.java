@@ -1,6 +1,5 @@
 package hsts.server.repository;
 
-import hsts.common.ScheduleExamExecutionPayload;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -22,16 +21,18 @@ public class ExamExecutionRepositoryCreateTest {
     private static final String INSERT_MARKER = "INSERT INTO exam_executions (";
 
     @Test
-    public void nullPayloadFailsBeforeObtainingConnection() {
+    public void missingScheduleTimesFailBeforeObtainingConnection() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamExecutionRepository(database).create(1002, null)
+                () -> new ExamExecutionRepository(database).schedule(
+                        1002, 40, 3, null, closingTime()
+                )
         );
 
-        assertEquals("Execution scheduling data is missing", thrown.getMessage());
+        assertEquals("Opening and closing times are required", thrown.getMessage());
         assertEquals(0, database.connectionRequests);
     }
 
@@ -44,8 +45,9 @@ public class ExamExecutionRepositoryCreateTest {
         ExamRepositoryJdbcTestSupport.StatementPlan insert = database.plan(INSERT_MARKER)
                 .updateResults(1).generatedKey(901);
 
-        int executionId = new ExamExecutionRepository(database, () -> "A7Z9")
-                .create(1002, payload());
+        int executionId = schedule(
+                new ExamExecutionRepository(database, () -> "A7Z9"), 1002
+        );
 
         assertEquals(901, executionId);
         assertEquals(1, database.connectionRequests);
@@ -70,8 +72,8 @@ public class ExamExecutionRepositoryCreateTest {
         assertTrue(values.get(1).toString().matches("[A-Z0-9]{4}"));
         assertEquals(40, values.get(2));
         assertEquals(3, values.get(3));
-        assertEquals(payload().getOpeningTime(), values.get(4));
-        assertEquals(payload().getClosingTime(), values.get(5));
+        assertEquals(openingTime(), values.get(4));
+        assertEquals(closingTime(), values.get(5));
         assertEquals(75, values.get(6));
         assertEquals("SCHEDULED", values.get(7));
         assertEquals(1002, values.get(8));
@@ -96,7 +98,7 @@ public class ExamExecutionRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamExecutionRepository(database).create(1002, payload())
+                () -> schedule(new ExamExecutionRepository(database), 1002)
         );
 
         assertEquals("Exam version is not approved or accessible", thrown.getMessage());
@@ -125,8 +127,9 @@ public class ExamExecutionRepositoryCreateTest {
         codes.add("AAAA");
         codes.add("B2B2");
 
-        int result = new ExamExecutionRepository(database, codes::removeFirst)
-                .create(1003, payload());
+        int result = schedule(
+                new ExamExecutionRepository(database, codes::removeFirst), 1003
+        );
 
         assertEquals(902, result);
         assertEquals(1, database.connectionRequests);
@@ -151,10 +154,10 @@ public class ExamExecutionRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamExecutionRepository(database, () -> {
+                () -> schedule(new ExamExecutionRepository(database, () -> {
                     generatedCodes.incrementAndGet();
                     return "C3C3";
-                }).create(1002, payload())
+                }), 1002)
         );
 
         assertEquals("Failed to schedule exam execution", thrown.getMessage());
@@ -183,10 +186,10 @@ public class ExamExecutionRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamExecutionRepository(database, () -> {
+                () -> schedule(new ExamExecutionRepository(database, () -> {
                     generatedCodes.incrementAndGet();
                     return "F6F6";
-                }).create(1002, payload())
+                }), 1002)
         );
 
         assertEquals("Failed to schedule exam execution", thrown.getMessage());
@@ -217,8 +220,9 @@ public class ExamExecutionRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamExecutionRepository(database, () -> "D4D4")
-                        .create(1002, payload())
+                () -> schedule(
+                        new ExamExecutionRepository(database, () -> "D4D4"), 1002
+                )
         );
 
         assertSame(original, thrown.getCause());
@@ -241,8 +245,9 @@ public class ExamExecutionRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamExecutionRepository(database, () -> "E5E5")
-                        .create(1002, payload())
+                () -> schedule(
+                        new ExamExecutionRepository(database, () -> "E5E5"), 1002
+                )
         );
 
         assertEquals("Failed to schedule exam execution", thrown.getMessage());
@@ -252,13 +257,17 @@ public class ExamExecutionRepositoryCreateTest {
         assertFalse(database.autoCommit);
     }
 
-    private static ScheduleExamExecutionPayload payload() {
-        return new ScheduleExamExecutionPayload(
-                40,
-                3,
-                LocalDateTime.of(2026, 8, 1, 9, 0),
-                LocalDateTime.of(2026, 8, 1, 12, 0)
-        );
+    private static int schedule(ExamExecutionRepository repository, int userId) {
+        return repository.schedule(userId, 40, 3, openingTime(), closingTime())
+                .getExecutionId();
+    }
+
+    private static LocalDateTime openingTime() {
+        return LocalDateTime.of(2026, 8, 1, 9, 0);
+    }
+
+    private static LocalDateTime closingTime() {
+        return LocalDateTime.of(2026, 8, 1, 12, 0);
     }
 
     private static String normalized(String sql) {

@@ -162,7 +162,6 @@ public class ExamExecutionServiceManagerTest {
                 ),
                 "Execution opening time cannot be in the past");
 
-        assertEquals(0, fixture.executions.createCalls);
         assertEquals(0, fixture.executions.scheduleCalls);
         assertEquals(0, fixture.executions.detailCalls);
     }
@@ -184,7 +183,6 @@ public class ExamExecutionServiceManagerTest {
         assertEquals(3, fixture.executions.lastExamVersionNo);
         assertEquals(NOW, fixture.executions.lastOpeningTime);
         assertEquals(NOW.plusHours(2), fixture.executions.lastClosingTime);
-        assertEquals(0, fixture.executions.createCalls);
         assertEquals(1, fixture.executions.scheduleCalls);
         assertEquals(1, fixture.executions.detailCalls);
         assertEquals(81, fixture.executions.lastExecutionId);
@@ -227,7 +225,6 @@ public class ExamExecutionServiceManagerTest {
                 new ExtendSubmissionTimePayload(501, 10, "  "),
                 "Extension reason is required"
         );
-        assertEquals(0, fixture.submissions.extensionCalls);
 
         assertTrue(fixture.service.extendStudentTime(
                 601,
@@ -243,7 +240,6 @@ public class ExamExecutionServiceManagerTest {
                 fixture.submissions.lastSubmissionEntity.getExtensionReason());
         assertEquals(1, fixture.submissions.managerEntityCalls);
         assertEquals(1, fixture.submissions.persistExtensionCalls);
-        assertEquals(0, fixture.submissions.extensionCalls);
 
         fixture.submissions.extensionResult = false;
         IllegalArgumentException missing = assertThrows(

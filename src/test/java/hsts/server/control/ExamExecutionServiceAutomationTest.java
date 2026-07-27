@@ -48,8 +48,6 @@ public class ExamExecutionServiceAutomationTest {
         assertEquals(2, service.autoSubmitExpired());
         assertEquals(1, submissions.expiredEntityCalls);
         assertEquals(2, submissions.persistAutomaticCalls);
-        assertEquals(0, submissions.expiredCalls);
-        assertEquals(0, submissions.autoCalls);
         assertEquals(NOW, submissions.lastTime);
         assertEquals(2, grading.calls);
         assertEquals(NOW, grading.lastTime);

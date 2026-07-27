@@ -1,8 +1,6 @@
 package hsts.server.repository;
 
 import hsts.common.ExamAttemptDTO;
-import hsts.common.ExtendSubmissionTimePayload;
-import hsts.common.SaveExamAnswerPayload;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.type.ExecutionStatus;
@@ -270,46 +268,6 @@ public class ExamSubmissionRepository {
                 updated_at = VALUES(updated_at)
             """;
 
-    private static final String LOCK_GRADING_ROWS_SQL = """
-            SELECT selection.question_id,
-                   selection.question_version_no,
-                   selection.score,
-                   version.correct_option_number,
-                   answer.answer_id,
-                   answer.selected_option_number
-            FROM exam_version_questions selection
-            JOIN question_versions version
-              ON version.question_id = selection.question_id
-             AND version.version_no = selection.question_version_no
-            LEFT JOIN student_answers answer
-              ON answer.submission_id = ?
-             AND answer.question_id = selection.question_id
-             AND answer.question_version_no = selection.question_version_no
-            WHERE selection.exam_id = ?
-              AND selection.exam_version_no = ?
-            ORDER BY selection.order_number ASC
-            FOR UPDATE
-            """;
-
-    private static final String UPDATE_GRADED_ANSWER_SQL = """
-            UPDATE student_answers
-            SET is_correct = ?,
-                score_received = ?
-            WHERE answer_id = ?
-              AND submission_id = ?
-            """;
-
-    private static final String FINALIZE_SUBMISSION_SQL = """
-            UPDATE exam_submissions
-            SET submitted_at = ?,
-                status = ?,
-                actual_duration_minutes = ?,
-                automatic_score = ?,
-                final_score = ?
-            WHERE submission_id = ?
-              AND status = 'IN_PROGRESS'
-            """;
-
     private static final String INCREMENT_SUBMITTED_COUNT_SQL = """
             UPDATE exam_executions
             SET submitted_count = submitted_count + 1
@@ -320,18 +278,6 @@ public class ExamSubmissionRepository {
             UPDATE exam_executions
             SET auto_submitted_count = auto_submitted_count + 1
             WHERE execution_id = ?
-            """;
-
-    private static final String EXPIRED_SUBMISSIONS_SQL = """
-            SELECT submission_id
-            FROM exam_submissions
-            WHERE status = 'IN_PROGRESS'
-              AND TIMESTAMPADD(
-                    MINUTE,
-                    allocated_duration_minutes + extra_minutes,
-                    started_at
-                  ) <= ?
-            ORDER BY submission_id ASC
             """;
 
     private static final String LOCK_MANAGER_EXTENSION_SQL = """
@@ -353,14 +299,6 @@ public class ExamSubmissionRepository {
              AND assignment.course_id = exam.course_id
             WHERE submission.submission_id = ?
             FOR UPDATE
-            """;
-
-    private static final String UPDATE_EXTENSION_SQL = """
-            UPDATE exam_submissions
-            SET extra_minutes = extra_minutes + ?,
-                extension_reason = ?
-            WHERE submission_id = ?
-              AND status = 'IN_PROGRESS'
             """;
 
     private static final String INSERT_EXTENSION_AUDIT_SQL = """
@@ -520,22 +458,6 @@ public class ExamSubmissionRepository {
 
     public ExamSubmissionRepository(DatabaseController databaseController) {
         this.databaseController = databaseController;
-    }
-
-    public ExamAttemptDTO startOrResume(int authenticatedStudentId, int executionId,
-                                        LocalDateTime now) {
-        return startOrResumeInternal(
-                authenticatedStudentId,
-                executionId,
-                null,
-                now,
-                (connection, submission) -> loadAttempt(
-                        connection,
-                        authenticatedStudentId,
-                        submission,
-                        now
-                )
-        );
     }
 
     public ExamSubmission startOrResume(int authenticatedStudentUserId,
@@ -715,31 +637,6 @@ public class ExamSubmissionRepository {
         }
     }
 
-    public StudentAnswerDTO saveAnswer(int authenticatedStudentId,
-                                       SaveExamAnswerPayload payload,
-                                       LocalDateTime now) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Answer data is missing");
-        }
-        AnswerCommand command = new AnswerCommand(
-                payload.getSubmissionId(),
-                payload.getQuestionId(),
-                null,
-                payload.getSelectedOptionNumber()
-        );
-        return saveAnswerInternal(
-                authenticatedStudentId,
-                command,
-                null,
-                now,
-                (connection, submission) -> new StudentAnswerDTO(
-                        command.questionId,
-                        command.selectedOptionNumber,
-                        now
-                )
-        );
-    }
-
     public ExamSubmission persistAnswer(
             int authenticatedStudentUserId,
             ExamSubmission submission,
@@ -843,31 +740,6 @@ public class ExamSubmissionRepository {
         });
     }
 
-    public ExamAttemptDTO submit(int authenticatedStudentId, int submissionId,
-                                 LocalDateTime now) {
-        return executeInTransaction("Failed to submit exam attempt", connection -> {
-            SubmissionRecord submission = lockStudentSubmission(
-                    connection,
-                    authenticatedStudentId,
-                    submissionId
-            ).orElseThrow(() -> new IllegalArgumentException(
-                    "Exam attempt not found: " + submissionId
-            ));
-            requireInProgress(submission);
-
-            SubmissionStatus finalStatus = now.isAfter(deadline(submission))
-                    ? SubmissionStatus.AUTO_SUBMITTED
-                    : SubmissionStatus.SUBMITTED;
-            SubmissionRecord finalized = finalizeSubmission(
-                    connection,
-                    submission,
-                    finalStatus,
-                    now
-            );
-            return loadAttempt(connection, authenticatedStudentId, finalized, now);
-        });
-    }
-
     public ExamSubmission persistStudentSubmission(
             int authenticatedStudentUserId,
             ExamSubmission submission
@@ -897,47 +769,6 @@ public class ExamSubmissionRepository {
         );
     }
 
-    public List<Integer> findExpiredSubmissionIds(LocalDateTime now) {
-        List<Integer> submissionIds = new ArrayList<>();
-        try (Connection connection = databaseController.getConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     EXPIRED_SUBMISSIONS_SQL
-             )) {
-            statement.setObject(1, now);
-
-            try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    submissionIds.add(resultSet.getInt("submission_id"));
-                }
-            }
-            return submissionIds;
-        } catch (SQLException exception) {
-            throw new IllegalStateException("Failed to load expired submissions", exception);
-        }
-    }
-
-    public boolean autoSubmit(int submissionId, LocalDateTime now) {
-        return executeInTransaction("Failed to auto-submit exam attempt", connection -> {
-            Optional<SubmissionRecord> locked = lockInternalSubmission(
-                    connection,
-                    submissionId
-            );
-            if (locked.isEmpty()
-                    || locked.get().status != SubmissionStatus.IN_PROGRESS
-                    || deadline(locked.get()).isAfter(now)) {
-                return false;
-            }
-
-            finalizeSubmission(
-                    connection,
-                    locked.get(),
-                    SubmissionStatus.AUTO_SUBMITTED,
-                    now
-            );
-            return true;
-        });
-    }
-
     public ExamSubmission persistAutomaticSubmission(
             ExamSubmission submission
     ) {
@@ -962,36 +793,6 @@ public class ExamSubmissionRepository {
                     return loadInternalEntity(connection, submission.getSubmissionId());
                 }
         );
-    }
-
-    public boolean extendTime(int authenticatedManagerId,
-                              ExtendSubmissionTimePayload payload,
-                              LocalDateTime now) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Time extension data is missing");
-        }
-        if (payload.getExtraMinutes() <= 0) {
-            throw new IllegalArgumentException("Extra minutes must be positive");
-        }
-
-        return executeInTransaction("Failed to extend submission time", connection -> {
-            Optional<ExtensionTarget> target = lockExtensionTarget(
-                    connection,
-                    authenticatedManagerId,
-                    payload.getSubmissionId()
-            );
-            if (target.isEmpty()
-                    || target.get().status != SubmissionStatus.IN_PROGRESS) {
-                return false;
-            }
-            if (!now.isBefore(target.get().deadline())) {
-                throw new IllegalStateException("Exam time has expired");
-            }
-
-            updateExtension(connection, payload);
-            insertExtensionAudit(connection, authenticatedManagerId, payload, now);
-            return true;
-        });
     }
 
     public ExamSubmission persistExtension(
@@ -1608,95 +1409,6 @@ public class ExamSubmissionRepository {
         }
     }
 
-    private SubmissionRecord finalizeSubmission(Connection connection,
-                                                  SubmissionRecord submission,
-                                                  SubmissionStatus finalStatus,
-                                                  LocalDateTime now)
-            throws SQLException {
-        BigDecimal automaticScore = gradeSavedAnswers(connection, submission);
-        int actualDurationMinutes = Math.toIntExact(Math.max(
-                0L,
-                Duration.between(submission.startedAt, now).toMinutes()
-        ));
-        updateFinalSubmission(
-                connection,
-                submission,
-                finalStatus,
-                now,
-                actualDurationMinutes,
-                automaticScore
-        );
-        incrementFinalizationCounter(
-                connection,
-                submission.execution.executionId,
-                finalStatus
-        );
-        return submission.withStatus(finalStatus);
-    }
-
-    private BigDecimal gradeSavedAnswers(Connection connection,
-                                          SubmissionRecord submission)
-            throws SQLException {
-        BigDecimal total = BigDecimal.ZERO;
-        try (PreparedStatement select = connection.prepareStatement(
-                LOCK_GRADING_ROWS_SQL
-        ); PreparedStatement update = connection.prepareStatement(
-                UPDATE_GRADED_ANSWER_SQL
-        )) {
-            select.setInt(1, submission.submissionId);
-            select.setInt(2, submission.execution.examId);
-            select.setInt(3, submission.execution.examVersionNo);
-
-            try (ResultSet resultSet = select.executeQuery()) {
-                while (resultSet.next()) {
-                    Integer answerId = resultSet.getObject("answer_id", Integer.class);
-                    if (answerId == null) {
-                        continue;
-                    }
-                    boolean correct = resultSet.getInt("selected_option_number")
-                            == resultSet.getInt("correct_option_number");
-                    BigDecimal received = correct
-                            ? resultSet.getBigDecimal("score")
-                            : BigDecimal.ZERO;
-                    if (correct) {
-                        total = total.add(received);
-                    }
-
-                    update.setBoolean(1, correct);
-                    update.setBigDecimal(2, received);
-                    update.setInt(3, answerId);
-                    update.setInt(4, submission.submissionId);
-                    if (update.executeUpdate() != 1) {
-                        throw new SQLException("Graded answer update failed");
-                    }
-                }
-            }
-        }
-        return total;
-    }
-
-    private void updateFinalSubmission(Connection connection,
-                                       SubmissionRecord submission,
-                                       SubmissionStatus finalStatus,
-                                       LocalDateTime now,
-                                       int actualDurationMinutes,
-                                       BigDecimal automaticScore)
-            throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                FINALIZE_SUBMISSION_SQL
-        )) {
-            statement.setObject(1, now);
-            statement.setString(2, finalStatus.name());
-            statement.setInt(3, actualDurationMinutes);
-            statement.setBigDecimal(4, automaticScore);
-            statement.setBigDecimal(5, automaticScore);
-            statement.setInt(6, submission.submissionId);
-            if (statement.executeUpdate() != 1) {
-                throw new IllegalStateException("Exam attempt already submitted");
-            }
-        }
-    }
-
     private void incrementFinalizationCounter(Connection connection, int executionId,
                                               SubmissionStatus finalStatus)
             throws SQLException {
@@ -1733,34 +1445,6 @@ public class ExamSubmissionRepository {
                 ));
             }
         }
-    }
-
-    private void updateExtension(Connection connection,
-                                 ExtendSubmissionTimePayload payload)
-            throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                UPDATE_EXTENSION_SQL
-        )) {
-            statement.setInt(1, payload.getExtraMinutes());
-            statement.setString(2, payload.getReason());
-            statement.setInt(3, payload.getSubmissionId());
-            if (statement.executeUpdate() != 1) {
-                throw new SQLException("Submission extension update failed");
-            }
-        }
-    }
-
-    private void insertExtensionAudit(Connection connection, int authenticatedManagerId,
-                                      ExtendSubmissionTimePayload payload,
-                                      LocalDateTime now) throws SQLException {
-        insertExtensionAudit(
-                connection,
-                authenticatedManagerId,
-                payload.getSubmissionId(),
-                payload.getExtraMinutes(),
-                payload.getReason(),
-                now
-        );
     }
 
     private void insertExtensionAudit(Connection connection, int authenticatedManagerId,
@@ -2150,17 +1834,6 @@ public class ExamSubmissionRepository {
             this.extraMinutes = extraMinutes;
         }
 
-        private SubmissionRecord withStatus(SubmissionStatus newStatus) {
-            return new SubmissionRecord(
-                    submissionId,
-                    execution,
-                    studentUserId,
-                    startedAt,
-                    newStatus,
-                    allocatedDurationMinutes,
-                    extraMinutes
-            );
-        }
     }
 
     private static final class ExtensionTarget {

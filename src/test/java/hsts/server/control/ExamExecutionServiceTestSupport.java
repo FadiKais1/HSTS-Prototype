@@ -3,9 +3,6 @@ package hsts.server.control;
 import hsts.common.ExamAttemptDTO;
 import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
-import hsts.common.ExtendSubmissionTimePayload;
-import hsts.common.SaveExamAnswerPayload;
-import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.type.ExecutionStatus;
@@ -343,7 +340,6 @@ final class ExamExecutionServiceTestSupport {
 
     static final class RecordingExecutionRepository extends ExamExecutionRepository {
         int createdId = 81;
-        int createCalls;
         int scheduleCalls;
         int listCalls;
         int detailCalls;
@@ -354,7 +350,6 @@ final class ExamExecutionServiceTestSupport {
         int lastExecutionId;
         int lastStudentId;
         String lastCode;
-        ScheduleExamExecutionPayload lastSchedulePayload;
         int lastExamId;
         int lastExamVersionNo;
         LocalDateTime lastOpeningTime;
@@ -364,15 +359,6 @@ final class ExamExecutionServiceTestSupport {
         ExamExecutionPreviewDTO preview;
         ExamExecution executionEntity;
         RuntimeException failure;
-
-        @Override
-        public int create(int authenticatedManagerId, ScheduleExamExecutionPayload payload) {
-            createCalls++;
-            failIfConfigured();
-            lastManagerId = authenticatedManagerId;
-            lastSchedulePayload = payload;
-            return createdId;
-        }
 
         @Override
         public ExamExecution schedule(int authenticatedUserId, int examId,
@@ -455,7 +441,7 @@ final class ExamExecutionServiceTestSupport {
         }
 
         int totalCalls() {
-            return createCalls + scheduleCalls + listCalls + detailCalls
+            return scheduleCalls + listCalls + detailCalls
                     + codeCalls + entityCodeCalls + entityStudentCalls;
         }
 
@@ -478,32 +464,21 @@ final class ExamExecutionServiceTestSupport {
         ExamAttemptDTO attempt = ExamExecutionServiceTestSupport.attempt(
                 SubmissionStatus.IN_PROGRESS
         );
-        StudentAnswerDTO answer = new StudentAnswerDTO(17, 2, NOW);
-        List<Integer> expiredIds = new ArrayList<>();
         List<ExamSubmission> expiredEntities = new ArrayList<>();
-        final Map<Integer, Boolean> autoResults = new LinkedHashMap<>();
         int startCalls;
-        int legacyStartCalls;
         int activeCalls;
         int activeEntityCalls;
         int studentEntityCalls;
         int managerEntityCalls;
-        int saveCalls;
         int persistAnswerCalls;
-        int submitCalls;
-        int expiredCalls;
-        int autoCalls;
         int expiredEntityCalls;
         int persistStudentCalls;
         int persistAutomaticCalls;
-        int extensionCalls;
         int persistExtensionCalls;
         int lastStudentId;
         int lastManagerId;
         int lastExecutionId;
         int lastSubmissionId;
-        SaveExamAnswerPayload lastAnswerPayload;
-        ExtendSubmissionTimePayload lastExtensionPayload;
         ExamExecution lastExecutionEntity;
         ExamSubmission lastSubmissionEntity;
         ExamSubmission lastPersistedStudentSubmission;
@@ -512,23 +487,11 @@ final class ExamExecutionServiceTestSupport {
         int lastAddedMinutes;
         String lastReason;
         LocalDateTime lastTime;
-        final List<LocalDateTime> autoTimes = new ArrayList<>();
         boolean activePresent = true;
         boolean extensionResult = true;
         RuntimeException failure;
         RuntimeException persistStudentFailure;
         RuntimeException persistAutomaticFailure;
-
-        @Override
-        public ExamAttemptDTO startOrResume(int authenticatedStudentId, int executionId,
-                                            LocalDateTime now) {
-            legacyStartCalls++;
-            failIfConfigured();
-            lastStudentId = authenticatedStudentId;
-            lastExecutionId = executionId;
-            lastTime = now;
-            return attempt;
-        }
 
         @Override
         public ExamSubmission startOrResume(int authenticatedStudentUserId,
@@ -606,18 +569,6 @@ final class ExamExecutionServiceTestSupport {
         }
 
         @Override
-        public StudentAnswerDTO saveAnswer(int authenticatedStudentId,
-                                           SaveExamAnswerPayload payload,
-                                           LocalDateTime now) {
-            saveCalls++;
-            failIfConfigured();
-            lastStudentId = authenticatedStudentId;
-            lastAnswerPayload = payload;
-            lastTime = now;
-            return answer;
-        }
-
-        @Override
         public ExamSubmission persistAnswer(
                 int authenticatedStudentUserId,
                 ExamSubmission submission,
@@ -631,34 +582,6 @@ final class ExamExecutionServiceTestSupport {
             lastAnswerEntity = answer;
             lastTime = currentTime;
             return submission;
-        }
-
-        @Override
-        public ExamAttemptDTO submit(int authenticatedStudentId, int submissionId,
-                                     LocalDateTime now) {
-            submitCalls++;
-            failIfConfigured();
-            lastStudentId = authenticatedStudentId;
-            lastSubmissionId = submissionId;
-            lastTime = now;
-            return attempt;
-        }
-
-        @Override
-        public List<Integer> findExpiredSubmissionIds(LocalDateTime now) {
-            expiredCalls++;
-            failIfConfigured();
-            lastTime = now;
-            return expiredIds;
-        }
-
-        @Override
-        public boolean autoSubmit(int submissionId, LocalDateTime now) {
-            autoCalls++;
-            failIfConfigured();
-            lastSubmissionId = submissionId;
-            autoTimes.add(now);
-            return autoResults.getOrDefault(submissionId, false);
         }
 
         @Override
@@ -702,18 +625,6 @@ final class ExamExecutionServiceTestSupport {
         }
 
         @Override
-        public boolean extendTime(int authenticatedManagerId,
-                                  ExtendSubmissionTimePayload payload,
-                                  LocalDateTime now) {
-            extensionCalls++;
-            failIfConfigured();
-            lastManagerId = authenticatedManagerId;
-            lastExtensionPayload = payload;
-            lastTime = now;
-            return extensionResult;
-        }
-
-        @Override
         public ExamSubmission persistExtension(
                 int authenticatedManagerUserId,
                 ExamSubmission submission,
@@ -732,11 +643,11 @@ final class ExamExecutionServiceTestSupport {
         }
 
         int totalCalls() {
-            return startCalls + legacyStartCalls + activeCalls + activeEntityCalls
-                    + studentEntityCalls + managerEntityCalls + saveCalls
-                    + persistAnswerCalls + submitCalls + expiredCalls + autoCalls
+            return startCalls + activeCalls + activeEntityCalls
+                    + studentEntityCalls + managerEntityCalls
+                    + persistAnswerCalls
                     + expiredEntityCalls + persistStudentCalls
-                    + persistAutomaticCalls + extensionCalls + persistExtensionCalls;
+                    + persistAutomaticCalls + persistExtensionCalls;
         }
 
         private void failIfConfigured() {

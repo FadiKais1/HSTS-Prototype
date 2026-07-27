@@ -176,7 +176,6 @@ public class ExamExecutionServiceStudentTest {
         assertTrue(!mismatch.getMessage().contains(secretConfirmation));
         assertEquals(secretConfirmation, fixture.profiles.lastConfirmation);
         assertEquals(0, fixture.submissions.startCalls);
-        assertEquals(0, fixture.submissions.legacyStartCalls);
 
         fixture.profiles.matches = true;
         ExamAttemptDTO expected = attempt(SubmissionStatus.IN_PROGRESS);
@@ -191,7 +190,6 @@ public class ExamExecutionServiceStudentTest {
         assertEquals(NOW, fixture.submissions.lastTime);
         assertEquals(2, fixture.executions.entityStudentCalls);
         assertEquals(1, fixture.submissions.startCalls);
-        assertEquals(0, fixture.submissions.legacyStartCalls);
         assertEquals(1, fixture.submissions.activeCalls);
     }
 
@@ -219,7 +217,6 @@ public class ExamExecutionServiceStudentTest {
         assertEquals(NOW, fixture.submissions.lastTime);
         assertEquals(2, fixture.submissions.activeEntityCalls);
         assertEquals(1, fixture.submissions.persistAnswerCalls);
-        assertEquals(0, fixture.submissions.saveCalls);
         assertEquals(17, fixture.submissions.lastAnswerEntity.getQuestionId());
         assertEquals(4, fixture.submissions.lastAnswerEntity.getQuestionVersionNo());
         assertEquals(4, fixture.submissions.lastAnswerEntity.getSelectedOptionNumber());
@@ -249,7 +246,6 @@ public class ExamExecutionServiceStudentTest {
         assertEquals(NOW, fixture.submissions.lastTime);
         assertEquals(1, fixture.submissions.studentEntityCalls);
         assertEquals(1, fixture.submissions.persistStudentCalls);
-        assertEquals(0, fixture.submissions.submitCalls);
         assertEquals(1, fixture.grading.calls);
         assertSame(fixture.exams.exact, fixture.grading.lastExam);
         assertEquals(NOW, fixture.grading.lastTime);
@@ -310,7 +306,6 @@ public class ExamExecutionServiceStudentTest {
         assertEquals("Exam version does not match the submission", missingExam.getMessage());
         assertEquals(0, missingExamFixture.grading.calls);
         assertEquals(0, missingExamFixture.submissions.persistStudentCalls);
-        assertEquals(0, missingExamFixture.submissions.submitCalls);
 
         Fixture gradingFixture = studentFixture(1272);
         RuntimeException gradingFailure = new IllegalStateException("grading failure");
@@ -322,7 +317,6 @@ public class ExamExecutionServiceStudentTest {
                 )
         ));
         assertEquals(0, gradingFixture.submissions.persistStudentCalls);
-        assertEquals(0, gradingFixture.submissions.submitCalls);
 
         Fixture persistenceFixture = studentFixture(1273);
         RuntimeException persistenceFailure =
@@ -336,7 +330,6 @@ public class ExamExecutionServiceStudentTest {
         ));
         assertEquals(1, persistenceFixture.grading.calls);
         assertEquals(1, persistenceFixture.submissions.persistStudentCalls);
-        assertEquals(0, persistenceFixture.submissions.submitCalls);
     }
 
     @Test
@@ -369,7 +362,6 @@ public class ExamExecutionServiceStudentTest {
         );
         assertEquals("Invalid answer option", invalidOption.getMessage());
         assertEquals(0, fixture.submissions.persistAnswerCalls);
-        assertEquals(0, fixture.submissions.saveCalls);
     }
 
     @Test

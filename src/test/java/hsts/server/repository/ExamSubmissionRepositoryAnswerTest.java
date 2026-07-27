@@ -1,7 +1,7 @@
 package hsts.server.repository;
 
-import hsts.common.SaveExamAnswerPayload;
-import hsts.common.StudentAnswerDTO;
+import hsts.server.entity.ExamSubmission;
+import hsts.server.entity.StudentAnswer;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -11,7 +11,11 @@ import java.util.Map;
 import static hsts.server.repository.ExamRepositoryJdbcTestSupport.row;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.STARTED;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.completeSubmissionRow;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.entityAnswerRow;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.entityLockRow;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.inProgressSubmission;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.normalized;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.planInternalEntity;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
@@ -25,20 +29,18 @@ public class ExamSubmissionRepositoryAnswerTest {
     private static final String ANSWER_MARKER = "INSERT INTO student_answers (";
 
     @Test
-    public void nullPayloadFailsBeforeConnection() {
+    public void nullEntityFailsBeforeConnection() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
 
-        IllegalArgumentException thrown = assertThrows(
-                IllegalArgumentException.class,
-                () -> new ExamSubmissionRepository(database).saveAnswer(
-                        1001,
-                        null,
-                        STARTED
+        NullPointerException thrown = assertThrows(
+                NullPointerException.class,
+                () -> new ExamSubmissionRepository(database).persistAnswer(
+                        1001, null, null, STARTED
                 )
         );
 
-        assertEquals("Answer data is missing", thrown.getMessage());
+        assertEquals("Exam submission is required", thrown.getMessage());
         assertEquals(0, database.connectionRequests);
     }
 
@@ -46,26 +48,31 @@ public class ExamSubmissionRepositoryAnswerTest {
     public void upsertsImmutableVersionAnswerWithoutCalculatingCorrectness() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController(false);
-        ExamRepositoryJdbcTestSupport.StatementPlan submission = database.plan(
+        ExamRepositoryJdbcTestSupport.StatementPlan submissionLock = database.plan(
                 SUBMISSION_MARKER
-        ).queryRows(completeSubmissionRow("IN_PROGRESS", STARTED, 75, 5));
+        ).queryRows(entityLockRow("IN_PROGRESS", STARTED, 75, 5));
         ExamRepositoryJdbcTestSupport.StatementPlan question = database.plan(
                 QUESTION_MARKER
         ).queryRows(row("question_version_no", 4));
         ExamRepositoryJdbcTestSupport.StatementPlan answer = database.plan(ANSWER_MARKER)
                 .updateResults(2);
         LocalDateTime now = STARTED.plusMinutes(20);
-        SaveExamAnswerPayload payload = new SaveExamAnswerPayload(501, 17, 3);
+        planInternalEntity(
+                database, "IN_PROGRESS", STARTED, 5,
+                entityAnswerRow(901, 17, 4, 1, 3, now)
+        );
+        ExamSubmission submission = inProgressSubmission(STARTED, 5);
+        StudentAnswer selected = StudentAnswer.select(501, 17, 4, 3, now);
 
-        StudentAnswerDTO result = new ExamSubmissionRepository(database)
-                .saveAnswer(1001, payload, now);
+        ExamSubmission result = new ExamSubmissionRepository(database)
+                .persistAnswer(1001, submission, selected, now);
 
-        assertEquals(17, result.getQuestionId());
-        assertEquals(Integer.valueOf(3), result.getSelectedOptionNumber());
-        assertEquals(now, result.getUpdatedAt());
-        assertEquals(Map.of(1, 501, 2, 1001), submission.queryExecutions.get(0));
+        assertEquals(17, result.getStudentAnswers().get(0).getQuestionId());
+        assertEquals(3, result.getStudentAnswers().get(0).getSelectedOptionNumber());
+        assertEquals(now, result.getStudentAnswers().get(0).getUpdatedAt());
+        assertEquals(Map.of(1, 501, 2, 1001), submissionLock.queryExecutions.get(0));
         assertEquals(Map.of(1, 40, 2, 3, 3, 17), question.queryExecutions.get(0));
-        String submissionSql = normalized(submission.sql);
+        String submissionSql = normalized(submissionLock.sql);
         assertTrue(submissionSql.contains("STUDENT.ROLE = 'STUDENT'"));
         assertTrue(submissionSql.contains("STUDENT.STATUS = 'ACTIVE'"));
         assertTrue(submissionSql.contains("FOR UPDATE"));
@@ -113,15 +120,17 @@ public class ExamSubmissionRepositoryAnswerTest {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         database.plan(SUBMISSION_MARKER).queryRows(
-                completeSubmissionRow("IN_PROGRESS", STARTED, 75, 0)
+                entityLockRow("IN_PROGRESS", STARTED, 75, 0)
         );
         database.plan(QUESTION_MARKER).queryRows();
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamSubmissionRepository(database).saveAnswer(
+                () -> new ExamSubmissionRepository(database).persistAnswer(
                         1001,
-                        new SaveExamAnswerPayload(501, 99, 7),
+                        inProgressSubmission(STARTED, 0),
+                        StudentAnswer.select(501, 99, 7, 4,
+                                STARTED.plusMinutes(1)),
                         STARTED.plusMinutes(1)
                 )
         );
@@ -131,45 +140,23 @@ public class ExamSubmissionRepositoryAnswerTest {
     }
 
     @Test
-    public void invalidOptionUsesExactErrorWithoutWritingAnswer() {
-        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
-                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
-        database.plan(SUBMISSION_MARKER).queryRows(
-                completeSubmissionRow("IN_PROGRESS", STARTED, 75, 0)
-        );
-        database.plan(QUESTION_MARKER).queryRows(row("question_version_no", 4));
-
-        IllegalArgumentException thrown = assertThrows(
-                IllegalArgumentException.class,
-                () -> new ExamSubmissionRepository(database).saveAnswer(
-                        1001,
-                        new SaveExamAnswerPayload(501, 17, 0),
-                        STARTED.plusMinutes(1)
-                )
-        );
-
-        assertEquals("Invalid answer option", thrown.getMessage());
-        assertTrue(database.plans.stream()
-                .allMatch(plan -> plan.updateExecutions.isEmpty()));
-        assertEquals(1, database.rollbackCount);
-    }
-
-    @Test
     public void jdbcFailureWrapsExactlyRollsBackAndPreservesCause() {
         SQLException failure = new SQLException("answer write failed");
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         database.plan(SUBMISSION_MARKER).queryRows(
-                completeSubmissionRow("IN_PROGRESS", STARTED, 75, 0)
+                entityLockRow("IN_PROGRESS", STARTED, 75, 0)
         );
         database.plan(QUESTION_MARKER).queryRows(row("question_version_no", 4));
         database.plan(ANSWER_MARKER).updateFailure(failure);
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamSubmissionRepository(database).saveAnswer(
+                () -> new ExamSubmissionRepository(database).persistAnswer(
                         1001,
-                        new SaveExamAnswerPayload(501, 17, 2),
+                        inProgressSubmission(STARTED, 0),
+                        StudentAnswer.select(501, 17, 4, 2,
+                                STARTED.plusMinutes(1)),
                         STARTED.plusMinutes(1)
                 )
         );
@@ -198,9 +185,10 @@ public class ExamSubmissionRepositoryAnswerTest {
 
         RuntimeException thrown = assertThrows(
                 type,
-                () -> new ExamSubmissionRepository(database).saveAnswer(
+                () -> new ExamSubmissionRepository(database).persistAnswer(
                         1001,
-                        new SaveExamAnswerPayload(501, 17, 2),
+                        inProgressSubmission(STARTED, 0),
+                        StudentAnswer.select(501, 17, 4, 2, now),
                         now
                 )
         );

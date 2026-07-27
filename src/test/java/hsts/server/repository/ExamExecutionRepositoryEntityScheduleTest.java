@@ -81,37 +81,6 @@ public class ExamExecutionRepositoryEntityScheduleTest {
     }
 
     @Test
-    public void entityAndPayloadSchedulingShareParameterAndTransactionBehavior() {
-        ExamRepositoryJdbcTestSupport.FakeDatabaseController entityDatabase =
-                schedulingDatabase(901);
-        ExamRepositoryJdbcTestSupport.FakeDatabaseController payloadDatabase =
-                schedulingDatabase(902);
-
-        new ExamExecutionRepository(entityDatabase, () -> "A7Z9")
-                .schedule(1002, 40, 3, openingTime(), closingTime());
-        new ExamExecutionRepository(payloadDatabase, () -> "A7Z9")
-                .create(1002, new hsts.common.ScheduleExamExecutionPayload(
-                        40, 3, openingTime(), closingTime()
-                ));
-
-        assertEquals(entityDatabase.plans.get(0).queryExecutions,
-                payloadDatabase.plans.get(0).queryExecutions);
-        Map<Integer, Object> entityValues = entityDatabase.plans.get(1)
-                .updateExecutions.get(0);
-        Map<Integer, Object> payloadValues = payloadDatabase.plans.get(1)
-                .updateExecutions.get(0);
-        for (int parameter = 1; parameter <= 8; parameter++) {
-            assertEquals(entityValues.get(parameter), payloadValues.get(parameter));
-        }
-        for (int parameter = 10; parameter <= 15; parameter++) {
-            assertEquals(entityValues.get(parameter), payloadValues.get(parameter));
-        }
-        assertEquals(entityDatabase.events, payloadDatabase.events);
-        assertEquals(1, entityDatabase.commitCount);
-        assertEquals(1, payloadDatabase.commitCount);
-    }
-
-    @Test
     public void entitySchedulingRetriesOnlyNamedCodeCollision() {
         SQLException collision = new SQLException(
                 "Duplicate entry for key 'uq_exam_executions_code'",

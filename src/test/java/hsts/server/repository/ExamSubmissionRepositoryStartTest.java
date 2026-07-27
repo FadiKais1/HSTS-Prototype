@@ -3,6 +3,7 @@ package hsts.server.repository;
 import hsts.common.ExamAttemptDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.type.SubmissionStatus;
+import hsts.server.entity.ExamSubmission;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -14,9 +15,13 @@ import static hsts.server.repository.ExamRepositoryJdbcTestSupport.row;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.CLOSING;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.OPENING;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.STARTED;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.completeSubmissionRow;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.executionRow;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.executionSubmissionRow;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.executionEntity;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.entityAnswerRow;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.normalized;
+import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.planInternalEntity;
 import static hsts.server.repository.ExamSubmissionRepositoryTestSupport.planSafeAttempt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -35,6 +40,7 @@ public class ExamSubmissionRepositoryStartTest {
     public void startsOneStudentScopedAttemptAndMapsOnlyImmutableSafeData() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        LocalDateTime now = STARTED;
         ExamRepositoryJdbcTestSupport.StatementPlan execution = database.plan(
                 EXECUTION_MARKER
         ).queryRows(executionRow("SCHEDULED"));
@@ -44,12 +50,18 @@ public class ExamSubmissionRepositoryStartTest {
         ExamRepositoryJdbcTestSupport.StatementPlan count = database.plan(
                 STARTED_COUNT_MARKER
         ).updateResults(1);
+        planInternalEntity(database, "IN_PROGRESS", now, 0);
+        database.plan("AND submission.status = 'IN_PROGRESS'")
+                .queryRows(completeSubmissionRow("IN_PROGRESS", now, 75, 0));
         ExamSubmissionRepositoryTestSupport.SafeAttemptPlans safe = planSafeAttempt(database);
-        LocalDateTime now = STARTED;
+        ExamSubmissionRepository repository = new ExamSubmissionRepository(database);
 
-        ExamAttemptDTO attempt = new ExamSubmissionRepository(database)
-                .startOrResume(1001, 81, now);
+        ExamSubmission entity = repository.startOrResume(1001, executionEntity(), now);
+        ExamAttemptDTO attempt = repository.findActiveForStudent(1001, 501, now)
+                .orElseThrow();
 
+        assertEquals(501, entity.getSubmissionId());
+        assertEquals(81, entity.getExecutionId());
         assertAttempt(attempt, now, now.plusMinutes(75), 75 * 60L);
         assertEquals(Map.of(1, 1001, 2, 81), execution.queryExecutions.get(0));
         String executionSql = normalized(execution.sql);
@@ -72,7 +84,7 @@ public class ExamSubmissionRepositoryStartTest {
             assertEquals(null, inserted.get(index));
         }
         assertEquals(Map.of(1, 81), count.updateExecutions.get(0));
-        assertEquals(1, database.connectionRequests);
+        assertEquals(2, database.connectionRequests);
         assertEquals(1, database.commitCount);
         assertEquals(0, database.rollbackCount);
         assertTrue(database.autoCommit);
@@ -99,16 +111,19 @@ public class ExamSubmissionRepositoryStartTest {
         database.plan(EXISTING_MARKER).queryRows(
                 executionSubmissionRow("IN_PROGRESS", lateStart, 75, 10)
         );
-        planSafeAttempt(database);
+        planInternalEntity(
+                database, "IN_PROGRESS", lateStart, 10,
+                entityAnswerRow(901, 17, 4, 1, 2, lateStart.plusMinutes(5))
+        );
         LocalDateTime now = CLOSING.plusMinutes(1);
 
-        ExamAttemptDTO attempt = new ExamSubmissionRepository(database)
-                .startOrResume(1001, 81, now);
+        ExamSubmission attempt = new ExamSubmissionRepository(database)
+                .startOrResume(1001, executionEntity(), now);
 
         assertEquals(lateStart, attempt.getStartedAt());
-        assertEquals(lateStart.plusMinutes(85), attempt.getDeadline());
+        assertEquals(lateStart.plusMinutes(85), attempt.getEffectiveDeadline());
         assertEquals(10, attempt.getExtraMinutes());
-        assertEquals(1, attempt.getAnswers().size());
+        assertEquals(1, attempt.getStudentAnswers().size());
         assertTrue(database.plans.stream().allMatch(plan ->
                 plan.updateExecutions.isEmpty()));
         assertEquals(1, database.commitCount);
@@ -145,7 +160,7 @@ public class ExamSubmissionRepositoryStartTest {
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamSubmissionRepository(database)
-                        .startOrResume(1001, 81, STARTED)
+                        .startOrResume(1001, executionEntity(), STARTED)
         );
 
         assertEquals("Execution not available", thrown.getMessage());
@@ -167,10 +182,10 @@ public class ExamSubmissionRepositoryStartTest {
                 .queryRows()
                 .queryRows(executionSubmissionRow("IN_PROGRESS", STARTED, 75, 0));
         database.plan(INSERT_MARKER).updateFailure(collision);
-        planSafeAttempt(database);
+        planInternalEntity(database, "IN_PROGRESS", STARTED, 0);
 
-        ExamAttemptDTO attempt = new ExamSubmissionRepository(database)
-                .startOrResume(1001, 81, STARTED.plusMinutes(1));
+        ExamSubmission attempt = new ExamSubmissionRepository(database)
+                .startOrResume(1001, executionEntity(), STARTED.plusMinutes(1));
 
         assertEquals(501, attempt.getSubmissionId());
         assertEquals(STARTED, attempt.getStartedAt());
@@ -194,7 +209,7 @@ public class ExamSubmissionRepositoryStartTest {
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamSubmissionRepository(database)
-                        .startOrResume(1001, 81, STARTED)
+                        .startOrResume(1001, executionEntity(), STARTED)
         );
 
         assertEquals("Failed to start exam attempt", thrown.getMessage());
@@ -224,7 +239,7 @@ public class ExamSubmissionRepositoryStartTest {
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
                 () -> new ExamSubmissionRepository(database)
-                        .startOrResume(1001, 81, now)
+                        .startOrResume(1001, executionEntity(), now)
         );
 
         assertEquals(message, thrown.getMessage());

@@ -2,7 +2,6 @@ package hsts.server.repository;
 
 import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
-import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.type.ExecutionStatus;
 import hsts.server.entity.ExamExecution;
 
@@ -231,22 +230,6 @@ public class ExamExecutionRepository {
                             Supplier<String> executionCodeGenerator) {
         this.databaseController = databaseController;
         this.executionCodeGenerator = executionCodeGenerator;
-    }
-
-    public int create(int authenticatedManagerId, ScheduleExamExecutionPayload payload) {
-        if (payload == null) {
-            throw new IllegalArgumentException("Execution scheduling data is missing");
-        }
-
-        return persistSchedule(
-                authenticatedManagerId,
-                new SchedulingCommand(
-                        payload.getExamId(),
-                        payload.getExamVersionNo(),
-                        payload.getOpeningTime(),
-                        payload.getClosingTime()
-                )
-        ).getExecutionId();
     }
 
     public ExamExecution schedule(int authenticatedUserId, int examId,
