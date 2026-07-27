@@ -639,7 +639,6 @@ public class ExamSubmission {
             }
             copies.add(answer.copy());
         }
-        copies.sort(Comparator.comparingInt(StudentAnswer::getQuestionId));
         return copies;
     }
 

@@ -199,6 +199,52 @@ public class ExamSubmissionDomainTest {
                         List.of()
                 )
         );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> rehydrate(SubmissionStatus.IN_PROGRESS, null, null, null)
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> rehydrate(
+                        SubmissionStatus.IN_PROGRESS,
+                        null,
+                        null,
+                        new ArrayList<>(java.util.Arrays.asList(first, null))
+                )
+        );
+    }
+
+    @Test
+    public void hydrationPreservesAuthoritativeAnswerOrderDefensively() {
+        StudentAnswer question30 = persistedAnswer(1, 30, 3, 1);
+        StudentAnswer question10 = persistedAnswer(2, 10, 1, 2);
+        StudentAnswer question20 = persistedAnswer(3, 20, 2, 3);
+        List<StudentAnswer> supplied = new ArrayList<>(List.of(
+                question30,
+                question10,
+                question20
+        ));
+
+        ExamSubmission submission = rehydrate(
+                SubmissionStatus.IN_PROGRESS,
+                null,
+                null,
+                supplied
+        );
+        supplied.clear();
+
+        List<StudentAnswer> exposed = submission.getStudentAnswers();
+        assertEquals(
+                List.of(30, 10, 20),
+                exposed.stream().map(StudentAnswer::getQuestionId).toList()
+        );
+        assertThrows(UnsupportedOperationException.class, exposed::clear);
+
+        exposed.get(0).selectOption(4, STARTED.plusMinutes(4));
+        List<StudentAnswer> reread = submission.getStudentAnswers();
+        assertEquals(List.of(30, 10, 20),
+                reread.stream().map(StudentAnswer::getQuestionId).toList());
+        assertEquals(1, reread.get(0).getSelectedOptionNumber());
     }
 
     @Test
@@ -220,6 +266,23 @@ public class ExamSubmissionDomainTest {
 
     private static ExamSubmission submission() {
         return ExamSubmission.start(81, 40, 3, 1001, STARTED, 75);
+    }
+
+    private static StudentAnswer persistedAnswer(int answerId, int questionId,
+                                                  int questionVersionNo,
+                                                  int selectedOption) {
+        return StudentAnswer.rehydrate(
+                answerId,
+                501,
+                questionId,
+                questionVersionNo,
+                selectedOption,
+                null,
+                null,
+                null,
+                STARTED.plusMinutes(1),
+                STARTED.plusMinutes(1)
+        );
     }
 
     private static ExamSubmission rehydrate(
