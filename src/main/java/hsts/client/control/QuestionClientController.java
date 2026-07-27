@@ -1,25 +1,37 @@
 package hsts.client.control;
 
 import hsts.client.net.Client;
+import hsts.common.CourseSummaryDTO;
+import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
+import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionIdPayload;
+import hsts.common.QuestionVersionDTO;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
 import hsts.common.UpdateQuestionPayload;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 public class QuestionClientController {
-    private final Client client;
+    private final Function<Request, Response> requestSender;
 
     public QuestionClientController(Client client) {
-        this.client = client;
+        this(Objects.requireNonNull(client, "client")::sendRequest);
+    }
+
+    QuestionClientController(Function<Request, Response> requestSender) {
+        this.requestSender = Objects.requireNonNull(requestSender, "requestSender");
     }
 
     public CompletableFuture<List<QuestionDTO>> getAllQuestions() {
         return CompletableFuture.supplyAsync(() -> {
-            Response response = client.sendRequest(new Request(RequestType.GET_ALL_QUESTIONS, null));
+            Response response = requestSender.apply(new Request(RequestType.GET_ALL_QUESTIONS, null));
             if (!response.isSuccess()) {
                 throw new IllegalStateException(response.getMessage());
             }
@@ -29,7 +41,7 @@ public class QuestionClientController {
 
     public CompletableFuture<QuestionDTO> getQuestionById(int questionId) {
         return CompletableFuture.supplyAsync(() -> {
-            Response response = client.sendRequest(new Request(RequestType.GET_QUESTION_BY_ID, questionId));
+            Response response = requestSender.apply(new Request(RequestType.GET_QUESTION_BY_ID, questionId));
             if (!response.isSuccess()) {
                 throw new IllegalStateException(response.getMessage());
             }
@@ -40,7 +52,7 @@ public class QuestionClientController {
     public CompletableFuture<QuestionDTO> updateQuestion(int questionId, String content) {
         return CompletableFuture.supplyAsync(() -> {
             UpdateQuestionPayload payload = new UpdateQuestionPayload(questionId, content);
-            Response response = client.sendRequest(new Request(RequestType.UPDATE_QUESTION, payload));
+            Response response = requestSender.apply(new Request(RequestType.UPDATE_QUESTION, payload));
             if (!response.isSuccess()) {
                 throw new IllegalStateException(response.getMessage());
             }
@@ -64,12 +76,122 @@ public class QuestionClientController {
                     question.getCorrectOptionNumber()
             );
 
-            Response response = client.sendRequest(new Request(RequestType.UPDATE_QUESTION, payload));
+            Response response = requestSender.apply(new Request(RequestType.UPDATE_QUESTION, payload));
             if (!response.isSuccess()) {
                 throw new IllegalStateException(response.getMessage());
             }
             return (QuestionDTO) response.getPayload();
         });
+    }
+
+    public CompletableFuture<List<CourseSummaryDTO>> getMyCourses() {
+        return sendRequest(
+                new Request(RequestType.GET_MY_COURSES, null),
+                payload -> requireListPayload(
+                        payload,
+                        CourseSummaryDTO.class,
+                        "Invalid courses response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<List<QuestionDTO>> listQuestions(QuestionFilterPayload filter) {
+        return sendRequest(
+                new Request(RequestType.LIST_QUESTIONS, filter),
+                payload -> requireListPayload(
+                        payload,
+                        QuestionDTO.class,
+                        "Invalid question list response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<QuestionDTO> createQuestion(CreateQuestionPayload payload) {
+        return sendRequest(
+                new Request(RequestType.CREATE_QUESTION, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        QuestionDTO.class,
+                        "Invalid create-question response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<QuestionDTO> activateQuestion(int questionId) {
+        return sendRequest(
+                new Request(
+                        RequestType.ACTIVATE_QUESTION,
+                        new QuestionIdPayload(questionId)
+                ),
+                payload -> requirePayload(
+                        payload,
+                        QuestionDTO.class,
+                        "Invalid activate-question response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<QuestionDTO> deactivateQuestion(int questionId) {
+        return sendRequest(
+                new Request(
+                        RequestType.DEACTIVATE_QUESTION,
+                        new QuestionIdPayload(questionId)
+                ),
+                payload -> requirePayload(
+                        payload,
+                        QuestionDTO.class,
+                        "Invalid deactivate-question response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<List<QuestionVersionDTO>> getQuestionHistory(int questionId) {
+        return sendRequest(
+                new Request(
+                        RequestType.GET_QUESTION_HISTORY,
+                        new QuestionIdPayload(questionId)
+                ),
+                payload -> requireListPayload(
+                        payload,
+                        QuestionVersionDTO.class,
+                        "Invalid question-history response from server"
+                )
+        );
+    }
+
+    private <T> CompletableFuture<T> sendRequest(Request request,
+                                                  Function<Object, T> payloadMapper) {
+        return CompletableFuture.supplyAsync(() -> {
+            Response response = requestSender.apply(request);
+            if (!response.isSuccess()) {
+                throw new IllegalStateException(response.getMessage());
+            }
+            return payloadMapper.apply(response.getPayload());
+        });
+    }
+
+    private <T> T requirePayload(Object payload, Class<T> payloadType,
+                                 String invalidPayloadMessage) {
+        if (!payloadType.isInstance(payload)) {
+            throw new IllegalStateException(invalidPayloadMessage);
+        }
+        return payloadType.cast(payload);
+    }
+
+    private <T> List<T> requireListPayload(Object payload, Class<T> elementType,
+                                           String invalidPayloadMessage) {
+        if (!(payload instanceof List<?> rawList)) {
+            throw new IllegalStateException(invalidPayloadMessage);
+        }
+
+        List<T> typedList = new ArrayList<>(rawList.size());
+        for (Object element : rawList) {
+            if (!elementType.isInstance(element)) {
+                throw new IllegalStateException(invalidPayloadMessage);
+            }
+            typedList.add(elementType.cast(element));
+        }
+        return List.copyOf(typedList);
     }
 
     @SuppressWarnings("unchecked")
