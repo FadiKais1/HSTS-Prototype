@@ -33,7 +33,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> new ExamRepository(database).create(1002, null)
+                () -> new ExamRepository(database).create(1002, (CreateExamPayload) null)
         );
 
         assertEquals("Exam creation data is missing", thrown.getMessage());

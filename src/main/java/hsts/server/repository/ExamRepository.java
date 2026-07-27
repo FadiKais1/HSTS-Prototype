@@ -6,7 +6,14 @@ import hsts.common.ExamQuestionDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.UpdateExamPayload;
+import hsts.common.type.DifficultyLevel;
 import hsts.common.type.ExamStatus;
+import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionType;
+import hsts.server.entity.AnswerOption;
+import hsts.server.entity.Exam;
+import hsts.server.entity.ExamQuestion;
+import hsts.server.entity.Question;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
@@ -18,9 +25,11 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public class ExamRepository {
@@ -118,6 +127,78 @@ public class ExamRepository {
               ON sc.subject_id = s.subject_id
              AND sc.coordinator_user_id = ?
             WHERE e.exam_id = ?
+            """;
+
+    private static final String EXAM_ENTITY_SELECT = """
+            SELECT e.exam_id,
+                   e.exam_code,
+                   e.course_id,
+                   e.created_by_user_id,
+                   e.created_at AS exam_created_at,
+                   e.updated_at AS exam_updated_at,
+                   ev.version_no,
+                   ev.title,
+                   ev.duration_minutes,
+                   ev.teacher_notes,
+                   ev.student_instructions,
+                   ev.total_score,
+                   ev.status,
+                   ev.created_at AS version_created_at,
+                   ev.submitted_at,
+                   ev.reviewed_by_user_id,
+                   ev.reviewed_at,
+                   ev.rejection_reason
+            FROM exams e
+            JOIN courses c ON c.course_id = e.course_id
+            LEFT JOIN exam_versions ev
+              ON ev.exam_id = e.exam_id
+             AND ev.version_no = e.current_version_no
+            """;
+
+    private static final String TEACHER_EXAM_ENTITY_BY_ID_SQL = EXAM_ENTITY_SELECT + """
+            JOIN teacher_courses tc
+              ON tc.course_id = e.course_id
+             AND tc.teacher_user_id = ?
+            WHERE e.exam_id = ?
+              AND e.created_by_user_id = ?
+            """;
+
+    private static final String COORDINATOR_EXAM_ENTITY_BY_ID_SQL = EXAM_ENTITY_SELECT + """
+            JOIN subject_coordinators sc
+              ON sc.subject_id = c.subject_id
+             AND sc.coordinator_user_id = ?
+            WHERE e.exam_id = ?
+            """;
+
+    private static final String EXAM_ENTITY_QUESTION_SNAPSHOTS_SQL = """
+            SELECT evq.question_id,
+                   evq.question_version_no,
+                   evq.order_number,
+                   evq.score,
+                   qv.question_id AS snapshot_question_id,
+                   qv.version_no AS snapshot_version_no,
+                   qv.content,
+                   qv.topic,
+                   qv.question_type,
+                   qv.difficulty,
+                   qv.illustration_path,
+                   qv.correct_option_number,
+                   qv.created_at AS question_version_created_at,
+                   q.status AS question_status,
+                   ao.option_number,
+                   ao.option_text
+            FROM exam_version_questions evq
+            LEFT JOIN question_versions qv
+              ON qv.question_id = evq.question_id
+             AND qv.version_no = evq.question_version_no
+            LEFT JOIN questions q
+              ON q.question_id = evq.question_id
+            LEFT JOIN answer_options ao
+              ON ao.question_id = evq.question_id
+             AND ao.version_no = evq.question_version_no
+            WHERE evq.exam_id = ?
+              AND evq.exam_version_no = ?
+            ORDER BY evq.order_number ASC, ao.option_number ASC
             """;
 
     private static final String EXAM_QUESTION_SNAPSHOTS_SQL = """
@@ -387,203 +468,375 @@ public class ExamRepository {
         }
     }
 
+    public Optional<Exam> findCurrentEntityForTeacher(int authenticatedUserId, int examId) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     TEACHER_EXAM_ENTITY_BY_ID_SQL
+             )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, examId);
+            statement.setInt(3, authenticatedUserId);
+            return loadCurrentExamEntity(connection, statement, examId);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load teacher exam entity", e);
+        }
+    }
+
+    public Optional<Exam> findCurrentEntityForCoordinator(
+            int authenticatedUserId,
+            int examId
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     COORDINATOR_EXAM_ENTITY_BY_ID_SQL
+             )) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setInt(2, examId);
+            return loadCurrentExamEntity(connection, statement, examId);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load coordinator exam entity", e);
+        }
+    }
+
     public int create(int authenticatedUserId, CreateExamPayload payload) {
         if (payload == null) {
             throw new IllegalArgumentException("Exam creation data is missing");
         }
+        return createExam(
+                authenticatedUserId,
+                payload.getCourseId(),
+                examVersionData(payload, LocalDateTime.now())
+        );
+    }
 
-        try (Connection connection = databaseController.getConnection()) {
-            boolean originalAutoCommit = connection.getAutoCommit();
-            boolean transactionStarted = false;
-            Throwable transactionFailure = null;
-
-            try {
-                connection.setAutoCommit(false);
-                transactionStarted = true;
-
-                requireAssignedCourse(connection, authenticatedUserId, payload.getCourseId());
-                for (ExamQuestionSelectionPayload selection : payload.getQuestions()) {
-                    requireAvailableQuestion(
-                            connection,
-                            authenticatedUserId,
-                            payload.getCourseId(),
-                            selection
-                    );
-                }
-
-                BigDecimal totalScore = calculateTotalScore(payload.getQuestions());
-                int examId = insertExamWithUniqueCode(
-                        connection,
-                        authenticatedUserId,
-                        payload.getCourseId()
-                );
-                LocalDateTime createdAt = LocalDateTime.now();
-                insertExamVersion(
-                        connection,
-                        examId,
-                        authenticatedUserId,
-                        payload,
-                        totalScore,
-                        createdAt
-                );
-                insertExamQuestions(connection, examId, payload.getQuestions());
-                updateCurrentVersion(connection, examId);
-                connection.commit();
-                return examId;
-            } catch (SQLException e) {
-                transactionFailure = e;
-                if (transactionStarted) {
-                    rollbackWithSuppressed(connection, e);
-                }
-                throw new IllegalStateException("Failed to create exam", e);
-            } catch (RuntimeException e) {
-                transactionFailure = e;
-                if (transactionStarted) {
-                    rollbackWithSuppressed(connection, e);
-                }
-                throw e;
-            } finally {
-                restoreAutoCommit(connection, originalAutoCommit, transactionFailure);
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to create exam", e);
+    public int create(int authenticatedUserId, Exam exam) {
+        if (exam == null) {
+            throw new IllegalArgumentException("Exam creation data is missing");
         }
+        requireUnsavedDraft(authenticatedUserId, exam);
+        return createExam(
+                authenticatedUserId,
+                exam.getCourseId(),
+                examVersionData(exam)
+        );
     }
 
     public int updateWithNewVersion(int authenticatedUserId, UpdateExamPayload payload) {
         if (payload == null) {
             throw new IllegalArgumentException("Exam update data is missing");
         }
+        return updateExamVersion(
+                authenticatedUserId,
+                payload.getExamId(),
+                payload.getExpectedVersionNo(),
+                0,
+                0,
+                examVersionData(payload, LocalDateTime.now())
+        );
+    }
 
-        return executeInTransaction("Failed to update exam version", connection -> {
-            LockedExam currentExam = lockTeacherCurrentExam(
-                    connection,
-                    authenticatedUserId,
-                    payload.getExamId()
-            ).orElseThrow(() -> new IllegalArgumentException(
-                    "Exam not found: " + payload.getExamId()
-            ));
-
-            requireExpectedVersion(currentExam, payload.getExpectedVersionNo());
-            if (currentExam.status == ExamStatus.PENDING_APPROVAL) {
-                throw new IllegalStateException("Pending exam cannot be edited");
-            }
-
-            for (ExamQuestionSelectionPayload selection : payload.getQuestions()) {
-                requireAvailableQuestion(
-                        connection,
-                        authenticatedUserId,
-                        currentExam.courseId,
-                        selection
-                );
-            }
-
-            int newVersionNo = currentExam.versionNo + 1;
-            BigDecimal totalScore = calculateTotalScore(payload.getQuestions());
-            LocalDateTime createdAt = LocalDateTime.now();
-            insertUpdatedExamVersion(
-                    connection,
-                    authenticatedUserId,
-                    payload,
-                    newVersionNo,
-                    totalScore,
-                    createdAt
-            );
-            insertExamQuestions(
-                    connection,
-                    payload.getExamId(),
-                    newVersionNo,
-                    payload.getQuestions()
-            );
-            updateCurrentVersionAfterEdit(
-                    connection,
-                    payload.getExamId(),
-                    currentExam.versionNo,
-                    newVersionNo
-            );
-            return newVersionNo;
-        });
+    public int updateWithNewVersion(int authenticatedUserId, int examId,
+                                    int expectedVersionNo, Exam exam) {
+        if (exam == null) {
+            throw new IllegalArgumentException("Exam update data is missing");
+        }
+        requirePersistedDraft(authenticatedUserId, examId, expectedVersionNo, exam);
+        return updateExamVersion(
+                authenticatedUserId,
+                examId,
+                expectedVersionNo,
+                exam.getCurrentVersionNo(),
+                exam.getCourseId(),
+                examVersionData(exam)
+        );
     }
 
     public boolean submitForApproval(int authenticatedUserId, int examId,
                                      int expectedVersionNo) {
-        return executeInTransaction("Failed to submit exam for approval", connection -> {
-            Optional<LockedExam> lockedExam = lockTeacherCurrentExam(
-                    connection,
-                    authenticatedUserId,
-                    examId
-            );
-            if (lockedExam.isEmpty()) {
-                return false;
-            }
+        return persistSubmission(
+                authenticatedUserId,
+                examId,
+                expectedVersionNo,
+                0,
+                LocalDateTime.now()
+        );
+    }
 
-            LockedExam currentExam = lockedExam.get();
-            requireExpectedVersion(currentExam, expectedVersionNo);
-            if (currentExam.status != ExamStatus.DRAFT) {
-                throw new IllegalStateException("Exam is not a draft");
-            }
-
-            updateSubmittedVersion(
-                    connection,
-                    examId,
-                    currentExam.versionNo,
-                    LocalDateTime.now()
-            );
-            return true;
-        });
+    public boolean persistSubmissionForApproval(int authenticatedUserId, Exam exam) {
+        requireWorkflowExam(authenticatedUserId, exam, ExamStatus.PENDING_APPROVAL);
+        if (exam.getSubmittedAt() == null) {
+            throw new IllegalArgumentException("Submission timestamp is required");
+        }
+        return persistSubmission(
+                authenticatedUserId,
+                exam.getExamId(),
+                exam.getCurrentVersionNo(),
+                exam.getCourseId(),
+                exam.getSubmittedAt()
+        );
     }
 
     public boolean approve(int authenticatedCoordinatorId, int examId,
                            int expectedVersionNo) {
-        return executeInTransaction("Failed to approve exam", connection -> {
-            Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
-                    connection,
-                    authenticatedCoordinatorId,
-                    examId
-            );
-            if (lockedExam.isEmpty()) {
-                return false;
-            }
+        return persistApproval(
+                authenticatedCoordinatorId,
+                examId,
+                expectedVersionNo,
+                0,
+                LocalDateTime.now()
+        );
+    }
 
-            LockedExam currentExam = lockedExam.get();
-            requireExpectedVersion(currentExam, expectedVersionNo);
-            requirePendingApproval(currentExam);
-            updateApprovedVersion(
-                    connection,
-                    authenticatedCoordinatorId,
-                    examId,
-                    currentExam.versionNo,
-                    LocalDateTime.now()
-            );
-            return true;
-        });
+    public boolean persistApproval(int authenticatedUserId, Exam exam) {
+        requireReviewedWorkflowExam(authenticatedUserId, exam, ExamStatus.APPROVED);
+        return persistApproval(
+                authenticatedUserId,
+                exam.getExamId(),
+                exam.getCurrentVersionNo(),
+                exam.getCourseId(),
+                exam.getReviewedAt()
+        );
     }
 
     public boolean reject(int authenticatedCoordinatorId, int examId,
                           int expectedVersionNo, String reason) {
-        return executeInTransaction("Failed to reject exam", connection -> {
-            Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
-                    connection,
-                    authenticatedCoordinatorId,
-                    examId
-            );
-            if (lockedExam.isEmpty()) {
-                return false;
+        return persistRejection(
+                authenticatedCoordinatorId,
+                examId,
+                expectedVersionNo,
+                0,
+                reason,
+                LocalDateTime.now()
+        );
+    }
+
+    public boolean persistRejection(int authenticatedUserId, Exam exam) {
+        requireReviewedWorkflowExam(authenticatedUserId, exam, ExamStatus.REJECTED);
+        if (exam.getRejectionReason() == null) {
+            throw new IllegalArgumentException("Rejection reason is required");
+        }
+        return persistRejection(
+                authenticatedUserId,
+                exam.getExamId(),
+                exam.getCurrentVersionNo(),
+                exam.getCourseId(),
+                exam.getRejectionReason(),
+                exam.getReviewedAt()
+        );
+    }
+
+    private Optional<Exam> loadCurrentExamEntity(Connection connection,
+                                                  PreparedStatement statement,
+                                                  int requestedExamId)
+            throws SQLException {
+        try (ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                return Optional.empty();
             }
 
-            LockedExam currentExam = lockedExam.get();
-            requireExpectedVersion(currentExam, expectedVersionNo);
-            requirePendingApproval(currentExam);
-            updateRejectedVersion(
+            Object versionValue = resultSet.getObject("version_no");
+            if (versionValue == null) {
+                throw new IllegalArgumentException(
+                        "Current exam version is missing: " + requestedExamId
+                );
+            }
+
+            int hydratedExamId = resultSet.getInt("exam_id");
+            int versionNo = resultSet.getInt("version_no");
+            List<ExamQuestion> questions = loadExamQuestionEntities(
                     connection,
-                    authenticatedCoordinatorId,
-                    examId,
-                    currentExam.versionNo,
-                    reason,
-                    LocalDateTime.now()
+                    hydratedExamId,
+                    versionNo
             );
-            return true;
-        });
+            BigDecimal persistedTotal = resultSet.getBigDecimal("total_score");
+            if (persistedTotal == null) {
+                throw new IllegalArgumentException(
+                        "Exam total score is missing: " + hydratedExamId
+                );
+            }
+
+            LocalDateTime createdAt = requireTimestamp(
+                    resultSet.getObject("exam_created_at", LocalDateTime.class),
+                    "Exam creation timestamp is missing: " + hydratedExamId
+            );
+            LocalDateTime versionCreatedAt = requireTimestamp(
+                    resultSet.getObject("version_created_at", LocalDateTime.class),
+                    "Current exam version timestamp is missing: " + hydratedExamId
+            );
+            LocalDateTime submittedAt = resultSet.getObject(
+                    "submitted_at",
+                    LocalDateTime.class
+            );
+            LocalDateTime reviewedAt = resultSet.getObject(
+                    "reviewed_at",
+                    LocalDateTime.class
+            );
+            LocalDateTime updatedAt = latestTimestamp(
+                    requireTimestamp(
+                            resultSet.getObject("exam_updated_at", LocalDateTime.class),
+                            "Exam update timestamp is missing: " + hydratedExamId
+                    ),
+                    versionCreatedAt,
+                    submittedAt,
+                    reviewedAt
+            );
+
+            Exam exam = Exam.rehydrate(
+                    hydratedExamId,
+                    resultSet.getString("exam_code"),
+                    resultSet.getInt("course_id"),
+                    resultSet.getInt("created_by_user_id"),
+                    versionNo,
+                    resultSet.getString("title"),
+                    resultSet.getInt("duration_minutes"),
+                    resultSet.getString("teacher_notes"),
+                    resultSet.getString("student_instructions"),
+                    parsePersistedEnum(
+                            resultSet.getString("status"),
+                            ExamStatus.class,
+                            "Exam status",
+                            hydratedExamId
+                    ),
+                    createdAt,
+                    updatedAt,
+                    submittedAt,
+                    resultSet.getObject("reviewed_by_user_id", Integer.class),
+                    reviewedAt,
+                    resultSet.getString("rejection_reason"),
+                    questions
+            );
+            if (exam.getTotalScoreValue().compareTo(persistedTotal) != 0) {
+                throw new IllegalArgumentException(
+                        "Exam total score does not match selections: " + hydratedExamId
+                );
+            }
+            return Optional.of(exam);
+        }
+    }
+
+    private List<ExamQuestion> loadExamQuestionEntities(Connection connection, int examId,
+                                                         int versionNo)
+            throws SQLException {
+        List<ExamQuestion> questions = new ArrayList<>();
+        Set<Integer> questionIds = new HashSet<>();
+        Set<Integer> orderNumbers = new HashSet<>();
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                EXAM_ENTITY_QUESTION_SNAPSHOTS_SQL
+        )) {
+            statement.setInt(1, examId);
+            statement.setInt(2, versionNo);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                ExamQuestionSnapshotBuilder builder = null;
+                while (resultSet.next()) {
+                    int orderNumber = resultSet.getInt("order_number");
+                    int questionId = resultSet.getInt("question_id");
+                    int questionVersionNo = resultSet.getInt("question_version_no");
+
+                    if (builder == null || builder.orderNumber != orderNumber) {
+                        if (builder != null) {
+                            questions.add(builder.build());
+                        }
+                        if (!orderNumbers.add(orderNumber)) {
+                            throw new IllegalArgumentException(
+                                    "Duplicate exam question order: " + orderNumber
+                            );
+                        }
+                        if (!questionIds.add(questionId)) {
+                            throw new IllegalArgumentException(
+                                    "Duplicate exam question: " + questionId
+                            );
+                        }
+                        builder = snapshotBuilder(
+                                resultSet,
+                                questionId,
+                                questionVersionNo,
+                                orderNumber
+                        );
+                    } else if (builder.questionId != questionId
+                            || builder.questionVersionNo != questionVersionNo) {
+                        throw new IllegalArgumentException(
+                                "Duplicate exam question order: " + orderNumber
+                        );
+                    }
+                    builder.addOption(resultSet);
+                }
+                if (builder != null) {
+                    questions.add(builder.build());
+                }
+            }
+        }
+        return questions;
+    }
+
+    private ExamQuestionSnapshotBuilder snapshotBuilder(ResultSet resultSet, int questionId,
+                                                          int questionVersionNo,
+                                                          int orderNumber)
+            throws SQLException {
+        Object snapshotVersionValue = resultSet.getObject("snapshot_version_no");
+        Object snapshotQuestionValue = resultSet.getObject("snapshot_question_id");
+        if (snapshotVersionValue == null || snapshotQuestionValue == null) {
+            throw new IllegalArgumentException(
+                    "Selected question version is missing: " + questionId
+                            + " version " + questionVersionNo
+            );
+        }
+        if (resultSet.getInt("snapshot_question_id") != questionId
+                || resultSet.getInt("snapshot_version_no") != questionVersionNo) {
+            throw new IllegalArgumentException(
+                    "Selected question version does not match selection: " + questionId
+            );
+        }
+
+        BigDecimal score = resultSet.getBigDecimal("score");
+        if (score == null || score.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Exam question score is invalid: " + questionId
+            );
+        }
+        int correctOptionNumber = resultSet.getInt("correct_option_number");
+        if (correctOptionNumber < 1 || correctOptionNumber > 4) {
+            throw new IllegalArgumentException(
+                    "Correct answer number is invalid for question: " + questionId
+            );
+        }
+
+        return new ExamQuestionSnapshotBuilder(
+                questionId,
+                questionVersionNo,
+                orderNumber,
+                score,
+                resultSet.getString("content"),
+                resultSet.getString("topic"),
+                parsePersistedEnum(
+                        resultSet.getString("question_type"),
+                        QuestionType.class,
+                        "Question type",
+                        questionId
+                ),
+                parsePersistedEnum(
+                        resultSet.getString("difficulty"),
+                        DifficultyLevel.class,
+                        "Question difficulty",
+                        questionId
+                ),
+                parsePersistedEnum(
+                        resultSet.getString("question_status"),
+                        QuestionStatus.class,
+                        "Question status",
+                        questionId
+                ),
+                resultSet.getString("illustration_path"),
+                correctOptionNumber,
+                requireTimestamp(
+                        resultSet.getObject(
+                                "question_version_created_at",
+                                LocalDateTime.class
+                        ),
+                        "Selected question version timestamp is missing: " + questionId
+                )
+        );
     }
 
     private Optional<ExamDTO> loadExam(Connection connection, PreparedStatement statement)
@@ -691,6 +944,181 @@ public class ExamRepository {
         );
     }
 
+    private int createExam(int authenticatedUserId, int courseId,
+                           ExamVersionPersistenceData data) {
+        return executeInTransaction("Failed to create exam", connection -> {
+            requireAssignedCourse(connection, authenticatedUserId, courseId);
+            for (ExamQuestionPersistenceData selection : data.questions) {
+                requireAvailableQuestion(
+                        connection,
+                        authenticatedUserId,
+                        courseId,
+                        selection
+                );
+            }
+
+            int examId = insertExamWithUniqueCode(
+                    connection,
+                    authenticatedUserId,
+                    courseId
+            );
+            insertExamVersion(
+                    connection,
+                    examId,
+                    1,
+                    authenticatedUserId,
+                    data
+            );
+            insertExamQuestions(connection, examId, 1, data.questions);
+            updateCurrentVersion(connection, examId);
+            return examId;
+        });
+    }
+
+    private int updateExamVersion(int authenticatedUserId, int examId,
+                                  int expectedVersionNo, int proposedVersionNo,
+                                  int proposedCourseId,
+                                  ExamVersionPersistenceData data) {
+        return executeInTransaction("Failed to update exam version", connection -> {
+            LockedExam currentExam = lockTeacherCurrentExam(
+                    connection,
+                    authenticatedUserId,
+                    examId
+            ).orElseThrow(() -> new IllegalArgumentException(
+                    "Exam not found: " + examId
+            ));
+
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            if (proposedCourseId > 0 && proposedCourseId != currentExam.courseId) {
+                throw new IllegalArgumentException("Exam course cannot be changed");
+            }
+            if (currentExam.status == ExamStatus.PENDING_APPROVAL) {
+                throw new IllegalStateException("Pending exam cannot be edited");
+            }
+            if (data.status != ExamStatus.DRAFT) {
+                throw new IllegalArgumentException("New exam version must be a draft");
+            }
+            int newVersionNo = currentExam.versionNo + 1;
+            if (proposedVersionNo > 0 && proposedVersionNo != newVersionNo) {
+                throw new IllegalStateException("Exam version conflict");
+            }
+
+            for (ExamQuestionPersistenceData selection : data.questions) {
+                requireAvailableQuestion(
+                        connection,
+                        authenticatedUserId,
+                        currentExam.courseId,
+                        selection
+                );
+            }
+
+            insertExamVersion(
+                    connection,
+                    examId,
+                    newVersionNo,
+                    authenticatedUserId,
+                    data
+            );
+            insertExamQuestions(connection, examId, newVersionNo, data.questions);
+            updateCurrentVersionAfterEdit(
+                    connection,
+                    examId,
+                    currentExam.versionNo,
+                    newVersionNo
+            );
+            return newVersionNo;
+        });
+    }
+
+    private boolean persistSubmission(int authenticatedUserId, int examId,
+                                      int expectedVersionNo,
+                                      int expectedCourseId,
+                                      LocalDateTime submittedAt) {
+        return executeInTransaction("Failed to submit exam for approval", connection -> {
+            Optional<LockedExam> lockedExam = lockTeacherCurrentExam(
+                    connection,
+                    authenticatedUserId,
+                    examId
+            );
+            if (lockedExam.isEmpty()) {
+                return false;
+            }
+
+            LockedExam currentExam = lockedExam.get();
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            requireExpectedCourse(currentExam, expectedCourseId);
+            if (currentExam.status != ExamStatus.DRAFT) {
+                throw new IllegalStateException("Exam is not a draft");
+            }
+            updateSubmittedVersion(
+                    connection,
+                    examId,
+                    currentExam.versionNo,
+                    submittedAt
+            );
+            return true;
+        });
+    }
+
+    private boolean persistApproval(int authenticatedUserId, int examId,
+                                    int expectedVersionNo,
+                                    int expectedCourseId,
+                                    LocalDateTime reviewedAt) {
+        return executeInTransaction("Failed to approve exam", connection -> {
+            Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
+                    connection,
+                    authenticatedUserId,
+                    examId
+            );
+            if (lockedExam.isEmpty()) {
+                return false;
+            }
+
+            LockedExam currentExam = lockedExam.get();
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            requireExpectedCourse(currentExam, expectedCourseId);
+            requirePendingApproval(currentExam);
+            updateApprovedVersion(
+                    connection,
+                    authenticatedUserId,
+                    examId,
+                    currentExam.versionNo,
+                    reviewedAt
+            );
+            return true;
+        });
+    }
+
+    private boolean persistRejection(int authenticatedUserId, int examId,
+                                     int expectedVersionNo, int expectedCourseId,
+                                     String reason,
+                                     LocalDateTime reviewedAt) {
+        return executeInTransaction("Failed to reject exam", connection -> {
+            Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
+                    connection,
+                    authenticatedUserId,
+                    examId
+            );
+            if (lockedExam.isEmpty()) {
+                return false;
+            }
+
+            LockedExam currentExam = lockedExam.get();
+            requireExpectedVersion(currentExam, expectedVersionNo);
+            requireExpectedCourse(currentExam, expectedCourseId);
+            requirePendingApproval(currentExam);
+            updateRejectedVersion(
+                    connection,
+                    authenticatedUserId,
+                    examId,
+                    currentExam.versionNo,
+                    reason,
+                    reviewedAt
+            );
+            return true;
+        });
+    }
+
     private void requireAssignedCourse(Connection connection, int authenticatedUserId,
                                        int courseId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
@@ -711,33 +1139,25 @@ public class ExamRepository {
 
     private void requireAvailableQuestion(Connection connection, int authenticatedUserId,
                                           int courseId,
-                                          ExamQuestionSelectionPayload selection)
+                                          ExamQuestionPersistenceData selection)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 LOCK_AVAILABLE_QUESTION_SQL
         )) {
             statement.setInt(1, authenticatedUserId);
-            statement.setInt(2, selection.getQuestionVersionNo());
-            statement.setInt(3, selection.getQuestionId());
+            statement.setInt(2, selection.questionVersionNo);
+            statement.setInt(3, selection.questionId);
             statement.setInt(4, courseId);
-            statement.setInt(5, selection.getQuestionVersionNo());
+            statement.setInt(5, selection.questionVersionNo);
 
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     throw new IllegalArgumentException(
-                            "Question unavailable for exam: " + selection.getQuestionId()
+                            "Question unavailable for exam: " + selection.questionId
                     );
                 }
             }
         }
-    }
-
-    private BigDecimal calculateTotalScore(List<ExamQuestionSelectionPayload> questions) {
-        BigDecimal totalScore = BigDecimal.ZERO;
-        for (ExamQuestionSelectionPayload question : questions) {
-            totalScore = totalScore.add(BigDecimal.valueOf(question.getScore()));
-        }
-        return totalScore;
     }
 
     private int insertExamWithUniqueCode(Connection connection, int authenticatedUserId,
@@ -792,27 +1212,27 @@ public class ExamRepository {
         }
     }
 
-    private void insertExamVersion(Connection connection, int examId,
-                                   int authenticatedUserId, CreateExamPayload payload,
-                                   BigDecimal totalScore, LocalDateTime createdAt)
+    private void insertExamVersion(Connection connection, int examId, int versionNo,
+                                   int authenticatedUserId,
+                                   ExamVersionPersistenceData data)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 INSERT_EXAM_VERSION_SQL
         )) {
             statement.setInt(1, examId);
-            statement.setInt(2, 1);
-            statement.setString(3, payload.getTitle());
-            statement.setInt(4, payload.getDurationMinutes());
-            statement.setString(5, payload.getTeacherNotes());
-            statement.setString(6, payload.getStudentInstructions());
-            statement.setBigDecimal(7, totalScore);
-            statement.setString(8, ExamStatus.DRAFT.name());
+            statement.setInt(2, versionNo);
+            statement.setString(3, data.title);
+            statement.setInt(4, data.durationMinutes);
+            statement.setString(5, data.teacherNotes);
+            statement.setString(6, data.studentInstructions);
+            statement.setBigDecimal(7, data.totalScore);
+            statement.setString(8, data.status.name());
             statement.setInt(9, authenticatedUserId);
-            statement.setObject(10, createdAt);
-            statement.setNull(11, Types.TIMESTAMP);
-            statement.setNull(12, Types.INTEGER);
-            statement.setNull(13, Types.TIMESTAMP);
-            statement.setNull(14, Types.VARCHAR);
+            statement.setObject(10, data.createdAt);
+            setNullableTimestamp(statement, 11, data.submittedAt);
+            setNullableInteger(statement, 12, data.reviewedByUserId);
+            setNullableTimestamp(statement, 13, data.reviewedAt);
+            setNullableString(statement, 14, data.rejectionReason);
 
             if (statement.executeUpdate() != 1) {
                 throw new SQLException("Exam version insert did not affect exactly one row");
@@ -820,25 +1240,19 @@ public class ExamRepository {
         }
     }
 
-    private void insertExamQuestions(Connection connection, int examId,
-                                     List<ExamQuestionSelectionPayload> questions)
-            throws SQLException {
-        insertExamQuestions(connection, examId, 1, questions);
-    }
-
     private void insertExamQuestions(Connection connection, int examId, int versionNo,
-                                     List<ExamQuestionSelectionPayload> questions)
+                                     List<ExamQuestionPersistenceData> questions)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 INSERT_EXAM_QUESTION_SQL
         )) {
-            for (ExamQuestionSelectionPayload question : questions) {
+            for (ExamQuestionPersistenceData question : questions) {
                 statement.setInt(1, examId);
                 statement.setInt(2, versionNo);
-                statement.setInt(3, question.getOrderNumber());
-                statement.setInt(4, question.getQuestionId());
-                statement.setInt(5, question.getQuestionVersionNo());
-                statement.setBigDecimal(6, BigDecimal.valueOf(question.getScore()));
+                statement.setInt(3, question.orderNumber);
+                statement.setInt(4, question.questionId);
+                statement.setInt(5, question.questionVersionNo);
+                statement.setBigDecimal(6, question.score);
 
                 if (statement.executeUpdate() != 1) {
                     throw new SQLException(
@@ -894,37 +1308,15 @@ public class ExamRepository {
         }
     }
 
-    private void requirePendingApproval(LockedExam currentExam) {
-        if (currentExam.status != ExamStatus.PENDING_APPROVAL) {
-            throw new IllegalStateException("Exam is not pending approval");
+    private void requireExpectedCourse(LockedExam currentExam, int expectedCourseId) {
+        if (expectedCourseId > 0 && currentExam.courseId != expectedCourseId) {
+            throw new IllegalArgumentException("Exam course cannot be changed");
         }
     }
 
-    private void insertUpdatedExamVersion(Connection connection, int authenticatedUserId,
-                                          UpdateExamPayload payload, int newVersionNo,
-                                          BigDecimal totalScore, LocalDateTime createdAt)
-            throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                INSERT_EXAM_VERSION_SQL
-        )) {
-            statement.setInt(1, payload.getExamId());
-            statement.setInt(2, newVersionNo);
-            statement.setString(3, payload.getTitle());
-            statement.setInt(4, payload.getDurationMinutes());
-            statement.setString(5, payload.getTeacherNotes());
-            statement.setString(6, payload.getStudentInstructions());
-            statement.setBigDecimal(7, totalScore);
-            statement.setString(8, ExamStatus.DRAFT.name());
-            statement.setInt(9, authenticatedUserId);
-            statement.setObject(10, createdAt);
-            statement.setNull(11, Types.TIMESTAMP);
-            statement.setNull(12, Types.INTEGER);
-            statement.setNull(13, Types.TIMESTAMP);
-            statement.setNull(14, Types.VARCHAR);
-
-            if (statement.executeUpdate() != 1) {
-                throw new SQLException("Exam version insert did not affect exactly one row");
-            }
+    private void requirePendingApproval(LockedExam currentExam) {
+        if (currentExam.status != ExamStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException("Exam is not pending approval");
         }
     }
 
@@ -1005,6 +1397,218 @@ public class ExamRepository {
         }
     }
 
+    private ExamVersionPersistenceData examVersionData(CreateExamPayload payload,
+                                                        LocalDateTime createdAt) {
+        List<ExamQuestionPersistenceData> questions = new ArrayList<>();
+        BigDecimal totalScore = BigDecimal.ZERO;
+        for (ExamQuestionSelectionPayload question : payload.getQuestions()) {
+            BigDecimal score = BigDecimal.valueOf(question.getScore());
+            questions.add(new ExamQuestionPersistenceData(
+                    question.getQuestionId(),
+                    question.getQuestionVersionNo(),
+                    question.getOrderNumber(),
+                    score
+            ));
+            totalScore = totalScore.add(score);
+        }
+        return new ExamVersionPersistenceData(
+                payload.getTitle(),
+                payload.getDurationMinutes(),
+                payload.getTeacherNotes(),
+                payload.getStudentInstructions(),
+                totalScore,
+                ExamStatus.DRAFT,
+                createdAt,
+                null,
+                null,
+                null,
+                null,
+                questions
+        );
+    }
+
+    private ExamVersionPersistenceData examVersionData(UpdateExamPayload payload,
+                                                        LocalDateTime createdAt) {
+        List<ExamQuestionPersistenceData> questions = new ArrayList<>();
+        BigDecimal totalScore = BigDecimal.ZERO;
+        for (ExamQuestionSelectionPayload question : payload.getQuestions()) {
+            BigDecimal score = BigDecimal.valueOf(question.getScore());
+            questions.add(new ExamQuestionPersistenceData(
+                    question.getQuestionId(),
+                    question.getQuestionVersionNo(),
+                    question.getOrderNumber(),
+                    score
+            ));
+            totalScore = totalScore.add(score);
+        }
+        return new ExamVersionPersistenceData(
+                payload.getTitle(),
+                payload.getDurationMinutes(),
+                payload.getTeacherNotes(),
+                payload.getStudentInstructions(),
+                totalScore,
+                ExamStatus.DRAFT,
+                createdAt,
+                null,
+                null,
+                null,
+                null,
+                questions
+        );
+    }
+
+    private ExamVersionPersistenceData examVersionData(Exam exam) {
+        List<ExamQuestionPersistenceData> questions = exam.getExamQuestions().stream()
+                .map(question -> new ExamQuestionPersistenceData(
+                        question.getQuestionId(),
+                        question.getQuestionVersionNo(),
+                        question.getOrderNumber(),
+                        question.getScoreValue()
+                ))
+                .toList();
+        return new ExamVersionPersistenceData(
+                exam.getTitle(),
+                exam.getDurationMinutes(),
+                exam.getTeacherNotes(),
+                exam.getStudentInstructions(),
+                exam.getTotalScoreValue(),
+                exam.getStatus(),
+                exam.getUpdatedAt(),
+                exam.getSubmittedAt(),
+                exam.getReviewedByUserId(),
+                exam.getReviewedAt(),
+                exam.getRejectionReason(),
+                questions
+        );
+    }
+
+    private void requireUnsavedDraft(int authenticatedUserId, Exam exam) {
+        if (exam.getExamId() != 0 || exam.getExamCode() != null) {
+            throw new IllegalArgumentException("Exam must be unsaved");
+        }
+        if (exam.getCurrentVersionNo() != 1) {
+            throw new IllegalArgumentException("New exam version must be 1");
+        }
+        if (exam.getStatus() != ExamStatus.DRAFT) {
+            throw new IllegalArgumentException("New exam must be a draft");
+        }
+        if (exam.getCreatedByUserId() != authenticatedUserId) {
+            throw new IllegalArgumentException("Exam creator does not match authenticated user");
+        }
+    }
+
+    private void requirePersistedDraft(int authenticatedUserId, int examId,
+                                       int expectedVersionNo, Exam exam) {
+        if (examId <= 0 || exam.getExamId() != examId) {
+            throw new IllegalArgumentException("Exam identity does not match update");
+        }
+        if (exam.getExamCode() == null || exam.getExamCode().isBlank()) {
+            throw new IllegalArgumentException("Persisted exam code is required");
+        }
+        if (exam.getCreatedByUserId() != authenticatedUserId) {
+            throw new IllegalArgumentException("Exam creator does not match authenticated user");
+        }
+        if (exam.getStatus() != ExamStatus.DRAFT) {
+            throw new IllegalArgumentException("New exam version must be a draft");
+        }
+        if (exam.getCurrentVersionNo() != expectedVersionNo + 1) {
+            throw new IllegalStateException("Exam version conflict");
+        }
+    }
+
+    private void requireWorkflowExam(int authenticatedUserId, Exam exam,
+                                     ExamStatus targetStatus) {
+        if (exam == null) {
+            throw new IllegalArgumentException("Exam workflow data is missing");
+        }
+        if (exam.getExamId() <= 0 || exam.getCurrentVersionNo() <= 0) {
+            throw new IllegalArgumentException("Persisted exam identity is required");
+        }
+        if (exam.getStatus() != targetStatus) {
+            throw new IllegalArgumentException(
+                    "Exam must be in " + targetStatus.name() + " state"
+            );
+        }
+        if (targetStatus == ExamStatus.PENDING_APPROVAL
+                && exam.getCreatedByUserId() != authenticatedUserId) {
+            throw new IllegalArgumentException("Exam creator does not match authenticated user");
+        }
+    }
+
+    private void requireReviewedWorkflowExam(int authenticatedUserId, Exam exam,
+                                             ExamStatus targetStatus) {
+        requireWorkflowExam(authenticatedUserId, exam, targetStatus);
+        if (exam.getReviewedByUserId() == null
+                || exam.getReviewedByUserId() != authenticatedUserId
+                || exam.getReviewedAt() == null) {
+            throw new IllegalArgumentException(
+                    "Exam review metadata does not match authenticated user"
+            );
+        }
+    }
+
+    private static <E extends Enum<E>> E parsePersistedEnum(
+            String value,
+            Class<E> enumType,
+            String label,
+            int entityId
+    ) {
+        if (value == null) {
+            throw new IllegalArgumentException(label + " is missing: " + entityId);
+        }
+        try {
+            return Enum.valueOf(enumType, value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(label + " is invalid: " + entityId, e);
+        }
+    }
+
+    private static LocalDateTime requireTimestamp(LocalDateTime timestamp,
+                                                  String message) {
+        if (timestamp == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return timestamp;
+    }
+
+    private static LocalDateTime latestTimestamp(LocalDateTime first,
+                                                 LocalDateTime... candidates) {
+        LocalDateTime latest = first;
+        for (LocalDateTime candidate : candidates) {
+            if (candidate != null && candidate.isAfter(latest)) {
+                latest = candidate;
+            }
+        }
+        return latest;
+    }
+
+    private void setNullableTimestamp(PreparedStatement statement, int index,
+                                      LocalDateTime value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.TIMESTAMP);
+        } else {
+            statement.setObject(index, value);
+        }
+    }
+
+    private void setNullableInteger(PreparedStatement statement, int index,
+                                    Integer value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.INTEGER);
+        } else {
+            statement.setInt(index, value);
+        }
+    }
+
+    private void setNullableString(PreparedStatement statement, int index,
+                                   String value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.VARCHAR);
+        } else {
+            statement.setString(index, value);
+        }
+    }
+
     private boolean isExamCodeCollision(SQLException exception) {
         String message = exception.getMessage();
         return exception.getErrorCode() == MYSQL_DUPLICATE_KEY_ERROR
@@ -1080,6 +1684,152 @@ public class ExamRepository {
     @FunctionalInterface
     private interface TransactionOperation<T> {
         T execute(Connection connection) throws SQLException;
+    }
+
+    private static final class ExamVersionPersistenceData {
+        private final String title;
+        private final int durationMinutes;
+        private final String teacherNotes;
+        private final String studentInstructions;
+        private final BigDecimal totalScore;
+        private final ExamStatus status;
+        private final LocalDateTime createdAt;
+        private final LocalDateTime submittedAt;
+        private final Integer reviewedByUserId;
+        private final LocalDateTime reviewedAt;
+        private final String rejectionReason;
+        private final List<ExamQuestionPersistenceData> questions;
+
+        private ExamVersionPersistenceData(String title, int durationMinutes,
+                                           String teacherNotes,
+                                           String studentInstructions,
+                                           BigDecimal totalScore, ExamStatus status,
+                                           LocalDateTime createdAt,
+                                           LocalDateTime submittedAt,
+                                           Integer reviewedByUserId,
+                                           LocalDateTime reviewedAt,
+                                           String rejectionReason,
+                                           List<ExamQuestionPersistenceData> questions) {
+            this.title = title;
+            this.durationMinutes = durationMinutes;
+            this.teacherNotes = teacherNotes;
+            this.studentInstructions = studentInstructions;
+            this.totalScore = totalScore;
+            this.status = status;
+            this.createdAt = createdAt;
+            this.submittedAt = submittedAt;
+            this.reviewedByUserId = reviewedByUserId;
+            this.reviewedAt = reviewedAt;
+            this.rejectionReason = rejectionReason;
+            this.questions = List.copyOf(questions);
+        }
+    }
+
+    private static final class ExamQuestionPersistenceData {
+        private final int questionId;
+        private final int questionVersionNo;
+        private final int orderNumber;
+        private final BigDecimal score;
+
+        private ExamQuestionPersistenceData(int questionId, int questionVersionNo,
+                                            int orderNumber, BigDecimal score) {
+            this.questionId = questionId;
+            this.questionVersionNo = questionVersionNo;
+            this.orderNumber = orderNumber;
+            this.score = score;
+        }
+    }
+
+    private static final class ExamQuestionSnapshotBuilder {
+        private final int questionId;
+        private final int questionVersionNo;
+        private final int orderNumber;
+        private final BigDecimal score;
+        private final String content;
+        private final String topic;
+        private final QuestionType type;
+        private final DifficultyLevel difficulty;
+        private final QuestionStatus status;
+        private final String illustrationPath;
+        private final int correctOptionNumber;
+        private final LocalDateTime versionCreatedAt;
+        private final List<AnswerOption> options = new ArrayList<>(4);
+        private final Set<Integer> optionNumbers = new HashSet<>();
+
+        private ExamQuestionSnapshotBuilder(int questionId, int questionVersionNo,
+                                            int orderNumber, BigDecimal score,
+                                            String content, String topic,
+                                            QuestionType type,
+                                            DifficultyLevel difficulty,
+                                            QuestionStatus status,
+                                            String illustrationPath,
+                                            int correctOptionNumber,
+                                            LocalDateTime versionCreatedAt) {
+            this.questionId = questionId;
+            this.questionVersionNo = questionVersionNo;
+            this.orderNumber = orderNumber;
+            this.score = score;
+            this.content = content;
+            this.topic = topic;
+            this.type = type;
+            this.difficulty = difficulty;
+            this.status = status;
+            this.illustrationPath = illustrationPath;
+            this.correctOptionNumber = correctOptionNumber;
+            this.versionCreatedAt = versionCreatedAt;
+        }
+
+        private void addOption(ResultSet resultSet) throws SQLException {
+            Object optionNumberValue = resultSet.getObject("option_number");
+            if (optionNumberValue == null) {
+                return;
+            }
+            int optionNumber = resultSet.getInt("option_number");
+            if (optionNumber < 1 || optionNumber > 4) {
+                throw new IllegalArgumentException(
+                        "Answer option number is invalid for question: " + questionId
+                );
+            }
+            if (!optionNumbers.add(optionNumber)) {
+                throw new IllegalArgumentException(
+                        "Duplicate answer option for question: " + questionId
+                                + " option " + optionNumber
+                );
+            }
+            options.add(new AnswerOption(
+                    optionNumber,
+                    resultSet.getString("option_text"),
+                    optionNumber == correctOptionNumber
+            ));
+        }
+
+        private ExamQuestion build() {
+            if (options.size() != 4
+                    || !optionNumbers.containsAll(Set.of(1, 2, 3, 4))) {
+                throw new IllegalArgumentException(
+                        "Question must contain exactly four answer options: " + questionId
+                );
+            }
+            Question snapshot = Question.rehydrate(
+                    questionId,
+                    content,
+                    type,
+                    difficulty,
+                    status,
+                    versionCreatedAt,
+                    versionCreatedAt,
+                    topic,
+                    illustrationPath,
+                    options
+            );
+            return new ExamQuestion(
+                    questionId,
+                    questionVersionNo,
+                    orderNumber,
+                    score,
+                    snapshot
+            );
+        }
     }
 
     private static final class LockedExam {
