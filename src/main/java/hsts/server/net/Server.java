@@ -3,6 +3,7 @@ package hsts.server.net;
 import hsts.common.CreateExamPayload;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.ExecutionCodePayload;
+import hsts.common.ExecutionIdPayload;
 import hsts.common.ExamVersionPayload;
 import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.GenerateExamPayload;
@@ -13,7 +14,9 @@ import hsts.common.QuestionIdPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.RejectExamPayload;
+import hsts.common.PublishSubmissionPayload;
 import hsts.common.Response;
+import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SaveExamAnswerPayload;
 import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.StartExamPayload;
@@ -437,10 +440,97 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case LIST_EXECUTION_SUBMISSIONS -> {
+                    if (!(request.getPayload() instanceof ExecutionIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Execution request data is invalid"
+                        );
+                    }
+                    yield Response.success(
+                            "Execution submissions loaded successfully",
+                            requireExamExecutionService().getExecutionSubmissions(
+                                    authenticatedUserId,
+                                    payload.getExecutionId()
+                            )
+                    );
+                }
+
+                case GET_SUBMISSION_FOR_REVIEW -> {
+                    if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Submission request data is invalid"
+                        );
+                    }
+                    yield Response.success(
+                            "Submission loaded successfully",
+                            requireExamExecutionService().getSubmissionForReview(
+                                    authenticatedUserId,
+                                    payload.getSubmissionId()
+                            )
+                    );
+                }
+
+                case REVIEW_SUBMISSION_GRADE -> {
+                    if (!(request.getPayload() instanceof ReviewSubmissionPayload payload)) {
+                        throw new IllegalArgumentException("Grade review data is invalid");
+                    }
+                    yield Response.success(
+                            "Submission grade reviewed successfully",
+                            requireExamExecutionService().reviewSubmissionGrade(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case PUBLISH_SUBMISSION_GRADE -> {
+                    if (!(request.getPayload() instanceof PublishSubmissionPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Grade publication data is invalid"
+                        );
+                    }
+                    yield Response.success(
+                            "Submission grade published successfully",
+                            requireExamExecutionService().publishSubmissionGrade(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case LIST_MY_PUBLISHED_GRADES -> {
+                    if (request.getPayload() != null) {
+                        throw new IllegalArgumentException(
+                                "Published grades request data is invalid"
+                        );
+                    }
+                    yield Response.success(
+                            "Published grades loaded successfully",
+                            requireExamExecutionService().getMyPublishedGrades(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case GET_MY_PUBLISHED_GRADE -> {
+                    if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Submission request data is invalid"
+                        );
+                    }
+                    yield Response.success(
+                            "Published grade loaded successfully",
+                            requireExamExecutionService().getMyPublishedGrade(
+                                    authenticatedUserId,
+                                    payload.getSubmissionId()
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
-            return Response.error(exception.getMessage());
+            return errorResponse(exception);
         }
     }
 
@@ -513,6 +603,13 @@ public class Server extends AbstractServer {
             );
         }
         return examExecutionService;
+    }
+
+    private Response errorResponse(Exception exception) {
+        String message = exception.getMessage();
+        return Response.error(
+                message == null || message.isBlank() ? "Request failed" : message
+        );
     }
 
     private boolean isAuthenticated(ConnectionToClient client) {
