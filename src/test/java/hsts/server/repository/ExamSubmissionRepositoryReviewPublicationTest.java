@@ -138,6 +138,7 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         ExamRepositoryJdbcTestSupport.StatementPlan update = database.plan(
                 PUBLICATION_MARKER
         ).updateResults(1);
+        planStatisticsRefresh(database);
         database.plan(ANSWER_MARKER).queryRows(gradedAnswerRow());
 
         ExamSubmission result = new ExamSubmissionRepository(database)
@@ -172,7 +173,50 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         assertFalse(setClause.contains("REVIEWED_BY_USER_ID ="));
         assertEquals(1, database.commitCount);
         assertTrue(database.autoCommit);
+        assertEquals(1, database.connectionRequests);
+        assertTrue(database.events.indexOf("update:" + PUBLICATION_MARKER)
+                < database.events.indexOf(
+                        "query:SELECT execution_id FROM exam_executions"
+                ));
+        assertTrue(database.events.lastIndexOf(
+                        "update:INSERT INTO exam_execution_deciles"
+                ) < database.events.indexOf("commit"));
         assertNoGradingOrCounterSql(database);
+    }
+
+    @Test
+    public void publicationStatisticsFailureRollsBackThePublicationAtomically() {
+        SQLException statisticsFailure = new SQLException("statistics update failed");
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        ExamSubmission supplied = publishedSubmission(1003);
+        database.plan(SCOPE_MARKER).queryRows(reviewedRow(
+                new BigDecimal("65.00"), "Reviewed response",
+                "Accepted ambiguity", 1002
+        ));
+        ExamRepositoryJdbcTestSupport.StatementPlan publication =
+                database.plan(PUBLICATION_MARKER).updateResults(1);
+        database.plan("SELECT execution_id FROM exam_executions")
+                .queryRows(row("execution_id", 81));
+        database.plan("SELECT submission.final_score")
+                .queryRows(row("final_score", new BigDecimal("65.00")));
+        database.plan("SET average_score = ?").updateFailure(statisticsFailure);
+
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> new ExamSubmissionRepository(database)
+                        .persistPublication(1003, supplied)
+        );
+
+        assertEquals("Failed to persist submission publication", failure.getMessage());
+        assertSame(statisticsFailure, failure.getCause());
+        assertEquals(1, publication.updateExecutions.size());
+        assertEquals(1, database.connectionRequests);
+        assertEquals(1, database.rollbackCount);
+        assertEquals(0, database.commitCount);
+        assertTrue(database.autoCommit);
+        assertEquals(SubmissionStatus.PUBLISHED, supplied.getStatus());
+        assertEquals(PUBLISHED, supplied.getPublishedAt());
     }
 
     @Test
@@ -300,6 +344,7 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         database.plan(SCOPE_MARKER)
                 .queryRows(publishedRow(1003))
                 .queryRows(publishedRow(1003));
+        planStatisticsRefresh(database);
         database.plan(ANSWER_MARKER).queryRows(gradedAnswerRow());
 
         ExamSubmission result = new ExamSubmissionRepository(database)
@@ -308,7 +353,14 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         assertEquals(PUBLISHED, result.getPublishedAt());
         assertEquals(1, database.commitCount);
         assertTrue(database.plans.stream()
+                .filter(plan -> PUBLICATION_MARKER.equals(plan.marker))
                 .allMatch(plan -> plan.updateExecutions.isEmpty()));
+        assertEquals(1, database.plans.stream()
+                .filter(plan -> "SET average_score = ?".equals(plan.marker))
+                .findFirst().orElseThrow().updateExecutions.size());
+        assertEquals(10, database.plans.stream()
+                .filter(plan -> "INSERT INTO exam_execution_deciles".equals(plan.marker))
+                .findFirst().orElseThrow().updateExecutions.size());
     }
 
     @Test
@@ -396,6 +448,18 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         database.plan(REVIEW_MARKER).updateResults(1);
         database.plan(ANSWER_MARKER).queryRows(gradedAnswerRow());
         return database;
+    }
+
+    private static void planStatisticsRefresh(
+            ExamRepositoryJdbcTestSupport.FakeDatabaseController database
+    ) {
+        database.plan("SELECT execution_id FROM exam_executions")
+                .queryRows(row("execution_id", 81));
+        database.plan("SELECT submission.final_score")
+                .queryRows(row("final_score", new BigDecimal("65.00")));
+        database.plan("SET average_score = ?").updateResults(1);
+        database.plan("DELETE FROM exam_execution_deciles").updateResults(0);
+        database.plan("INSERT INTO exam_execution_deciles");
     }
 
     private static ExamSubmission reviewedSubmission(BigDecimal finalScore,

@@ -705,6 +705,7 @@ public class ExamSubmissionRepository {
             """;
 
     private final DatabaseController databaseController;
+    private final ReportRepository reportRepository;
 
     public ExamSubmissionRepository() {
         this(new DatabaseController());
@@ -712,6 +713,7 @@ public class ExamSubmissionRepository {
 
     public ExamSubmissionRepository(DatabaseController databaseController) {
         this.databaseController = databaseController;
+        this.reportRepository = new ReportRepository(databaseController);
     }
 
     public ExamSubmission startOrResume(int authenticatedStudentUserId,
@@ -1293,10 +1295,18 @@ public class ExamSubmissionRepository {
                     requireMatchingSubmissionIdentity(submission, source);
                     if (source.status == SubmissionStatus.PUBLISHED) {
                         requireMatchingPublishedState(source, submission);
+                        reportRepository.refreshExecutionStatistics(
+                                connection,
+                                source.executionId
+                        );
                         return submission.getSubmissionId();
                     }
                     requirePublicationSourceState(source, submission);
                     updatePublication(connection, source, submission);
+                    reportRepository.refreshExecutionStatistics(
+                            connection,
+                            source.executionId
+                    );
                     return submission.getSubmissionId();
                 },
                 (connection, submissionId) -> reloadManagerResult(
