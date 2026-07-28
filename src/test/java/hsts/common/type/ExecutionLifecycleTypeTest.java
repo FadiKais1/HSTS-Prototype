@@ -74,7 +74,19 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.GET_TEACHER_EXAMS_REPORT,
                         RequestType.GET_COURSE_EXAMS_REPORT,
                         RequestType.GET_STUDENT_EXAMS_REPORT,
-                        RequestType.GET_EXAM_EXECUTION_REPORT
+                        RequestType.GET_EXAM_EXECUTION_REPORT,
+                        RequestType.LIST_MY_COURSE_BOTS,
+                        RequestType.CREATE_COURSE_BOT,
+                        RequestType.UPDATE_COURSE_BOT,
+                        RequestType.GET_BOT_SOURCES,
+                        RequestType.ADD_BOT_TEXT_SOURCE,
+                        RequestType.UPLOAD_BOT_SOURCE,
+                        RequestType.ADD_BOT_QUESTION_SOURCES,
+                        RequestType.REMOVE_BOT_SOURCE,
+                        RequestType.GET_BOT_USAGE,
+                        RequestType.LIST_MY_AVAILABLE_BOTS,
+                        RequestType.GET_MY_BOT_HISTORY,
+                        RequestType.ASK_COURSE_BOT
                 },
                 RequestType.values()
         );

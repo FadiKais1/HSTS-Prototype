@@ -1,6 +1,12 @@
 package hsts.server.net;
 
+import hsts.common.AddBotQuestionSourcesPayload;
+import hsts.common.AddBotTextSourcePayload;
+import hsts.common.AskCourseBotPayload;
+import hsts.common.CourseBotIdPayload;
+import hsts.common.CourseIdPayload;
 import hsts.common.CreateExamPayload;
+import hsts.common.CreateCourseBotPayload;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.ExecutionCodePayload;
 import hsts.common.ExecutionIdPayload;
@@ -14,6 +20,7 @@ import hsts.common.QuestionIdPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.RejectExamPayload;
+import hsts.common.RemoveBotSourcePayload;
 import hsts.common.ReportTargetPayload;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.Response;
@@ -23,7 +30,9 @@ import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.StartExamPayload;
 import hsts.common.SubmissionIdPayload;
 import hsts.common.UpdateExamPayload;
+import hsts.common.UpdateCourseBotPayload;
 import hsts.common.UpdateQuestionPayload;
+import hsts.common.UploadBotSourcePayload;
 import hsts.ocsf.AbstractServer;
 import hsts.ocsf.ConnectionToClient;
 import hsts.server.control.AuthService;
@@ -73,12 +82,22 @@ public class Server extends AbstractServer {
                   AuthService authService,
                   ExamExecutionService examExecutionService,
                   ReportService reportService) {
+        this(port, examManagementService, authService, examExecutionService,
+                reportService, null);
+    }
+
+    public Server(int port, ExamManagementService examManagementService,
+                  AuthService authService,
+                  ExamExecutionService examExecutionService,
+                  ReportService reportService,
+                  CourseBotService courseBotService) {
         super(port);
         this.port = port;
         this.examManagementService = examManagementService;
         this.authService = authService;
         this.examExecutionService = examExecutionService;
         this.reportService = reportService;
+        this.courseBotService = courseBotService;
     }
 
     public void startServer() {
@@ -141,7 +160,11 @@ public class Server extends AbstractServer {
                      LIST_MY_PUBLISHED_GRADES, GET_MY_PUBLISHED_GRADE,
                      GET_MY_AUTHORED_EXAMS_REPORT, GET_TEACHER_EXAMS_REPORT,
                      GET_COURSE_EXAMS_REPORT, GET_STUDENT_EXAMS_REPORT,
-                     GET_EXAM_EXECUTION_REPORT ->
+                     GET_EXAM_EXECUTION_REPORT, LIST_MY_COURSE_BOTS,
+                     CREATE_COURSE_BOT, UPDATE_COURSE_BOT, GET_BOT_SOURCES,
+                     ADD_BOT_TEXT_SOURCE, UPLOAD_BOT_SOURCE,
+                     ADD_BOT_QUESTION_SOURCES, REMOVE_BOT_SOURCE, GET_BOT_USAGE,
+                     LIST_MY_AVAILABLE_BOTS, GET_MY_BOT_HISTORY, ASK_COURSE_BOT ->
                         Response.error("Authentication context required");
             };
 
@@ -597,6 +620,173 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case LIST_MY_COURSE_BOTS -> {
+                    if (request.getPayload() != null) {
+                        throw new IllegalArgumentException(
+                                "Course Bot list payload must be empty"
+                        );
+                    }
+                    yield Response.success(
+                            "Course Bots loaded",
+                            requireCourseBotService().getMyCourseBots(authenticatedUserId)
+                    );
+                }
+
+                case CREATE_COURSE_BOT -> {
+                    if (!(request.getPayload() instanceof CreateCourseBotPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Create Course Bot payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Course Bot created",
+                            requireCourseBotService().createCourseBot(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case UPDATE_COURSE_BOT -> {
+                    if (!(request.getPayload() instanceof UpdateCourseBotPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Update Course Bot payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Course Bot updated",
+                            requireCourseBotService().updateCourseBot(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case GET_BOT_SOURCES -> {
+                    if (!(request.getPayload() instanceof CourseBotIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Course Bot ID payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot sources loaded",
+                            requireCourseBotService().getBotSources(
+                                    authenticatedUserId, payload.getBotId()
+                            )
+                    );
+                }
+
+                case ADD_BOT_TEXT_SOURCE -> {
+                    if (!(request.getPayload() instanceof AddBotTextSourcePayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Bot text source payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot text source added",
+                            requireCourseBotService().addTextSource(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case UPLOAD_BOT_SOURCE -> {
+                    if (!(request.getPayload() instanceof UploadBotSourcePayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Bot file source payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot file source added",
+                            requireCourseBotService().uploadSource(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case ADD_BOT_QUESTION_SOURCES -> {
+                    if (!(request.getPayload()
+                            instanceof AddBotQuestionSourcesPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Bot question sources payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot question sources added",
+                            requireCourseBotService().addQuestionSources(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case REMOVE_BOT_SOURCE -> {
+                    if (!(request.getPayload() instanceof RemoveBotSourcePayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Remove Bot source payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot source removed",
+                            requireCourseBotService().removeSource(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case GET_BOT_USAGE -> {
+                    if (!(request.getPayload() instanceof CourseBotIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Course Bot ID payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot usage loaded",
+                            requireCourseBotService().getBotUsage(
+                                    authenticatedUserId, payload.getBotId()
+                            )
+                    );
+                }
+
+                case LIST_MY_AVAILABLE_BOTS -> {
+                    if (request.getPayload() != null) {
+                        throw new IllegalArgumentException(
+                                "Available Bot list payload must be empty"
+                        );
+                    }
+                    yield Response.success(
+                            "Available Course Bots loaded",
+                            requireCourseBotService().getMyAvailableBots(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case GET_MY_BOT_HISTORY -> {
+                    if (!(request.getPayload() instanceof CourseIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Course ID payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot history loaded",
+                            requireCourseBotService().getMyBotHistory(
+                                    authenticatedUserId, payload.getCourseId()
+                            )
+                    );
+                }
+
+                case ASK_COURSE_BOT -> {
+                    if (!(request.getPayload() instanceof AskCourseBotPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Ask Course Bot payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Course Bot answer received",
+                            requireCourseBotService().askCourseBot(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
@@ -687,6 +877,13 @@ public class Server extends AbstractServer {
             throw new IllegalStateException("Report service is not configured");
         }
         return reportService;
+    }
+
+    private CourseBotService requireCourseBotService() {
+        if (courseBotService == null) {
+            throw new IllegalStateException("Course Bot service is unavailable");
+        }
+        return courseBotService;
     }
 
     private Response errorResponse(Exception exception) {

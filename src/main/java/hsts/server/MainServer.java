@@ -1,12 +1,18 @@
 package hsts.server;
 
+import hsts.external.ExternalBotSystem;
+import hsts.server.bot.DeterministicExternalBotSystem;
+import hsts.server.bot.source.BotSourceExtractor;
 import hsts.server.control.AuthService;
+import hsts.server.control.CourseBotService;
 import hsts.server.control.ExamExecutionService;
 import hsts.server.control.ExamManagementService;
 import hsts.server.control.GradingService;
 import hsts.server.control.ReportService;
 import hsts.server.net.Server;
 import hsts.server.repository.CourseRepository;
+import hsts.server.repository.CourseBotRepository;
+import hsts.server.repository.BotConversationRepository;
 import hsts.server.repository.DatabaseInitializer;
 import hsts.server.repository.ExamExecutionRepository;
 import hsts.server.repository.ExamRepository;
@@ -18,6 +24,7 @@ import hsts.server.repository.StudentProfileRepository;
 import hsts.server.repository.UserRepository;
 
 import java.time.Clock;
+import java.util.UUID;
 
 public class MainServer {
     private static final int PORT = 5555;
@@ -39,6 +46,12 @@ public class MainServer {
         StudentProfileRepository studentProfileRepository =
                 new StudentProfileRepository();
         ReportRepository reportRepository = new ReportRepository();
+        CourseBotRepository courseBotRepository = new CourseBotRepository();
+        BotConversationRepository botConversationRepository =
+                new BotConversationRepository();
+        BotSourceExtractor botSourceExtractor = new BotSourceExtractor();
+        ExternalBotSystem externalBotSystem =
+                new DeterministicExternalBotSystem();
         ExamManagementService examManagementService = new ExamManagementService(
                 questionRepository,
                 courseRepository,
@@ -63,13 +76,26 @@ public class MainServer {
                 courseRepository,
                 Clock.systemDefaultZone()
         );
+        CourseBotService courseBotService = new CourseBotService(
+                courseBotRepository,
+                botConversationRepository,
+                questionRepository,
+                courseRepository,
+                userRepository,
+                examSubmissionRepository,
+                botSourceExtractor,
+                externalBotSystem,
+                Clock.systemDefaultZone(),
+                () -> UUID.randomUUID().toString()
+        );
 
         Server server = new Server(
                 port,
                 examManagementService,
                 authService,
                 examExecutionService,
-                reportService
+                reportService,
+                courseBotService
         );
         server.startServer();
     }
