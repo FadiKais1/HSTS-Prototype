@@ -39,9 +39,31 @@ public final class PackagingVerifier {
 
     private static final List<String> SERVER_ENTRIES = List.of(
             "hsts/server/MainServer.class",
+            "hsts/server/bot/source/BotSourceExtractor.class",
             "hsts/ocsf/AbstractServer.class",
             "hsts/ocsf/ConnectionToClient.class",
-            "com/mysql/cj/jdbc/Driver.class"
+            "com/mysql/cj/jdbc/Driver.class",
+            "org/apache/pdfbox/text/PDFTextStripper.class",
+            "org/apache/poi/xwpf/usermodel/XWPFDocument.class",
+            "org/apache/xmlbeans/XmlObject.class",
+            "org/apache/commons/compress/archivers/zip/ZipArchiveInputStream.class",
+            "org/apache/commons/lang3/StringUtils.class",
+            "org/apache/logging/slf4j/SLF4JProvider.class"
+    );
+
+    private static final List<String> CLIENT_FORBIDDEN_ENTRIES = List.of(
+            "com/mysql/cj/jdbc/Driver.class",
+            "org/apache/pdfbox/text/PDFTextStripper.class",
+            "org/apache/poi/xwpf/usermodel/XWPFDocument.class",
+            "org/apache/xmlbeans/XmlObject.class",
+            "org/apache/commons/compress/archivers/zip/ZipArchiveInputStream.class",
+            "org/apache/commons/lang3/StringUtils.class",
+            "org/apache/logging/slf4j/SLF4JProvider.class"
+    );
+
+    private static final List<String> SERVER_FORBIDDEN_ENTRIES = List.of(
+            "javafx/application/Application.class",
+            "javafx/fxml/FXMLLoader.class"
     );
 
     private PackagingVerifier() {
@@ -65,6 +87,7 @@ public final class PackagingVerifier {
                 clientPath,
                 "hsts.client.ClientLauncher",
                 CLIENT_ENTRIES,
+                CLIENT_FORBIDDEN_ENTRIES,
                 true,
                 false
         );
@@ -72,6 +95,7 @@ public final class PackagingVerifier {
                 serverPath,
                 "hsts.server.MainServer",
                 SERVER_ENTRIES,
+                SERVER_FORBIDDEN_ENTRIES,
                 false,
                 true
         );
@@ -89,6 +113,7 @@ public final class PackagingVerifier {
             Path path,
             String expectedMainClass,
             List<String> requiredEntries,
+            List<String> forbiddenEntries,
             boolean requireWindowsNatives,
             boolean requireMysqlService
     ) throws IOException {
@@ -130,6 +155,10 @@ public final class PackagingVerifier {
             for (String requiredEntry : requiredEntries) {
                 require(names.contains(requiredEntry),
                         path.getFileName() + " is missing " + requiredEntry);
+            }
+            for (String forbiddenEntry : forbiddenEntries) {
+                require(!names.contains(forbiddenEntry),
+                        path.getFileName() + " unexpectedly contains " + forbiddenEntry);
             }
             if (requireWindowsNatives) {
                 require(hasWindowsNative,

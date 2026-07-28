@@ -41,6 +41,24 @@
         </dependency>
 
         <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.5</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-to-slf4j</artifactId>
+            <version>2.24.3</version>
+        </dependency>
+
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.13.1</version>
@@ -89,6 +107,19 @@
                                 <excludes>
                                     <exclude>com.mysql:mysql-connector-j</exclude>
                                     <exclude>com.google.protobuf:protobuf-java</exclude>
+                                    <exclude>org.apache.pdfbox:*</exclude>
+                                    <exclude>org.apache.poi:*</exclude>
+                                    <exclude>org.apache.xmlbeans:xmlbeans</exclude>
+                                    <exclude>org.apache.commons:commons-compress</exclude>
+                                    <exclude>org.apache.commons:commons-collections4</exclude>
+                                    <exclude>org.apache.commons:commons-math3</exclude>
+                                    <exclude>org.apache.commons:commons-lang3</exclude>
+                                    <exclude>commons-io:commons-io</exclude>
+                                    <exclude>commons-codec:commons-codec</exclude>
+                                    <exclude>commons-logging:commons-logging</exclude>
+                                    <exclude>com.github.virtuald:curvesapi</exclude>
+                                    <exclude>com.zaxxer:SparseBitSet</exclude>
+                                    <exclude>org.apache.logging.log4j:*</exclude>
                                 </excludes>
                             </artifactSet>
                             <filters>

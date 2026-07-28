@@ -84,6 +84,36 @@ public class PackagingConfigurationTest {
         assertTrue(ignoreLines.stream().map(String::trim).anyMatch("target/"::equals));
     }
 
+    @Test
+    public void definesServerOnlyPdfAndDocxDependencies() throws Exception {
+        assertEquals("3.0.5", dependencyVersion("org.apache.pdfbox", "pdfbox"));
+        assertEquals("5.4.1", dependencyVersion("org.apache.poi", "poi-ooxml"));
+        assertEquals("2.24.3", dependencyVersion(
+                "org.apache.logging.log4j", "log4j-to-slf4j"
+        ));
+
+        List<String> clientExcludes = descendantTexts(
+                shadeExecution("package-client"), "exclude"
+        );
+        for (String excluded : List.of(
+                "org.apache.pdfbox:*",
+                "org.apache.poi:*",
+                "org.apache.xmlbeans:xmlbeans",
+                "org.apache.commons:commons-compress",
+                "org.apache.commons:commons-collections4",
+                "org.apache.commons:commons-lang3",
+                "commons-io:commons-io",
+                "commons-codec:commons-codec",
+                "commons-logging:commons-logging",
+                "com.github.virtuald:curvesapi",
+                "com.zaxxer:SparseBitSet",
+                "org.apache.logging.log4j:*"
+        )) {
+            assertTrue("Client does not exclude " + excluded,
+                    clientExcludes.contains(excluded));
+        }
+    }
+
     private static Element shadeExecution(String executionId) throws Exception {
         Document document = DocumentBuilderFactory.newInstance()
                 .newDocumentBuilder()
@@ -137,5 +167,21 @@ public class PackagingConfigurationTest {
             values.add(((Element) descendants.item(index)).getAttribute(attribute));
         }
         return values;
+    }
+
+    private static String dependencyVersion(String groupId, String artifactId)
+            throws Exception {
+        Document document = DocumentBuilderFactory.newInstance()
+                .newDocumentBuilder()
+                .parse(PROJECT_ROOT.resolve("pom.xml").toFile());
+        NodeList dependencies = document.getElementsByTagName("dependency");
+        for (int index = 0; index < dependencies.getLength(); index++) {
+            Element dependency = (Element) dependencies.item(index);
+            if (groupId.equals(childText(dependency, "groupId"))
+                    && artifactId.equals(childText(dependency, "artifactId"))) {
+                return childText(dependency, "version");
+            }
+        }
+        throw new AssertionError("Missing dependency: " + groupId + ":" + artifactId);
     }
 }
