@@ -37,8 +37,9 @@ public class MainServerWiringTest {
                 "new ExamExecutionService( examExecutionRepository, "
                         + "examSubmissionRepository, studentEnrollmentRepository, "
                         + "studentProfileRepository, userRepository, examRepository, "
-                        + "gradingService, Clock.systemUTC() )"
+                        + "gradingService, Clock.systemDefaultZone() )"
         ));
+        assertTrue(!source.contains("Clock.systemUTC()"));
         assertTrue(normalized.contains(
                 "new Server( port, examManagementService, authService, "
                         + "examExecutionService )"

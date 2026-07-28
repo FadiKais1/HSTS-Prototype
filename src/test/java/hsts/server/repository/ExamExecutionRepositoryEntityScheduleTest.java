@@ -81,6 +81,57 @@ public class ExamExecutionRepositoryEntityScheduleTest {
     }
 
     @Test
+    public void localWallClockWindowIsPersistedWithoutTimezoneShift() {
+        LocalDateTime teacherOpening = LocalDateTime.of(2026, 8, 1, 11, 42);
+        LocalDateTime teacherClosing = LocalDateTime.of(2026, 8, 1, 11, 45);
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        database.plan(LOCK_MARKER).queryRows(row("duration_minutes", 75));
+        ExamRepositoryJdbcTestSupport.StatementPlan insert = database.plan(INSERT_MARKER)
+                .updateResults(1)
+                .generatedKey(902);
+
+        ExamExecution execution = new ExamExecutionRepository(database, () -> "L0C1")
+                .schedule(1002, 40, 3, teacherOpening, teacherClosing);
+
+        Map<Integer, Object> persisted = insert.updateExecutions.get(0);
+        assertSame(teacherOpening, persisted.get(4));
+        assertSame(teacherClosing, persisted.get(5));
+        assertEquals(teacherOpening, execution.getOpeningTime());
+        assertEquals(teacherClosing, execution.getClosingTime());
+
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController hydrationDatabase =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        hydrationDatabase.plan("JOIN users student").queryRows(row(
+                "execution_id", 902,
+                "execution_code", "L0C1",
+                "exam_id", 40,
+                "exam_version_no", 3,
+                "opening_time", persisted.get(4),
+                "closing_time", persisted.get(5),
+                "duration_minutes", 75,
+                "status", "SCHEDULED",
+                "created_by_user_id", 1002,
+                "created_at", persisted.get(9),
+                "updated_at", persisted.get(16),
+                "closed_at", null,
+                "average_score", null,
+                "median_score", null,
+                "started_count", 0,
+                "submitted_count", 0,
+                "auto_submitted_count", 0
+        ));
+        hydrationDatabase.plan("FROM exam_execution_deciles").queryRows();
+
+        ExamExecution hydrated = new ExamExecutionRepository(hydrationDatabase)
+                .findEntityByCodeForStudent(1001, "L0C1")
+                .orElseThrow();
+
+        assertEquals(teacherOpening, hydrated.getOpeningTime());
+        assertEquals(teacherClosing, hydrated.getClosingTime());
+    }
+
+    @Test
     public void entitySchedulingRetriesOnlyNamedCodeCollision() {
         SQLException collision = new SQLException(
                 "Duplicate entry for key 'uq_exam_executions_code'",

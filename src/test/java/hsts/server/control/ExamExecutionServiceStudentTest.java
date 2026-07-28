@@ -15,7 +15,9 @@ import org.junit.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
@@ -139,6 +141,49 @@ public class ExamExecutionServiceStudentTest {
                 resumable,
                 fixture.service.validateExecutionCode(902, new ExecutionCodePayload("A1B2"))
         );
+    }
+
+    @Test
+    public void localWallClockAfterLiveWindowNeverReportsNotOpenYet() {
+        int studentId = 903;
+        LocalDateTime opening = LocalDateTime.of(2026, 7, 28, 11, 42);
+        LocalDateTime closing = LocalDateTime.of(2026, 7, 28, 11, 45);
+        LocalDateTime localCurrentTime = LocalDateTime.of(2026, 7, 28, 11, 59, 39);
+        ZoneId localZone = ZoneId.systemDefault();
+        Clock localClock = Clock.fixed(
+                localCurrentTime.atZone(localZone).toInstant(),
+                localZone
+        );
+        ExamExecutionServiceTestSupport.RecordingExecutionRepository executions =
+                new ExamExecutionServiceTestSupport.RecordingExecutionRepository();
+        ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions =
+                new ExamExecutionServiceTestSupport.RecordingSubmissionRepository();
+        ExamExecutionServiceTestSupport.RecordingProfileRepository profiles =
+                new ExamExecutionServiceTestSupport.RecordingProfileRepository();
+        ExamExecutionServiceTestSupport.RecordingUserRepository users =
+                new ExamExecutionServiceTestSupport.RecordingUserRepository(
+                        user(studentId, UserRole.STUDENT, UserStatus.ACTIVE)
+                );
+        executions.preview = preview(
+                ExecutionStatus.SCHEDULED, opening, closing, false
+        );
+        ExamExecutionService service = new ExamExecutionService(
+                executions,
+                submissions,
+                new ExamExecutionServiceTestSupport.RecordingEnrollmentRepository(),
+                profiles,
+                users,
+                localClock
+        );
+
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> service.validateExecutionCode(
+                        studentId, new ExecutionCodePayload("A1B2")
+                )
+        );
+
+        assertEquals("Exam is closed", failure.getMessage());
     }
 
     @Test

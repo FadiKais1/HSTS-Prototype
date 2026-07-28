@@ -52,7 +52,7 @@ public class MainServer {
                 userRepository,
                 examRepository,
                 gradingService,
-                Clock.systemUTC()
+                Clock.systemDefaultZone()
         );
 
         Server server = new Server(

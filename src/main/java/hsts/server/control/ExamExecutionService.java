@@ -55,7 +55,7 @@ public class ExamExecutionService {
 
     // COMPATIBILITY-ONLY: Preserves legacy skeleton construction.
     public ExamExecutionService() {
-        this(null, null, null, null, null, null, null, Clock.systemUTC());
+        this(null, null, null, null, null, null, null, Clock.systemDefaultZone());
     }
 
     public ExamExecutionService(
@@ -73,7 +73,7 @@ public class ExamExecutionService {
                 userRepository,
                 null,
                 null,
-                Clock.systemUTC()
+                Clock.systemDefaultZone()
         );
     }
 
