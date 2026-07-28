@@ -48,6 +48,14 @@ public final class BotSourceExtractor {
         return result(BotSourceType.FREE_TEXT, safeName, normalizedText);
     }
 
+    public ExtractedBotSource extractQuestionBankSource(
+            String displayName, String authoritativeText
+    ) {
+        String safeName = BotSourceExtractionSupport.requireSafeName(displayName);
+        String normalizedText = BotSourceExtractionSupport.normalizeText(authoritativeText);
+        return result(BotSourceType.QUESTION_BANK, safeName, normalizedText);
+    }
+
     public ExtractedBotSource extractFile(String fileName, BotSourceType sourceType,
                                           byte[] content) {
         String safeName = BotSourceExtractionSupport.requireSafeName(fileName);

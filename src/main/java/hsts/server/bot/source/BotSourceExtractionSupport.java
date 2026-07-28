@@ -16,7 +16,8 @@ final class BotSourceExtractionSupport {
     }
 
     static BotSourceType requireExtractableType(BotSourceType sourceType) {
-        if (sourceType != BotSourceType.FREE_TEXT
+        if (sourceType != BotSourceType.QUESTION_BANK
+                && sourceType != BotSourceType.FREE_TEXT
                 && sourceType != BotSourceType.TXT
                 && sourceType != BotSourceType.PDF
                 && sourceType != BotSourceType.DOCX) {
