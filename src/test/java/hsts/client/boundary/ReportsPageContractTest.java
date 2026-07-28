@@ -226,6 +226,11 @@ public class ReportsPageContractTest {
                 "startedCountColumn", "submittedCountColumn",
                 "autoSubmittedCountColumn", "scoreBandChart",
                 "detailContainer", "detailPromptLabel", "detailContent",
+                "detailCodeCaption", "detailExamCaption", "detailVersionCaption",
+                "detailCourseCaption", "detailOpeningCaption", "detailClosingCaption",
+                "detailPublishedCaption", "detailAverageCaption", "detailMedianCaption",
+                "detailStartedCaption", "detailSubmittedCaption",
+                "detailAutoSubmittedCaption",
                 "scoreBandAxis", "submissionCountAxis"
         )) {
             assertTrue("Missing fx:id " + required, ids.containsKey(required));
@@ -385,6 +390,30 @@ public class ReportsPageContractTest {
             assertDetail(controller, "detailStartedLabel", "3");
             assertDetail(controller, "detailSubmittedLabel", "1");
             assertDetail(controller, "detailAutoSubmittedLabel", "1");
+            assertCaptionPair(controller, "detailCodeCaption", "Code",
+                    "detailExecutionCodeLabel", 0);
+            assertCaptionPair(controller, "detailExamCaption", "Exam",
+                    "detailExamTitleLabel", 1);
+            assertCaptionPair(controller, "detailVersionCaption", "Version",
+                    "detailVersionLabel", 2);
+            assertCaptionPair(controller, "detailCourseCaption", "Course",
+                    "detailCourseLabel", 3);
+            assertCaptionPair(controller, "detailOpeningCaption", "Opening",
+                    "detailOpeningLabel", 4);
+            assertCaptionPair(controller, "detailClosingCaption", "Closing",
+                    "detailClosingLabel", 5);
+            assertCaptionPair(controller, "detailPublishedCaption", "Published Results",
+                    "detailPublishedLabel", 6);
+            assertCaptionPair(controller, "detailAverageCaption", "Average",
+                    "detailAverageLabel", 7);
+            assertCaptionPair(controller, "detailMedianCaption", "Median",
+                    "detailMedianLabel", 8);
+            assertCaptionPair(controller, "detailStartedCaption", "Started",
+                    "detailStartedLabel", 9);
+            assertCaptionPair(controller, "detailSubmittedCaption", "Submitted",
+                    "detailSubmittedLabel", 10);
+            assertCaptionPair(controller, "detailAutoSubmittedCaption", "Auto-submitted",
+                    "detailAutoSubmittedLabel", 11);
 
             VBox container = field(controller, "detailContainer", VBox.class);
             GridPane content = field(controller, "detailContent", GridPane.class);
@@ -458,6 +487,30 @@ public class ReportsPageContractTest {
             Color color = (Color) label.getTextFill();
             check(color.getOpacity() == 1.0 && color.getBrightness() < 0.65,
                     name + " is not dark and opaque");
+        }
+
+        private static void assertCaptionPair(ReportsPage controller,
+                                              String captionName,
+                                              String captionText,
+                                              String valueName,
+                                              int row) throws Exception {
+            Label caption = field(controller, captionName, Label.class);
+            Label value = field(controller, valueName, Label.class);
+            check(captionText.equals(caption.getText()),
+                    captionName + " text mismatch: " + caption.getText());
+            check(caption.isVisible() && caption.isManaged() && caption.getOpacity() == 1.0,
+                    captionName + " hidden or transparent");
+            check(caption.getTextFill() instanceof Color,
+                    captionName + " fill is not a color");
+            Color color = (Color) caption.getTextFill();
+            check(color.getOpacity() == 1.0 && color.getBrightness() < 0.65,
+                    captionName + " is not dark and opaque");
+            check(Integer.valueOf(row).equals(GridPane.getRowIndex(caption))
+                            && Integer.valueOf(row).equals(GridPane.getRowIndex(value)),
+                    captionName + " is not in the same row as " + valueName);
+            check(Integer.valueOf(0).equals(GridPane.getColumnIndex(caption))
+                            && Integer.valueOf(1).equals(GridPane.getColumnIndex(value)),
+                    captionName + " is not adjacent to " + valueName);
         }
 
         private static ReportSummaryDTO report(List<ExamStatisticsDTO> executions) {

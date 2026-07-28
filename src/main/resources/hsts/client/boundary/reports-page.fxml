@@ -120,30 +120,30 @@
                             <GridPane fx:id="detailContent" hgap="12" vgap="7"
                                       managed="false" visible="false"
                                       style="-fx-text-fill: #111827; -fx-opacity: 1;">
-                                <Label text="Execution code" GridPane.rowIndex="0" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailCodeCaption" text="Code" GridPane.rowIndex="0" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailExecutionCodeLabel" text="-" GridPane.rowIndex="0" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Exam title" GridPane.rowIndex="1" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailExamCaption" text="Exam" GridPane.rowIndex="1" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailExamTitleLabel" text="-" GridPane.rowIndex="1" GridPane.columnIndex="1" wrapText="true" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Exam version" GridPane.rowIndex="2" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailVersionCaption" text="Version" GridPane.rowIndex="2" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailVersionLabel" text="-" GridPane.rowIndex="2" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Course" GridPane.rowIndex="3" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailCourseCaption" text="Course" GridPane.rowIndex="3" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailCourseLabel" text="-" GridPane.rowIndex="3" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Opening" GridPane.rowIndex="4" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailOpeningCaption" text="Opening" GridPane.rowIndex="4" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailOpeningLabel" text="-" GridPane.rowIndex="4" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Closing" GridPane.rowIndex="5" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailClosingCaption" text="Closing" GridPane.rowIndex="5" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailClosingLabel" text="-" GridPane.rowIndex="5" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Published" GridPane.rowIndex="6" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
+                                <Label fx:id="detailPublishedCaption" text="Published Results" GridPane.rowIndex="6" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
                                 <Label fx:id="detailPublishedLabel" text="-" GridPane.rowIndex="6" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Average / Median" GridPane.rowIndex="7" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
-                                <HBox spacing="5" GridPane.rowIndex="7" GridPane.columnIndex="1">
-                                    <Label fx:id="detailAverageLabel" text="-" style="-fx-text-fill: #111827; -fx-opacity: 1;"/><Label text="/" style="-fx-text-fill: #111827; -fx-opacity: 1;"/><Label fx:id="detailMedianLabel" text="-" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                </HBox>
-                                <Label text="Started" GridPane.rowIndex="8" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
-                                <Label fx:id="detailStartedLabel" text="-" GridPane.rowIndex="8" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Submitted" GridPane.rowIndex="9" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
-                                <Label fx:id="detailSubmittedLabel" text="-" GridPane.rowIndex="9" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
-                                <Label text="Auto-submitted" GridPane.rowIndex="10" GridPane.columnIndex="0" style="-fx-font-weight: bold;"/>
-                                <Label fx:id="detailAutoSubmittedLabel" text="-" GridPane.rowIndex="10" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label fx:id="detailAverageCaption" text="Average" GridPane.rowIndex="7" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
+                                <Label fx:id="detailAverageLabel" text="-" GridPane.rowIndex="7" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label fx:id="detailMedianCaption" text="Median" GridPane.rowIndex="8" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
+                                <Label fx:id="detailMedianLabel" text="-" GridPane.rowIndex="8" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label fx:id="detailStartedCaption" text="Started" GridPane.rowIndex="9" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
+                                <Label fx:id="detailStartedLabel" text="-" GridPane.rowIndex="9" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label fx:id="detailSubmittedCaption" text="Submitted" GridPane.rowIndex="10" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
+                                <Label fx:id="detailSubmittedLabel" text="-" GridPane.rowIndex="10" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label fx:id="detailAutoSubmittedCaption" text="Auto-submitted" GridPane.rowIndex="11" GridPane.columnIndex="0" style="-fx-font-weight: 600; -fx-text-fill: #4b5563; -fx-opacity: 1;"/>
+                                <Label fx:id="detailAutoSubmittedLabel" text="-" GridPane.rowIndex="11" GridPane.columnIndex="1" style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
                             </GridPane>
                         </VBox>
 

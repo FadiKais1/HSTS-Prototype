@@ -85,6 +85,18 @@ public class ReportsPage {
     @FXML private VBox detailContainer;
     @FXML private Label detailPromptLabel;
     @FXML private GridPane detailContent;
+    @FXML private Label detailCodeCaption;
+    @FXML private Label detailExamCaption;
+    @FXML private Label detailVersionCaption;
+    @FXML private Label detailCourseCaption;
+    @FXML private Label detailOpeningCaption;
+    @FXML private Label detailClosingCaption;
+    @FXML private Label detailPublishedCaption;
+    @FXML private Label detailAverageCaption;
+    @FXML private Label detailMedianCaption;
+    @FXML private Label detailStartedCaption;
+    @FXML private Label detailSubmittedCaption;
+    @FXML private Label detailAutoSubmittedCaption;
     @FXML private Label detailExecutionCodeLabel;
     @FXML private Label detailExamTitleLabel;
     @FXML private Label detailVersionLabel;
