@@ -27,6 +27,7 @@ public class DatabaseInitializer {
         createAnswerOptionsTable();
         migrateQuestionBankData();
         createQuestionBankIndexesAndConstraints();
+        migrateCourseBotSchema();
         migrateExamSchema();
         migrateExecutionSchema();
     }
@@ -187,6 +188,175 @@ public class DatabaseInitializer {
                 """;
 
         executeSchemaStatement(sql, "Failed to create answer options table");
+    }
+
+    private void migrateCourseBotSchema() {
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            createCourseBotsTable(connection);
+            createBotSourcesTable(connection);
+            createBotConversationsTable(connection);
+            createBotMessagesTable(connection);
+        } catch (SQLException | RuntimeException e) {
+            throw new IllegalStateException("Failed to migrate course Bot schema", e);
+        }
+    }
+
+    private void createCourseBotsTable(Connection connection) throws SQLException {
+        executeSchemaStatement(connection, """
+                CREATE TABLE IF NOT EXISTS course_bots (
+                    bot_id INT NOT NULL AUTO_INCREMENT,
+                    course_id INT NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    created_by_user_id INT NOT NULL,
+                    external_provider VARCHAR(100) NULL,
+                    external_bot_id VARCHAR(255) NULL,
+                    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+                    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+                        ON UPDATE CURRENT_TIMESTAMP(6),
+                    PRIMARY KEY (bot_id),
+                    CONSTRAINT uq_course_bots_course UNIQUE (course_id),
+                    KEY idx_course_bots_creator (created_by_user_id),
+                    CONSTRAINT fk_course_bots_course
+                        FOREIGN KEY (course_id) REFERENCES courses (course_id) ON DELETE RESTRICT,
+                    CONSTRAINT fk_course_bots_creator
+                        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id) ON DELETE RESTRICT,
+                    CONSTRAINT chk_course_bots_name
+                        CHECK (CHAR_LENGTH(TRIM(name)) > 0),
+                    CONSTRAINT chk_course_bots_status
+                        CHECK (status IN ('ACTIVE', 'INACTIVE'))
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createBotSourcesTable(Connection connection) throws SQLException {
+        executeSchemaStatement(connection, """
+                CREATE TABLE IF NOT EXISTS bot_sources (
+                    source_id INT NOT NULL AUTO_INCREMENT,
+                    bot_id INT NOT NULL,
+                    source_type VARCHAR(30) NOT NULL,
+                    display_name VARCHAR(255) NOT NULL,
+                    extracted_text MEDIUMTEXT NOT NULL,
+                    content_sha256 CHAR(64) NOT NULL,
+                    question_id INT NULL,
+                    question_version_no INT NULL,
+                    added_by_user_id INT NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    external_source_id VARCHAR(255) NULL,
+                    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+                    removed_at DATETIME(6) NULL,
+                    active_content_sha256 CHAR(64)
+                        GENERATED ALWAYS AS (
+                            CASE WHEN status = 'ACTIVE' THEN content_sha256 ELSE NULL END
+                        ) STORED,
+                    PRIMARY KEY (source_id),
+                    CONSTRAINT uq_bot_sources_active_checksum
+                        UNIQUE (bot_id, active_content_sha256),
+                    KEY idx_bot_sources_bot_status (bot_id, status),
+                    KEY idx_bot_sources_added_by_user (added_by_user_id),
+                    KEY idx_bot_sources_question_version (question_id, question_version_no),
+                    CONSTRAINT fk_bot_sources_bot
+                        FOREIGN KEY (bot_id) REFERENCES course_bots (bot_id) ON DELETE RESTRICT,
+                    CONSTRAINT fk_bot_sources_added_by_user
+                        FOREIGN KEY (added_by_user_id) REFERENCES users (user_id) ON DELETE RESTRICT,
+                    CONSTRAINT fk_bot_sources_question_version
+                        FOREIGN KEY (question_id, question_version_no)
+                        REFERENCES question_versions (question_id, version_no),
+                    CONSTRAINT chk_bot_sources_type
+                        CHECK (source_type IN ('QUESTION_BANK', 'FREE_TEXT', 'TXT', 'PDF', 'DOCX')),
+                    CONSTRAINT chk_bot_sources_status
+                        CHECK (status IN ('ACTIVE', 'REMOVED')),
+                    CONSTRAINT chk_bot_sources_checksum
+                        CHECK (content_sha256 REGEXP '^[0-9a-f]{64}$'),
+                    CONSTRAINT chk_bot_sources_question_reference
+                        CHECK (
+                            (source_type = 'QUESTION_BANK'
+                                AND question_id IS NOT NULL
+                                AND question_version_no IS NOT NULL)
+                            OR
+                            (source_type <> 'QUESTION_BANK'
+                                AND question_id IS NULL
+                                AND question_version_no IS NULL)
+                        ),
+                    CONSTRAINT chk_bot_sources_removal_state
+                        CHECK (
+                            (status = 'ACTIVE' AND removed_at IS NULL)
+                            OR (status = 'REMOVED' AND removed_at IS NOT NULL)
+                        ),
+                    CONSTRAINT chk_bot_sources_removed_at
+                        CHECK (removed_at IS NULL OR removed_at >= created_at),
+                    CONSTRAINT chk_bot_sources_display_name
+                        CHECK (CHAR_LENGTH(TRIM(display_name)) > 0),
+                    CONSTRAINT chk_bot_sources_extracted_text
+                        CHECK (CHAR_LENGTH(TRIM(extracted_text)) > 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createBotConversationsTable(Connection connection) throws SQLException {
+        executeSchemaStatement(connection, """
+                CREATE TABLE IF NOT EXISTS bot_conversations (
+                    conversation_id INT NOT NULL AUTO_INCREMENT,
+                    bot_id INT NOT NULL,
+                    student_user_id INT NOT NULL,
+                    provider_subject_id CHAR(36) NOT NULL,
+                    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+                    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+                        ON UPDATE CURRENT_TIMESTAMP(6),
+                    PRIMARY KEY (conversation_id),
+                    CONSTRAINT uq_bot_conversations_bot_student
+                        UNIQUE (bot_id, student_user_id),
+                    CONSTRAINT uq_bot_conversations_provider_subject
+                        UNIQUE (provider_subject_id),
+                    KEY idx_bot_conversations_student (student_user_id),
+                    KEY idx_bot_conversations_bot_updated (bot_id, updated_at),
+                    CONSTRAINT fk_bot_conversations_bot
+                        FOREIGN KEY (bot_id) REFERENCES course_bots (bot_id) ON DELETE RESTRICT,
+                    CONSTRAINT fk_bot_conversations_student
+                        FOREIGN KEY (student_user_id) REFERENCES users (user_id) ON DELETE RESTRICT,
+                    CONSTRAINT chk_bot_conversations_provider_subject
+                        CHECK (provider_subject_id REGEXP
+                            '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$')
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createBotMessagesTable(Connection connection) throws SQLException {
+        executeSchemaStatement(connection, """
+                CREATE TABLE IF NOT EXISTS bot_messages (
+                    message_id INT NOT NULL AUTO_INCREMENT,
+                    conversation_id INT NOT NULL,
+                    sequence_no INT NOT NULL,
+                    question_text TEXT NOT NULL,
+                    normalized_question VARCHAR(1000) NOT NULL,
+                    answer_text MEDIUMTEXT NOT NULL,
+                    answer_status VARCHAR(30) NOT NULL,
+                    provider_request_id VARCHAR(255) NULL,
+                    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+                    PRIMARY KEY (message_id),
+                    CONSTRAINT uq_bot_messages_conversation_sequence
+                        UNIQUE (conversation_id, sequence_no),
+                    KEY idx_bot_messages_conversation_created (conversation_id, created_at),
+                    KEY idx_bot_messages_normalized_question (normalized_question(191)),
+                    KEY idx_bot_messages_provider_request (provider_request_id),
+                    CONSTRAINT fk_bot_messages_conversation
+                        FOREIGN KEY (conversation_id)
+                        REFERENCES bot_conversations (conversation_id) ON DELETE RESTRICT,
+                    CONSTRAINT chk_bot_messages_sequence
+                        CHECK (sequence_no > 0),
+                    CONSTRAINT chk_bot_messages_answer_status
+                        CHECK (answer_status IN ('ANSWERED', 'NO_SUITABLE_ANSWER')),
+                    CONSTRAINT chk_bot_messages_question
+                        CHECK (CHAR_LENGTH(TRIM(question_text)) > 0),
+                    CONSTRAINT chk_bot_messages_normalized_question
+                        CHECK (CHAR_LENGTH(TRIM(normalized_question)) > 0),
+                    CONSTRAINT chk_bot_messages_answer
+                        CHECK (
+                            answer_status = 'NO_SUITABLE_ANSWER'
+                            OR CHAR_LENGTH(TRIM(answer_text)) > 0
+                        )
+                ) ENGINE=InnoDB
+                """);
     }
 
     private void executeSchemaStatement(String sql, String errorMessage) {
