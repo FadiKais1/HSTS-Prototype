@@ -3,8 +3,12 @@ package hsts.server.control;
 import hsts.common.ExamAttemptDTO;
 import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
+import hsts.common.ExecutionSubmissionSummaryDTO;
+import hsts.common.PublishedGradeDTO;
+import hsts.common.PublishedGradeSummaryDTO;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
+import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.ExecutionStatus;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.ExamStatus;
@@ -475,6 +479,12 @@ final class ExamExecutionServiceTestSupport {
         int persistStudentCalls;
         int persistAutomaticCalls;
         int persistExtensionCalls;
+        int managerSummaryCalls;
+        int managerReviewCalls;
+        int publishedSummaryCalls;
+        int publishedGradeCalls;
+        int persistReviewCalls;
+        int persistPublicationCalls;
         int lastStudentId;
         int lastManagerId;
         int lastExecutionId;
@@ -482,7 +492,13 @@ final class ExamExecutionServiceTestSupport {
         ExamExecution lastExecutionEntity;
         ExamSubmission lastSubmissionEntity;
         ExamSubmission lastPersistedStudentSubmission;
+        ExamSubmission lastPersistedReview;
+        ExamSubmission lastPersistedPublication;
         final List<ExamSubmission> persistedAutomaticSubmissions = new ArrayList<>();
+        List<ExecutionSubmissionSummaryDTO> managerSummaries = new ArrayList<>();
+        SubmissionReviewDTO managerReview;
+        List<PublishedGradeSummaryDTO> publishedSummaries = new ArrayList<>();
+        PublishedGradeDTO publishedGrade;
         StudentAnswer lastAnswerEntity;
         int lastAddedMinutes;
         String lastReason;
@@ -492,6 +508,8 @@ final class ExamExecutionServiceTestSupport {
         RuntimeException failure;
         RuntimeException persistStudentFailure;
         RuntimeException persistAutomaticFailure;
+        RuntimeException persistReviewFailure;
+        RuntimeException persistPublicationFailure;
 
         @Override
         public ExamSubmission startOrResume(int authenticatedStudentUserId,
@@ -569,6 +587,52 @@ final class ExamExecutionServiceTestSupport {
         }
 
         @Override
+        public List<ExecutionSubmissionSummaryDTO> findSummariesForManager(
+                int authenticatedManagerUserId,
+                int executionId
+        ) {
+            managerSummaryCalls++;
+            failIfConfigured();
+            lastManagerId = authenticatedManagerUserId;
+            lastExecutionId = executionId;
+            return managerSummaries;
+        }
+
+        @Override
+        public Optional<SubmissionReviewDTO> findReviewForManager(
+                int authenticatedManagerUserId,
+                int submissionId
+        ) {
+            managerReviewCalls++;
+            failIfConfigured();
+            lastManagerId = authenticatedManagerUserId;
+            lastSubmissionId = submissionId;
+            return Optional.ofNullable(managerReview);
+        }
+
+        @Override
+        public List<PublishedGradeSummaryDTO> findPublishedSummariesForStudent(
+                int authenticatedStudentUserId
+        ) {
+            publishedSummaryCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            return publishedSummaries;
+        }
+
+        @Override
+        public Optional<PublishedGradeDTO> findPublishedGradeForStudent(
+                int authenticatedStudentUserId,
+                int submissionId
+        ) {
+            publishedGradeCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastSubmissionId = submissionId;
+            return Optional.ofNullable(publishedGrade);
+        }
+
+        @Override
         public ExamSubmission persistAnswer(
                 int authenticatedStudentUserId,
                 ExamSubmission submission,
@@ -642,12 +706,43 @@ final class ExamExecutionServiceTestSupport {
             return submission;
         }
 
+        @Override
+        public ExamSubmission persistReview(int managerUserId,
+                                             ExamSubmission submission) {
+            persistReviewCalls++;
+            failIfConfigured();
+            if (persistReviewFailure != null) {
+                throw persistReviewFailure;
+            }
+            lastManagerId = managerUserId;
+            lastPersistedReview = submission;
+            lastSubmissionEntity = submission;
+            return submission;
+        }
+
+        @Override
+        public ExamSubmission persistPublication(int managerUserId,
+                                                  ExamSubmission submission) {
+            persistPublicationCalls++;
+            failIfConfigured();
+            if (persistPublicationFailure != null) {
+                throw persistPublicationFailure;
+            }
+            lastManagerId = managerUserId;
+            lastPersistedPublication = submission;
+            lastSubmissionEntity = submission;
+            return submission;
+        }
+
         int totalCalls() {
             return startCalls + activeCalls + activeEntityCalls
                     + studentEntityCalls + managerEntityCalls
                     + persistAnswerCalls
                     + expiredEntityCalls + persistStudentCalls
-                    + persistAutomaticCalls + persistExtensionCalls;
+                    + persistAutomaticCalls + persistExtensionCalls
+                    + managerSummaryCalls + managerReviewCalls
+                    + publishedSummaryCalls + publishedGradeCalls
+                    + persistReviewCalls + persistPublicationCalls;
         }
 
         private void failIfConfigured() {
@@ -678,10 +773,20 @@ final class ExamExecutionServiceTestSupport {
 
     static final class RecordingGradingService extends GradingService {
         int calls;
+        int reviewCalls;
+        int publicationCalls;
         int failAtCall;
         RuntimeException failure;
+        RuntimeException reviewFailure;
+        RuntimeException publicationFailure;
         ExamSubmission lastSubmission;
+        ExamSubmission reviewResult;
+        ExamSubmission publicationResult;
         Exam lastExam;
+        int lastManagerId;
+        BigDecimal lastFinalScore;
+        String lastFeedback;
+        String lastAdjustmentReason;
         LocalDateTime lastTime;
 
         @Override
@@ -702,6 +807,57 @@ final class ExamExecutionServiceTestSupport {
                 throw configured;
             }
             return super.gradeAutomatically(submission, exactExamVersion, gradedAt);
+        }
+
+        @Override
+        public ExamSubmission reviewGrade(
+                ExamSubmission submission,
+                int reviewerUserId,
+                BigDecimal finalScore,
+                String feedback,
+                String adjustmentReason,
+                LocalDateTime reviewedAt
+        ) {
+            reviewCalls++;
+            lastSubmission = submission;
+            lastManagerId = reviewerUserId;
+            lastFinalScore = finalScore;
+            lastFeedback = feedback;
+            lastAdjustmentReason = adjustmentReason;
+            lastTime = reviewedAt;
+            if (reviewFailure != null) {
+                throw reviewFailure;
+            }
+            if (reviewResult != null) {
+                return reviewResult;
+            }
+            return super.reviewGrade(
+                    submission,
+                    reviewerUserId,
+                    finalScore,
+                    feedback,
+                    adjustmentReason,
+                    reviewedAt
+            );
+        }
+
+        @Override
+        public ExamSubmission publishGrade(
+                ExamSubmission submission,
+                int publisherUserId,
+                LocalDateTime publishedAt
+        ) {
+            publicationCalls++;
+            lastSubmission = submission;
+            lastManagerId = publisherUserId;
+            lastTime = publishedAt;
+            if (publicationFailure != null) {
+                throw publicationFailure;
+            }
+            if (publicationResult != null) {
+                return publicationResult;
+            }
+            return super.publishGrade(submission, publisherUserId, publishedAt);
         }
     }
 

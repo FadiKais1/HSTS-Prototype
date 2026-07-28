@@ -3,13 +3,19 @@ package hsts.server.control;
 import hsts.common.ExamAttemptDTO;
 import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
+import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.ExecutionCodePayload;
 import hsts.common.ExtendSubmissionTimePayload;
+import hsts.common.PublishSubmissionPayload;
+import hsts.common.PublishedGradeDTO;
+import hsts.common.PublishedGradeSummaryDTO;
+import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SaveExamAnswerPayload;
 import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.StartExamPayload;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.SubmissionIdPayload;
+import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.ExecutionStatus;
 import hsts.common.type.UserRole;
 import hsts.server.entity.Exam;
@@ -31,6 +37,11 @@ import java.util.List;
 import java.util.Locale;
 
 public class ExamExecutionService {
+    private static final String SUBMISSION_NOT_FOUND =
+            "Submission not found or access denied";
+    private static final String SUBMISSION_CONFLICT =
+            "Submission was modified by another user; reload and try again";
+
     private DatabaseService databaseService;
 
     private final ExamExecutionRepository examExecutionRepository;
@@ -181,6 +192,144 @@ public class ExamExecutionService {
         ).orElseThrow(() -> new IllegalArgumentException(
                 "Execution not found: " + executionId
         ));
+    }
+
+    public List<ExecutionSubmissionSummaryDTO> getExecutionSubmissions(
+            int authenticatedManagerUserId,
+            int executionId
+    ) {
+        authorizeManager(authenticatedManagerUserId);
+        requirePositiveId(executionId, "Execution ID must be positive");
+        requireResultReadDependencies();
+        return List.copyOf(examSubmissionRepository.findSummariesForManager(
+                authenticatedManagerUserId,
+                executionId
+        ));
+    }
+
+    public SubmissionReviewDTO getSubmissionForReview(
+            int authenticatedManagerUserId,
+            int submissionId
+    ) {
+        authorizeManager(authenticatedManagerUserId);
+        requirePositiveId(submissionId, "Submission ID must be positive");
+        requireResultReadDependencies();
+        return loadManagerReview(authenticatedManagerUserId, submissionId);
+    }
+
+    public SubmissionReviewDTO reviewSubmissionGrade(
+            int authenticatedManagerUserId,
+            ReviewSubmissionPayload payload
+    ) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Submission review data is missing");
+        }
+        authorizeManager(authenticatedManagerUserId);
+        requirePositiveId(payload.getSubmissionId(), "Submission ID must be positive");
+        if (payload.getFinalScore() == null) {
+            throw new IllegalArgumentException("Final score is required");
+        }
+        if (payload.getExpectedUpdatedAt() == null) {
+            throw new IllegalArgumentException(
+                    "Expected submission update timestamp is required"
+            );
+        }
+        requireGradingDependencies();
+
+        ExamSubmission submission = loadManagerSubmission(
+                authenticatedManagerUserId,
+                payload.getSubmissionId()
+        );
+        requireCurrentSubmission(
+                payload.getExpectedUpdatedAt(),
+                submission.getUpdatedAt()
+        );
+        ExamSubmission reviewedSubmission = gradingService.reviewGrade(
+                submission,
+                authenticatedManagerUserId,
+                payload.getFinalScore(),
+                payload.getFeedback(),
+                payload.getAdjustmentReason(),
+                currentTime()
+        );
+        examSubmissionRepository.persistReview(
+                authenticatedManagerUserId,
+                reviewedSubmission
+        );
+        return examSubmissionRepository.findReviewForManager(
+                authenticatedManagerUserId,
+                reviewedSubmission.getSubmissionId()
+        ).orElseThrow(() -> new IllegalStateException(
+                "Submission review could not be reloaded: "
+                        + reviewedSubmission.getSubmissionId()
+        ));
+    }
+
+    public SubmissionReviewDTO publishSubmissionGrade(
+            int authenticatedManagerUserId,
+            PublishSubmissionPayload payload
+    ) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Submission publication data is missing");
+        }
+        authorizeManager(authenticatedManagerUserId);
+        requirePositiveId(payload.getSubmissionId(), "Submission ID must be positive");
+        if (payload.getExpectedUpdatedAt() == null) {
+            throw new IllegalArgumentException(
+                    "Expected submission update timestamp is required"
+            );
+        }
+        requireGradingDependencies();
+
+        ExamSubmission submission = loadManagerSubmission(
+                authenticatedManagerUserId,
+                payload.getSubmissionId()
+        );
+        requireCurrentSubmission(
+                payload.getExpectedUpdatedAt(),
+                submission.getUpdatedAt()
+        );
+        ExamSubmission publishedSubmission = gradingService.publishGrade(
+                submission,
+                authenticatedManagerUserId,
+                currentTime()
+        );
+        examSubmissionRepository.persistPublication(
+                authenticatedManagerUserId,
+                publishedSubmission
+        );
+        return examSubmissionRepository.findReviewForManager(
+                authenticatedManagerUserId,
+                publishedSubmission.getSubmissionId()
+        ).orElseThrow(() -> new IllegalStateException(
+                "Published submission could not be reloaded: "
+                        + publishedSubmission.getSubmissionId()
+        ));
+    }
+
+    public List<PublishedGradeSummaryDTO> getMyPublishedGrades(
+            int authenticatedStudentUserId
+    ) {
+        authorizeStudent(authenticatedStudentUserId);
+        requireResultReadDependencies();
+        return List.copyOf(
+                examSubmissionRepository.findPublishedSummariesForStudent(
+                        authenticatedStudentUserId
+                )
+        );
+    }
+
+    public PublishedGradeDTO getMyPublishedGrade(
+            int authenticatedStudentUserId,
+            int submissionId
+    ) {
+        authorizeStudent(authenticatedStudentUserId);
+        requirePositiveId(submissionId, "Submission ID must be positive");
+        requireResultReadDependencies();
+        return examSubmissionRepository.findPublishedGradeForStudent(
+                authenticatedStudentUserId,
+                submissionId
+        ).orElseThrow(() -> new IllegalArgumentException(SUBMISSION_NOT_FOUND));
     }
 
     public ExamExecutionPreviewDTO validateExecutionCode(
@@ -602,6 +751,52 @@ public class ExamExecutionService {
             throw new IllegalStateException(
                     "Exam finalization dependencies are not configured"
             );
+        }
+    }
+
+    private void requireResultReadDependencies() {
+        if (examSubmissionRepository == null) {
+            throw new IllegalStateException(
+                    "Exam result dependencies are not configured"
+            );
+        }
+    }
+
+    private void requireGradingDependencies() {
+        requireResultReadDependencies();
+        if (gradingService == null || clock == null) {
+            throw new IllegalStateException(
+                    "Exam grading dependencies are not configured"
+            );
+        }
+    }
+
+    private SubmissionReviewDTO loadManagerReview(int authenticatedManagerUserId,
+                                                   int submissionId) {
+        return examSubmissionRepository.findReviewForManager(
+                authenticatedManagerUserId,
+                submissionId
+        ).orElseThrow(() -> new IllegalArgumentException(SUBMISSION_NOT_FOUND));
+    }
+
+    private ExamSubmission loadManagerSubmission(int authenticatedManagerUserId,
+                                                  int submissionId) {
+        return examSubmissionRepository.findEntityForManager(
+                authenticatedManagerUserId,
+                submissionId
+        ).orElseThrow(() -> new IllegalArgumentException(SUBMISSION_NOT_FOUND));
+    }
+
+    private void requireCurrentSubmission(LocalDateTime expectedUpdatedAt,
+                                          LocalDateTime authoritativeUpdatedAt) {
+        if (!expectedUpdatedAt.equals(authoritativeUpdatedAt)) {
+            throw new IllegalStateException(SUBMISSION_CONFLICT);
+        }
+    }
+
+    private void requirePositiveId(int value, String message) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(message);
         }
     }
 
