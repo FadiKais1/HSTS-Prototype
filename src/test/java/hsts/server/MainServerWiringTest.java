@@ -32,6 +32,8 @@ public class MainServerWiringTest {
         assertEquals(1, occurrences(source, "new StudentEnrollmentRepository()"));
         assertEquals(1, occurrences(source, "new StudentProfileRepository()"));
         assertEquals(1, occurrences(source, "new GradingService()"));
+        assertEquals(1, occurrences(source, "new ReportRepository()"));
+        assertEquals(1, occurrences(source, "new ReportService("));
         assertEquals(1, occurrences(source, "new ExamExecutionService("));
         assertTrue(normalized.contains(
                 "new ExamExecutionService( examExecutionRepository, "
@@ -41,8 +43,12 @@ public class MainServerWiringTest {
         ));
         assertTrue(!source.contains("Clock.systemUTC()"));
         assertTrue(normalized.contains(
+                "new ReportService( reportRepository, userRepository, "
+                        + "courseRepository, Clock.systemDefaultZone() )"
+        ));
+        assertTrue(normalized.contains(
                 "new Server( port, examManagementService, authService, "
-                        + "examExecutionService )"
+                        + "examExecutionService, reportService )"
         ));
     }
 

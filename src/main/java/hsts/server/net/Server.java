@@ -14,6 +14,7 @@ import hsts.common.QuestionIdPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.RejectExamPayload;
+import hsts.common.ReportTargetPayload;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.Response;
 import hsts.common.ReviewSubmissionPayload;
@@ -59,17 +60,25 @@ public class Server extends AbstractServer {
     private ScheduledExecutorService autoSubmissionScheduler;
 
     public Server(int port, ExamManagementService examManagementService, AuthService authService) {
-        this(port, examManagementService, authService, null);
+        this(port, examManagementService, authService, null, null);
     }
 
     public Server(int port, ExamManagementService examManagementService,
                   AuthService authService,
                   ExamExecutionService examExecutionService) {
+        this(port, examManagementService, authService, examExecutionService, null);
+    }
+
+    public Server(int port, ExamManagementService examManagementService,
+                  AuthService authService,
+                  ExamExecutionService examExecutionService,
+                  ReportService reportService) {
         super(port);
         this.port = port;
         this.examManagementService = examManagementService;
         this.authService = authService;
         this.examExecutionService = examExecutionService;
+        this.reportService = reportService;
     }
 
     public void startServer() {
@@ -129,7 +138,10 @@ public class Server extends AbstractServer {
                      SUBMIT_EXAM_ATTEMPT, EXTEND_SUBMISSION_TIME,
                      LIST_EXECUTION_SUBMISSIONS, GET_SUBMISSION_FOR_REVIEW,
                      REVIEW_SUBMISSION_GRADE, PUBLISH_SUBMISSION_GRADE,
-                     LIST_MY_PUBLISHED_GRADES, GET_MY_PUBLISHED_GRADE ->
+                     LIST_MY_PUBLISHED_GRADES, GET_MY_PUBLISHED_GRADE,
+                     GET_MY_AUTHORED_EXAMS_REPORT, GET_TEACHER_EXAMS_REPORT,
+                     GET_COURSE_EXAMS_REPORT, GET_STUDENT_EXAMS_REPORT,
+                     GET_EXAM_EXECUTION_REPORT ->
                         Response.error("Authentication context required");
             };
 
@@ -527,6 +539,64 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case GET_MY_AUTHORED_EXAMS_REPORT -> {
+                    if (request.getPayload() != null) {
+                        throw new IllegalArgumentException(
+                                "Authored exam report payload must be empty"
+                        );
+                    }
+                    yield Response.success(
+                            "Authored exam report loaded",
+                            requireReportService().getMyAuthoredExamsReport(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case GET_TEACHER_EXAMS_REPORT -> {
+                    ReportTargetPayload payload = requireReportTargetPayload(request);
+                    yield Response.success(
+                            "Teacher exam report loaded",
+                            requireReportService().getTeacherExamsReport(
+                                    authenticatedUserId,
+                                    payload.getTargetId()
+                            )
+                    );
+                }
+
+                case GET_COURSE_EXAMS_REPORT -> {
+                    ReportTargetPayload payload = requireReportTargetPayload(request);
+                    yield Response.success(
+                            "Course exam report loaded",
+                            requireReportService().getCourseExamsReport(
+                                    authenticatedUserId,
+                                    payload.getTargetId()
+                            )
+                    );
+                }
+
+                case GET_STUDENT_EXAMS_REPORT -> {
+                    ReportTargetPayload payload = requireReportTargetPayload(request);
+                    yield Response.success(
+                            "Student exam report loaded",
+                            requireReportService().getStudentExamsReport(
+                                    authenticatedUserId,
+                                    payload.getTargetId()
+                            )
+                    );
+                }
+
+                case GET_EXAM_EXECUTION_REPORT -> {
+                    ReportTargetPayload payload = requireReportTargetPayload(request);
+                    yield Response.success(
+                            "Exam execution report loaded",
+                            requireReportService().getExamExecutionReport(
+                                    authenticatedUserId,
+                                    payload.getTargetId()
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
@@ -603,6 +673,20 @@ public class Server extends AbstractServer {
             );
         }
         return examExecutionService;
+    }
+
+    private ReportTargetPayload requireReportTargetPayload(Request request) {
+        if (!(request.getPayload() instanceof ReportTargetPayload payload)) {
+            throw new IllegalArgumentException("Report target payload is required");
+        }
+        return payload;
+    }
+
+    private ReportService requireReportService() {
+        if (reportService == null) {
+            throw new IllegalStateException("Report service is not configured");
+        }
+        return reportService;
     }
 
     private Response errorResponse(Exception exception) {

@@ -69,7 +69,12 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.REVIEW_SUBMISSION_GRADE,
                         RequestType.PUBLISH_SUBMISSION_GRADE,
                         RequestType.LIST_MY_PUBLISHED_GRADES,
-                        RequestType.GET_MY_PUBLISHED_GRADE
+                        RequestType.GET_MY_PUBLISHED_GRADE,
+                        RequestType.GET_MY_AUTHORED_EXAMS_REPORT,
+                        RequestType.GET_TEACHER_EXAMS_REPORT,
+                        RequestType.GET_COURSE_EXAMS_REPORT,
+                        RequestType.GET_STUDENT_EXAMS_REPORT,
+                        RequestType.GET_EXAM_EXECUTION_REPORT
                 },
                 RequestType.values()
         );

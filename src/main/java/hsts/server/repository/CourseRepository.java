@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class CourseRepository {
     private final DatabaseController databaseController;
@@ -76,6 +77,41 @@ public class CourseRepository {
 
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to verify course assignment", e);
+        }
+    }
+
+    public Optional<CourseSummaryDTO> findById(int courseId) {
+        String sql = """
+                SELECT c.course_id,
+                       c.subject_id,
+                       c.course_code,
+                       c.name AS course_name,
+                       s.name AS subject_name,
+                       c.grade_level,
+                       c.school_year
+                FROM courses c
+                JOIN subjects s ON s.subject_id = c.subject_id
+                WHERE c.course_id = ?
+                """;
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setInt(1, courseId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                CourseSummaryDTO course = mapRowToCourseSummary(resultSet);
+                if (resultSet.next()) {
+                    throw new IllegalStateException("Duplicate course: " + courseId);
+                }
+                return Optional.of(course);
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load course", e);
         }
     }
 

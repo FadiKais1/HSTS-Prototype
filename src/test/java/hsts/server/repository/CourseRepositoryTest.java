@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -42,6 +43,19 @@ public class CourseRepositoryTest {
                 FROM teacher_courses
                 WHERE teacher_user_id = ? AND course_id = ?
             ) AS assigned
+            """;
+
+    private static final String COURSE_BY_ID_SQL = """
+            SELECT c.course_id,
+                   c.subject_id,
+                   c.course_code,
+                   c.name AS course_name,
+                   s.name AS subject_name,
+                   c.grade_level,
+                   c.school_year
+            FROM courses c
+            JOIN subjects s ON s.subject_id = c.subject_id
+            WHERE c.course_id = ?
             """;
 
     @Test
@@ -130,6 +144,40 @@ public class CourseRepositoryTest {
 
         assertEquals("Failed to verify course assignment", exception.getMessage());
         assertSame(sqlException, exception.getCause());
+    }
+
+    @Test
+    public void findByIdUsesPreparedExactLookupAndMapsAuthoritativeCourse() {
+        RecordingDatabaseController databaseController =
+                new RecordingDatabaseController(List.of(courseRow(
+                        31, 4, "BIO-101", "Biology", "Sciences", "10", "2026"
+                )));
+
+        Optional<CourseSummaryDTO> result =
+                new CourseRepository(databaseController).findById(31);
+
+        assertTrue(result.isPresent());
+        assertCourse(result.orElseThrow(), 31, 4, "BIO-101", "Biology",
+                "Sciences", "10", "2026");
+        assertEquals(normalizeSql(COURSE_BY_ID_SQL),
+                normalizeSql(databaseController.getSql()));
+        assertEquals(31, databaseController.getParameter(1));
+    }
+
+    @Test
+    public void findByIdReturnsEmptyAndWrapsSqlFailures() {
+        RecordingDatabaseController empty = new RecordingDatabaseController(List.of());
+        assertTrue(new CourseRepository(empty).findById(404).isEmpty());
+
+        SQLException cause = new SQLException("course lookup failed");
+        RecordingDatabaseController failed = new RecordingDatabaseController(List.of());
+        failed.setQueryFailure(cause);
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> new CourseRepository(failed).findById(31)
+        );
+        assertEquals("Failed to load course", exception.getMessage());
+        assertSame(cause, exception.getCause());
     }
 
     private static Map<String, Object> courseRow(int courseId, int subjectId,
