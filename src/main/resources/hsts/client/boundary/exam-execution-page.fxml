@@ -119,10 +119,18 @@
                                        style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
                                 <Label fx:id="questionDetailsLabel" style="-fx-text-fill: #6b7280;"/>
                                 <Separator/>
-                                <RadioButton fx:id="option1Radio" wrapText="true" maxWidth="Infinity"/>
-                                <RadioButton fx:id="option2Radio" wrapText="true" maxWidth="Infinity"/>
-                                <RadioButton fx:id="option3Radio" wrapText="true" maxWidth="Infinity"/>
-                                <RadioButton fx:id="option4Radio" wrapText="true" maxWidth="Infinity"/>
+                                <RadioButton fx:id="option1Radio" wrapText="true"
+                                             contentDisplay="LEFT" minWidth="240" maxWidth="Infinity"
+                                             style="-fx-text-fill: #111827; -fx-opacity: 1.0; -fx-font-size: 15px;"/>
+                                <RadioButton fx:id="option2Radio" wrapText="true"
+                                             contentDisplay="LEFT" minWidth="240" maxWidth="Infinity"
+                                             style="-fx-text-fill: #111827; -fx-opacity: 1.0; -fx-font-size: 15px;"/>
+                                <RadioButton fx:id="option3Radio" wrapText="true"
+                                             contentDisplay="LEFT" minWidth="240" maxWidth="Infinity"
+                                             style="-fx-text-fill: #111827; -fx-opacity: 1.0; -fx-font-size: 15px;"/>
+                                <RadioButton fx:id="option4Radio" wrapText="true"
+                                             contentDisplay="LEFT" minWidth="240" maxWidth="Infinity"
+                                             style="-fx-text-fill: #111827; -fx-opacity: 1.0; -fx-font-size: 15px;"/>
                                 <Label fx:id="saveStatusLabel" wrapText="true" style="-fx-text-fill: #4b5563;"/>
                                 <Region VBox.vgrow="ALWAYS"/>
                                 <HBox spacing="10" alignment="CENTER_LEFT">

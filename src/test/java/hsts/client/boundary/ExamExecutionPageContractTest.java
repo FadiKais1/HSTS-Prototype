@@ -7,6 +7,13 @@ import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.type.ExecutionStatus;
 import hsts.common.type.SubmissionStatus;
+import javafx.application.Platform;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.RadioButton;
+import javafx.scene.paint.Color;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -25,6 +32,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -196,6 +206,82 @@ public class ExamExecutionPageContractTest {
                 ExamExecutionPage.optionTexts(question(11, 1, "A", " ", "C", "D")));
         assertThrows(IllegalArgumentException.class, () ->
                 ExamExecutionPage.optionTexts(question(11, 1, "A", "B", null, "D")));
+    }
+
+    @Test
+    public void loadedFxmlRendersExactOptionTextAndRestoredSelection() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        Platform.startup(started::countDown);
+        assertTrue("JavaFX toolkit did not start", started.await(10, TimeUnit.SECONDS));
+
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch completed = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            try {
+                FXMLLoader loader = new FXMLLoader(ExamExecutionPage.class.getResource(
+                        "/hsts/client/boundary/exam-execution-page.fxml"
+                ));
+                Parent root = loader.load();
+                ExamExecutionPage page = loader.getController();
+                Scene scene = new Scene(root);
+                root.resize(1180, 760);
+
+                StudentExamQuestionDTO first = question(
+                        2, 1, "x = 2", "x = 4", "x = 5", "x = 20"
+                );
+                setField(page, "questions", List.of(first));
+                ExamExecutionPage.ConfirmedAnswerState state =
+                        (ExamExecutionPage.ConfirmedAnswerState) field(page, "answerState");
+                state.reset(Map.of(2, 2));
+                invoke(page, "showAttemptPane", new Class<?>[]{boolean.class}, true);
+                invoke(page, "showQuestion", new Class<?>[]{int.class}, 0);
+                root.applyCss();
+                root.layout();
+
+                assertRenderedOptions(page,
+                        List.of("x = 2", "x = 4", "x = 5", "x = 20"), 2);
+
+                StudentExamQuestionDTO second = question(
+                        3, 2, "One", "Two", "Three", "Four"
+                );
+                setField(page, "questions", List.of(second));
+                state.reset(Map.of(3, 4));
+                invoke(page, "showQuestion", new Class<?>[]{int.class}, 0);
+                root.applyCss();
+                root.layout();
+
+                assertRenderedOptions(page,
+                        List.of("One", "Two", "Three", "Four"), 4);
+
+                StudentExamQuestionDTO malformed = question(
+                        4, 3, "Valid one", "Valid two", null, "Valid four"
+                );
+                setField(page, "questions", List.of(malformed));
+                invoke(page, "showQuestion", new Class<?>[]{int.class}, 0);
+                for (String fieldName : List.of(
+                        "option1Radio", "option2Radio", "option3Radio", "option4Radio"
+                )) {
+                    RadioButton button = (RadioButton) field(page, fieldName);
+                    assertEquals("", button.getText());
+                    assertFalse(button.isVisible());
+                    assertFalse(button.isManaged());
+                }
+                assertEquals(
+                        "Question answer options are unavailable",
+                        ((javafx.scene.control.Label) field(page, "feedbackLabel")).getText()
+                );
+                assertTrue(scene.getRoot() == root);
+            } catch (Throwable throwable) {
+                failure.set(throwable);
+            } finally {
+                completed.countDown();
+            }
+        });
+        assertTrue("JavaFX render test timed out", completed.await(10, TimeUnit.SECONDS));
+        Platform.exit();
+        if (failure.get() != null) {
+            throw new AssertionError("JavaFX render verification failed", failure.get());
+        }
     }
 
     @Test
@@ -452,5 +538,49 @@ public class ExamExecutionPageContractTest {
             index += value.length();
         }
         return count;
+    }
+
+    private static void assertRenderedOptions(ExamExecutionPage page,
+                                              List<String> expected,
+                                              int selectedOption) throws Exception {
+        List<RadioButton> buttons = List.of(
+                (RadioButton) field(page, "option1Radio"),
+                (RadioButton) field(page, "option2Radio"),
+                (RadioButton) field(page, "option3Radio"),
+                (RadioButton) field(page, "option4Radio")
+        );
+        for (int index = 0; index < buttons.size(); index++) {
+            RadioButton button = buttons.get(index);
+            assertEquals(expected.get(index), button.getText());
+            assertEquals(Integer.valueOf(index + 1), button.getUserData());
+            assertTrue(button.isVisible());
+            assertTrue(button.isManaged());
+            assertTrue(button.getContentDisplay() != ContentDisplay.GRAPHIC_ONLY);
+            assertEquals(Color.web("#111827"), button.getTextFill());
+            assertEquals(1.0, button.getOpacity(), 0.0);
+            assertTrue(button.getWidth() >= 240.0);
+            assertEquals(index + 1 == selectedOption, button.isSelected());
+        }
+    }
+
+    private static Object field(Object target, String name) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
+    private static void setField(Object target, String name, Object value)
+            throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static Object invoke(Object target, String name,
+                                 Class<?>[] parameterTypes, Object... arguments)
+            throws Exception {
+        Method method = target.getClass().getDeclaredMethod(name, parameterTypes);
+        method.setAccessible(true);
+        return method.invoke(target, arguments);
     }
 }
