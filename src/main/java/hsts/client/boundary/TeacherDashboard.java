@@ -45,6 +45,9 @@ public class TeacherDashboard {
     @FXML
     private Button gradeReviewButton;
     private Runnable gradeReviewHandler;
+    @FXML
+    private Button reportsButton;
+    private Runnable reportsHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
@@ -53,9 +56,11 @@ public class TeacherDashboard {
         approvalRequestsHandler = null;
         examSchedulingHandler = null;
         gradeReviewHandler = null;
+        reportsHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -66,9 +71,11 @@ public class TeacherDashboard {
         approvalRequestsHandler = null;
         examSchedulingHandler = null;
         gradeReviewHandler = null;
+        reportsHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -80,9 +87,11 @@ public class TeacherDashboard {
         approvalRequestsHandler = null;
         examSchedulingHandler = null;
         gradeReviewHandler = null;
+        reportsHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -94,9 +103,11 @@ public class TeacherDashboard {
         this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
         examSchedulingHandler = null;
         gradeReviewHandler = null;
+        reportsHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -109,9 +120,11 @@ public class TeacherDashboard {
         this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
         this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
         gradeReviewHandler = null;
+        reportsHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -124,9 +137,29 @@ public class TeacherDashboard {
         this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
         this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
         this.gradeReviewHandler = Objects.requireNonNull(gradeReviewHandler);
+        reportsHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable questionBankHandler,
+                          Runnable examManagementHandler, Runnable approvalRequestsHandler,
+                          Runnable examSchedulingHandler, Runnable gradeReviewHandler,
+                          Runnable reportsHandler) {
+        configureDashboard(stage, client, loginResult, logoutHandler);
+        this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
+        this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
+        this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
+        this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
+        this.gradeReviewHandler = Objects.requireNonNull(gradeReviewHandler);
+        this.reportsHandler = Objects.requireNonNull(reportsHandler);
+        updateApprovalRequestsState();
+        updateExamSchedulingState();
+        updateGradeReviewState();
+        updateReportsState();
     }
 
     @FXML
@@ -231,6 +264,23 @@ public class TeacherDashboard {
         }
     }
 
+    @FXML
+    private void handleReports() {
+        if (reportsHandler == null
+                || loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showError("Reports are unavailable");
+            return;
+        }
+
+        try {
+            reportsHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Reports are unavailable");
+        }
+    }
+
     private void configureDashboard(Stage stage, Client client, LoginResult loginResult,
                                     Runnable logoutHandler) {
         this.stage = Objects.requireNonNull(stage);
@@ -247,6 +297,7 @@ public class TeacherDashboard {
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
+        updateReportsState();
         showError("");
     }
 
@@ -280,6 +331,17 @@ public class TeacherDashboard {
         gradeReviewButton.setManaged(manager);
         gradeReviewButton.setVisible(manager);
         gradeReviewButton.setDisable(!manager || gradeReviewHandler == null);
+    }
+
+    private void updateReportsState() {
+        if (reportsButton == null || loginResult == null) {
+            return;
+        }
+        UserRole role = loginResult.getRole();
+        boolean manager = role == UserRole.TEACHER || role == UserRole.COORDINATOR;
+        reportsButton.setManaged(manager);
+        reportsButton.setVisible(manager);
+        reportsButton.setDisable(!manager || reportsHandler == null);
     }
 
     private void showError(String message) {

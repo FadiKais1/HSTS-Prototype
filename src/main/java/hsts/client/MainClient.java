@@ -9,6 +9,7 @@ import hsts.client.boundary.GradeReviewPage;
 import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.PublishedGradesPage;
 import hsts.client.boundary.QuestionBankPageController;
+import hsts.client.boundary.ReportsPage;
 import hsts.client.boundary.StudentDashboard;
 import hsts.client.boundary.TeacherDashboard;
 import hsts.client.navigation.SceneNavigator;
@@ -167,7 +168,8 @@ public class MainClient extends Application {
                 () -> showExamBuilder(loginResult),
                 () -> showApprovalRequests(loginResult),
                 () -> showExamScheduling(loginResult),
-                () -> showGradeReview(loginResult)
+                () -> showGradeReview(loginResult),
+                () -> showReports(loginResult)
         );
     }
 
@@ -177,7 +179,55 @@ public class MainClient extends Application {
                 "/hsts/client/boundary/principal-dashboard.fxml",
                 "HSTS Exam Management System - Principal Dashboard"
         );
-        dashboard.configure(stage, client, loginResult, this::logout);
+        dashboard.configure(
+                stage,
+                client,
+                loginResult,
+                this::logout,
+                () -> showReports(loginResult)
+        );
+    }
+
+    private void showReports(LoginResult loginResult) {
+        if (loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR
+                && loginResult.getRole() != UserRole.PRINCIPAL)) {
+            showNavigationError("Reports are unavailable for this role");
+            return;
+        }
+        try {
+            ReportsPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/reports-page.fxml",
+                    "HSTS Exam Management System - Reports"
+            );
+            controller.configure(
+                    stage,
+                    client,
+                    loginResult,
+                    () -> returnFromReports(loginResult)
+            );
+        } catch (IOException | RuntimeException exception) {
+            try {
+                returnFromReports(loginResult);
+                showNavigationError("Unable to open reports");
+            } catch (RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void returnFromReports(LoginResult loginResult) {
+        try {
+            if (loginResult.getRole() == UserRole.PRINCIPAL) {
+                showPrincipalDashboard(loginResult);
+            } else {
+                showTeacherDashboard(loginResult);
+            }
+        } catch (IOException | RuntimeException exception) {
+            cleanupAfterNavigationFailure();
+        }
     }
 
     private void showQuestionBank(LoginResult loginResult) {

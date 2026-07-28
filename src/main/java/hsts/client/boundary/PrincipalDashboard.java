@@ -26,14 +26,24 @@ public class PrincipalDashboard {
     @FXML
     private Button logoutButton;
     private Runnable logoutHandler;
+    @FXML
+    private Button reportsButton;
+    private Runnable reportsHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
+        configure(stage, client, loginResult, logoutHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable reportsHandler) {
         this.stage = Objects.requireNonNull(stage);
         this.client = Objects.requireNonNull(client);
         this.loginResult = Objects.requireNonNull(loginResult);
         this.logoutHandler = Objects.requireNonNull(logoutHandler);
+        this.reportsHandler = reportsHandler;
 
         displayIdentity();
+        updateReportsState();
         showError("");
     }
 
@@ -58,6 +68,25 @@ public class PrincipalDashboard {
                 logoutButton.setDisable(false);
             }
             showError("Unable to log out");
+        }
+    }
+
+    @FXML
+    private void handleReports() {
+        if (reportsHandler == null) {
+            showError("Reports are unavailable");
+            return;
+        }
+        try {
+            reportsHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Reports are unavailable");
+        }
+    }
+
+    private void updateReportsState() {
+        if (reportsButton != null) {
+            reportsButton.setDisable(reportsHandler == null);
         }
     }
 

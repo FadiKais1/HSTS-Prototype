@@ -40,7 +40,9 @@
                 <Label fx:id="errorLabel" text="" managed="false" visible="false"
                        wrapText="true" maxWidth="Infinity"
                        style="-fx-background-color: #fef2f2; -fx-background-radius: 8; -fx-text-fill: #b91c1c; -fx-padding: 9;"/>
-                <Button text="Reports" disable="true" maxWidth="Infinity" prefHeight="46"/>
+                <Button fx:id="reportsButton" text="Reports" onAction="#handleReports"
+                        maxWidth="Infinity" prefHeight="46"
+                        style="-fx-background-color: #0369a1; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button text="Questions" disable="true" maxWidth="Infinity" prefHeight="46"/>
                 <Button text="Exams" disable="true" maxWidth="Infinity" prefHeight="46"/>
                 <Button text="Results" disable="true" maxWidth="Infinity" prefHeight="46"/>
