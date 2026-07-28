@@ -5,6 +5,7 @@ import hsts.client.boundary.ApprovalRequestsPage;
 import hsts.client.boundary.ExamBuilderPage;
 import hsts.client.boundary.ExamSchedulingPage;
 import hsts.client.boundary.ExamExecutionPage;
+import hsts.client.boundary.GradeReviewPage;
 import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.StudentDashboard;
@@ -163,7 +164,8 @@ public class MainClient extends Application {
                 () -> showQuestionBank(loginResult),
                 () -> showExamBuilder(loginResult),
                 () -> showApprovalRequests(loginResult),
-                () -> showExamScheduling(loginResult)
+                () -> showExamScheduling(loginResult),
+                () -> showGradeReview(loginResult)
         );
     }
 
@@ -257,6 +259,35 @@ public class MainClient extends Application {
             try {
                 showTeacherDashboard(loginResult);
                 showNavigationError("Unable to open exam scheduling");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void showGradeReview(LoginResult loginResult) {
+        if (loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showNavigationError("Grade review is available only to teachers and coordinators");
+            return;
+        }
+        try {
+            GradeReviewPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/grade-review-page.fxml",
+                    "HSTS Exam Management System - Grade Review"
+            );
+            controller.configure(
+                    stage,
+                    client,
+                    loginResult,
+                    () -> returnToTeacherDashboard(loginResult)
+            );
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showTeacherDashboard(loginResult);
+                showNavigationError("Unable to open grade review");
             } catch (IOException | RuntimeException restoreException) {
                 cleanupAfterNavigationFailure();
             }

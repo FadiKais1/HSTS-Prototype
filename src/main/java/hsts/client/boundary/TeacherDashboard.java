@@ -42,6 +42,9 @@ public class TeacherDashboard {
     @FXML
     private Button examSchedulingButton;
     private Runnable examSchedulingHandler;
+    @FXML
+    private Button gradeReviewButton;
+    private Runnable gradeReviewHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
@@ -49,8 +52,10 @@ public class TeacherDashboard {
         examManagementHandler = null;
         approvalRequestsHandler = null;
         examSchedulingHandler = null;
+        gradeReviewHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
+        updateGradeReviewState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -60,8 +65,10 @@ public class TeacherDashboard {
         examManagementHandler = null;
         approvalRequestsHandler = null;
         examSchedulingHandler = null;
+        gradeReviewHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
+        updateGradeReviewState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -72,8 +79,10 @@ public class TeacherDashboard {
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
         approvalRequestsHandler = null;
         examSchedulingHandler = null;
+        gradeReviewHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
+        updateGradeReviewState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -84,8 +93,10 @@ public class TeacherDashboard {
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
         this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
         examSchedulingHandler = null;
+        gradeReviewHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
+        updateGradeReviewState();
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
@@ -97,8 +108,25 @@ public class TeacherDashboard {
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
         this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
         this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
+        gradeReviewHandler = null;
         updateApprovalRequestsState();
         updateExamSchedulingState();
+        updateGradeReviewState();
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable questionBankHandler,
+                          Runnable examManagementHandler, Runnable approvalRequestsHandler,
+                          Runnable examSchedulingHandler, Runnable gradeReviewHandler) {
+        configureDashboard(stage, client, loginResult, logoutHandler);
+        this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
+        this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
+        this.approvalRequestsHandler = Objects.requireNonNull(approvalRequestsHandler);
+        this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
+        this.gradeReviewHandler = Objects.requireNonNull(gradeReviewHandler);
+        updateApprovalRequestsState();
+        updateExamSchedulingState();
+        updateGradeReviewState();
     }
 
     @FXML
@@ -186,6 +214,23 @@ public class TeacherDashboard {
         }
     }
 
+    @FXML
+    private void handleGradeReview() {
+        if (gradeReviewHandler == null
+                || loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showError("Grade review is unavailable");
+            return;
+        }
+
+        try {
+            gradeReviewHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Grade review is unavailable");
+        }
+    }
+
     private void configureDashboard(Stage stage, Client client, LoginResult loginResult,
                                     Runnable logoutHandler) {
         this.stage = Objects.requireNonNull(stage);
@@ -201,6 +246,7 @@ public class TeacherDashboard {
         }
         updateApprovalRequestsState();
         updateExamSchedulingState();
+        updateGradeReviewState();
         showError("");
     }
 
@@ -223,6 +269,17 @@ public class TeacherDashboard {
         examSchedulingButton.setManaged(manager);
         examSchedulingButton.setVisible(manager);
         examSchedulingButton.setDisable(!manager || examSchedulingHandler == null);
+    }
+
+    private void updateGradeReviewState() {
+        if (gradeReviewButton == null || loginResult == null) {
+            return;
+        }
+        UserRole role = loginResult.getRole();
+        boolean manager = role == UserRole.TEACHER || role == UserRole.COORDINATOR;
+        gradeReviewButton.setManaged(manager);
+        gradeReviewButton.setVisible(manager);
+        gradeReviewButton.setDisable(!manager || gradeReviewHandler == null);
     }
 
     private void showError(String message) {

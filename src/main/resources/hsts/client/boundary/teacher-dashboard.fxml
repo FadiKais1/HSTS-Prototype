@@ -49,6 +49,9 @@
                 <Button fx:id="examSchedulingButton" text="Exam Scheduling"
                         onAction="#handleExamScheduling" maxWidth="Infinity" prefHeight="46"
                         style="-fx-background-color: #b45309; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                <Button fx:id="gradeReviewButton" text="Review Grades"
+                        onAction="#handleGradeReview" maxWidth="Infinity" prefHeight="46"
+                        style="-fx-background-color: #be185d; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button fx:id="approvalRequestsButton" text="Approval Requests" disable="true"
                         managed="false" visible="false" onAction="#handleApprovalRequests"
                         maxWidth="Infinity" prefHeight="46"
