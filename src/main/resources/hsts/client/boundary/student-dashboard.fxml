@@ -46,7 +46,6 @@
                 <Button fx:id="publishedGradesButton" text="View Published Grades"
                         onAction="#handlePublishedGrades" maxWidth="Infinity" prefHeight="46"
                         style="-fx-background-color: #15803d; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
-                <Button text="Available Exams" disable="true" maxWidth="Infinity" prefHeight="46"/>
             </VBox>
         </StackPane>
     </center>

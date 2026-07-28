@@ -55,8 +55,10 @@
                            style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
                     <Label text="Select a result to view its published details."
                            style="-fx-text-fill: #6b7280;"/>
-                    <TableView fx:id="gradeTable" placeholder="No published grades are available."
-                               VBox.vgrow="ALWAYS">
+                    <TableView fx:id="gradeTable" VBox.vgrow="ALWAYS">
+                        <placeholder>
+                            <Label text="No published grades are available."/>
+                        </placeholder>
                         <columns>
                             <TableColumn fx:id="examTitleColumn" text="Exam" prefWidth="180"/>
                             <TableColumn fx:id="courseColumn" text="Course" prefWidth="140"/>

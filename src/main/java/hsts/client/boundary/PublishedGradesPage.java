@@ -350,7 +350,7 @@ public class PublishedGradesPage {
         return value == null ? "" : DATE_TIME_FORMAT.format(value);
     }
 
-    private static String formatDecimal(BigDecimal value) {
+    static String formatDecimal(BigDecimal value) {
         return value == null ? "" : value.toPlainString();
     }
 

@@ -2,6 +2,7 @@ package hsts.client.boundary;
 
 import hsts.common.PublishedGradeSummaryDTO;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -15,6 +16,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -100,6 +102,7 @@ public class PublishedGradesPageContractTest {
         assertEquals("", PublishedGradesPage.formatDateTime(null));
         assertEquals("No feedback provided", PublishedGradesPage.friendlyFeedback(" "));
         assertEquals("Helpful work", PublishedGradesPage.friendlyFeedback("Helpful work"));
+        assertEquals("0.00", PublishedGradesPage.formatDecimal(new BigDecimal("0.00")));
     }
 
     @Test
@@ -198,6 +201,29 @@ public class PublishedGradesPageContractTest {
     }
 
     @Test
+    public void publishedGradesFxmlResolvesAtRuntimeAndUsesNodePlaceholder()
+            throws Exception {
+        URL resource = PublishedGradesPage.class.getResource(
+                "/hsts/client/boundary/published-grades-page.fxml"
+        );
+        assertNotNull(resource);
+        FXMLLoader loader = new FXMLLoader(resource);
+        assertEquals(resource, loader.getLocation());
+
+        Document document = parse(FXML);
+        Element gradeTable = findByFxId(document.getDocumentElement(), "gradeTable");
+        assertNotNull(gradeTable);
+        assertFalse(gradeTable.hasAttribute("placeholder"));
+        NodeList placeholders = gradeTable.getElementsByTagName("placeholder");
+        assertEquals(1, placeholders.getLength());
+        assertEquals(1, ((Element) placeholders.item(0))
+                .getElementsByTagName("Label").getLength());
+        assertNotNull(javafx.scene.control.TableView.class.getMethod(
+                "setPlaceholder", javafx.scene.Node.class
+        ));
+    }
+
+    @Test
     public void dashboardAndMainClientWireStudentSharedClientNavigation()
             throws Exception {
         String dashboard = Files.readString(DASHBOARD_SOURCE);
@@ -210,6 +236,7 @@ public class PublishedGradesPageContractTest {
         assertTrue(dashboard.contains("publishedGradesHandler.run()"));
         assertTrue(dashboardFxml.contains("fx:id=\"publishedGradesButton\""));
         assertTrue(dashboardFxml.contains("onAction=\"#handlePublishedGrades\""));
+        assertFalse(dashboardFxml.contains("Available Exams"));
         assertEquals(1, occurrences(dashboardFxml, "publishedGradesButton"));
         assertTrue(dashboardFxml.contains("fx:id=\"examExecutionButton\""));
         assertTrue(dashboardFxml.contains("onAction=\"#handleLogout\""));
@@ -296,6 +323,23 @@ public class PublishedGradesPageContractTest {
             index += token.length();
         }
         return count;
+    }
+
+    private static Element findByFxId(Element element, String fxId) {
+        if (fxId.equals(element.getAttribute("fx:id"))) {
+            return element;
+        }
+        NodeList children = element.getChildNodes();
+        for (int index = 0; index < children.getLength(); index++) {
+            Node child = children.item(index);
+            if (child instanceof Element childElement) {
+                Element result = findByFxId(childElement, fxId);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
     }
 
     private static String methodSource(String source, String methodStart) {

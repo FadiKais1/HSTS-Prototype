@@ -198,6 +198,21 @@ public class MainClient extends Application {
         }
     }
 
+    private static void logNavigationFailure(String destination, Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        String message = cause.getMessage();
+        String safeMessage = message == null || message.isBlank()
+                ? "No diagnostic message"
+                : message.replace('\r', ' ').replace('\n', ' ');
+        System.err.println(
+                "Navigation failure (" + destination + "): "
+                        + cause.getClass().getSimpleName() + ": " + safeMessage
+        );
+    }
+
     private void showExamBuilder(LoginResult loginResult) {
         try {
             ExamBuilderPage controller = SceneNavigator.switchScene(
@@ -357,6 +372,7 @@ public class MainClient extends Application {
                     () -> returnToStudentDashboard(loginResult)
             );
         } catch (IOException | RuntimeException exception) {
+            logNavigationFailure("published grades", exception);
             try {
                 showStudentDashboard(loginResult);
                 showNavigationError("Unable to open published grades");

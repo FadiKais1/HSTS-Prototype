@@ -29,6 +29,7 @@ import java.util.concurrent.CompletionException;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class ExamExecutionPageContractTest {
@@ -187,6 +188,14 @@ public class ExamExecutionPageContractTest {
         assertEquals(Integer.valueOf(4), restored.get(22));
         assertEquals(Integer.valueOf(2), restored.get(11));
         assertEquals(2, ExamExecutionPage.answeredCount(ordered, restored));
+    }
+
+    @Test
+    public void malformedQuestionOptionsAreRejectedInsteadOfRenderedBlank() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ExamExecutionPage.optionTexts(question(11, 1, "A", " ", "C", "D")));
+        assertThrows(IllegalArgumentException.class, () ->
+                ExamExecutionPage.optionTexts(question(11, 1, "A", "B", null, "D")));
     }
 
     @Test

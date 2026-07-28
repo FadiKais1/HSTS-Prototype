@@ -80,6 +80,7 @@ public class ExamExecutionPage {
     private boolean reloading;
     private boolean submitting;
     private boolean deadlineActionTriggered;
+    private boolean currentQuestionOptionsValid;
     private long lifecycleGeneration;
     private long validationGeneration;
     private long startGeneration;
@@ -180,6 +181,7 @@ public class ExamExecutionPage {
         this.reloading = false;
         this.submitting = false;
         this.deadlineActionTriggered = false;
+        this.currentQuestionOptionsValid = false;
         this.validatedPreview = null;
         this.validatedExecutionCode = null;
         this.validationRequestCode = null;
@@ -304,8 +306,9 @@ public class ExamExecutionPage {
                         return;
                     }
 
-                    applyAttempt(attempt);
-                    setFeedback("Exam attempt loaded.");
+                    if (applyAttempt(attempt)) {
+                        setFeedback("Exam attempt loaded.");
+                    }
                 })
         );
     }
@@ -476,8 +479,9 @@ public class ExamExecutionPage {
                 return;
             }
 
-            applyAttempt(loadedAttempt);
-            setFeedback("Exam attempt refreshed.");
+            if (applyAttempt(loadedAttempt)) {
+                setFeedback("Exam attempt refreshed.");
+            }
         }));
     }
 
@@ -520,20 +524,34 @@ public class ExamExecutionPage {
                 return;
             }
 
-            applyAttempt(submittedAttempt);
-            setFeedback("Exam submitted successfully.");
+            if (applyAttempt(submittedAttempt)) {
+                setFeedback("Exam submitted successfully.");
+            }
         }));
     }
 
-    private void applyAttempt(ExamAttemptDTO attempt) {
+    private boolean applyAttempt(ExamAttemptDTO attempt) {
         Objects.requireNonNull(attempt, "attempt");
         stopCountdown();
+        List<StudentExamQuestionDTO> loadedQuestions =
+                preserveQuestionOrder(attempt.getQuestions());
+        try {
+            for (StudentExamQuestionDTO question : loadedQuestions) {
+                optionTexts(question);
+            }
+        } catch (IllegalArgumentException exception) {
+            currentQuestionOptionsValid = false;
+            showAttemptPane(false);
+            setFeedback(exception.getMessage());
+            updateActionState();
+            return false;
+        }
         attemptGeneration++;
         reloadGeneration++;
         submissionId = attempt.getSubmissionId();
         deadline = attempt.getDeadline();
         submissionStatus = attempt.getStatus();
-        questions = preserveQuestionOrder(attempt.getQuestions());
+        questions = loadedQuestions;
         answerState.reset(restoreSelections(attempt.getAnswers()));
         currentQuestionIndex = questions.isEmpty() ? -1 : 0;
         stateRevision++;
@@ -559,6 +577,7 @@ public class ExamExecutionPage {
                 : "This attempt is read-only.");
         startCountdown();
         updateActionState();
+        return true;
     }
 
     private void markNoActiveAttempt() {
@@ -587,10 +606,34 @@ public class ExamExecutionPage {
         questionDetailsLabel.setText(
                 safe(question.getTopic()) + "  |  " + safe(question.getDifficulty())
         );
-        List<String> options = optionTexts(question);
         List<RadioButton> buttons = answerButtons();
+        List<String> options;
+        try {
+            options = optionTexts(question);
+        } catch (IllegalArgumentException exception) {
+            currentQuestionOptionsValid = false;
+            renderingSelection = true;
+            try {
+                answerGroup.selectToggle(null);
+                for (RadioButton button : buttons) {
+                    button.setText("");
+                    button.setVisible(false);
+                    button.setManaged(false);
+                }
+            } finally {
+                renderingSelection = false;
+            }
+            setFeedback(exception.getMessage());
+            updateActionState();
+            return;
+        }
+        currentQuestionOptionsValid = true;
         for (int optionIndex = 0; optionIndex < buttons.size(); optionIndex++) {
-            buttons.get(optionIndex).setText(options.get(optionIndex));
+            RadioButton button = buttons.get(optionIndex);
+            button.setText(options.get(optionIndex));
+            button.setUserData(optionIndex + 1);
+            button.setVisible(true);
+            button.setManaged(true);
         }
         renderConfirmedSelection();
         updateActionState();
@@ -628,6 +671,7 @@ public class ExamExecutionPage {
 
     private void clearQuestionDisplay() {
         currentQuestionIndex = -1;
+        currentQuestionOptionsValid = false;
         questionPositionLabel.setText("No questions available");
         questionTextLabel.setText("");
         questionDetailsLabel.setText("");
@@ -738,7 +782,8 @@ public class ExamExecutionPage {
         nextButton.setDisable(currentQuestionIndex < 0
                 || currentQuestionIndex >= questions.size() - 1);
         for (RadioButton button : answerButtons()) {
-            button.setDisable(!editable || currentSavePending || requestBusy);
+            button.setDisable(!currentQuestionOptionsValid || !editable
+                    || currentSavePending || requestBusy);
         }
         boolean busy = requestBusy || answerState.hasPending();
         busyIndicator.setVisible(busy);
@@ -867,11 +912,20 @@ public class ExamExecutionPage {
     static List<String> optionTexts(StudentExamQuestionDTO question) {
         Objects.requireNonNull(question, "question");
         return List.of(
-                safe(question.getAnswerOption1()),
-                safe(question.getAnswerOption2()),
-                safe(question.getAnswerOption3()),
-                safe(question.getAnswerOption4())
+                requireOptionText(question.getAnswerOption1()),
+                requireOptionText(question.getAnswerOption2()),
+                requireOptionText(question.getAnswerOption3()),
+                requireOptionText(question.getAnswerOption4())
         );
+    }
+
+    private static String requireOptionText(String optionText) {
+        if (optionText == null || optionText.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Question answer options are unavailable"
+            );
+        }
+        return optionText;
     }
 
     static Map<Integer, Integer> restoreSelections(List<StudentAnswerDTO> answers) {
