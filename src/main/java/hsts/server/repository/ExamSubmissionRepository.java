@@ -1,8 +1,13 @@
 package hsts.server.repository;
 
 import hsts.common.ExamAttemptDTO;
+import hsts.common.ExecutionSubmissionSummaryDTO;
+import hsts.common.PublishedGradeDTO;
+import hsts.common.PublishedGradeSummaryDTO;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
+import hsts.common.SubmissionAnswerReviewDTO;
+import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.ExecutionStatus;
 import hsts.common.type.SubmissionStatus;
 import hsts.server.entity.ExamExecution;
@@ -19,10 +24,12 @@ import java.sql.Types;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 public class ExamSubmissionRepository {
     private static final int MYSQL_DUPLICATE_KEY_ERROR = 1062;
@@ -520,6 +527,182 @@ public class ExamSubmissionRepository {
               AND updated_at = ?
             """;
 
+    private static final String MANAGER_READ_JOINS_SQL = """
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users manager
+              ON manager.user_id = ?
+             AND manager.status = 'ACTIVE'
+            """;
+
+    private static final String MANAGER_READ_AUTHORIZATION_SQL = """
+              AND (
+                    (manager.role = 'TEACHER' AND EXISTS (
+                        SELECT 1
+                        FROM teacher_courses teacher_assignment
+                        WHERE teacher_assignment.teacher_user_id = manager.user_id
+                          AND teacher_assignment.course_id = exam.course_id
+                    ))
+                 OR (manager.role = 'COORDINATOR' AND EXISTS (
+                        SELECT 1
+                        FROM subject_coordinators coordinator_assignment
+                        WHERE coordinator_assignment.coordinator_user_id = manager.user_id
+                          AND coordinator_assignment.subject_id = course.subject_id
+                    ))
+              )
+            """;
+
+    private static final String MANAGER_SUBMISSION_SUMMARIES_SQL = """
+            SELECT submission.submission_id,
+                   submission.execution_id,
+                   execution.exam_id,
+                   execution.exam_version_no,
+                   version.title AS exam_title,
+                   submission.student_user_id,
+                   student.full_name AS student_name,
+                   submission.status,
+                   submission.automatic_score,
+                   submission.final_score,
+                   submission.started_at,
+                   submission.submitted_at,
+                   submission.reviewed_at,
+                   submission.published_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN users student
+              ON student.user_id = submission.student_user_id
+            """ + MANAGER_READ_JOINS_SQL + """
+            WHERE execution.execution_id = ?
+            """ + MANAGER_READ_AUTHORIZATION_SQL + """
+            ORDER BY student.full_name ASC,
+                     submission.student_user_id ASC,
+                     submission.submission_id ASC
+            """;
+
+    private static final String MANAGER_SUBMISSION_REVIEW_SQL = """
+            SELECT submission.submission_id,
+                   submission.execution_id,
+                   execution.exam_id,
+                   execution.exam_version_no,
+                   version.title AS exam_title,
+                   submission.student_user_id,
+                   student.full_name AS student_name,
+                   submission.status,
+                   submission.automatic_score,
+                   submission.final_score,
+                   submission.teacher_feedback,
+                   submission.manual_change_reason,
+                   submission.reviewed_by_user_id,
+                   submission.started_at,
+                   submission.submitted_at,
+                   submission.reviewed_at,
+                   submission.published_by_user_id,
+                   submission.published_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN users student
+              ON student.user_id = submission.student_user_id
+            """ + MANAGER_READ_JOINS_SQL + """
+            WHERE submission.submission_id = ?
+            """ + MANAGER_READ_AUTHORIZATION_SQL;
+
+    private static final String SUBMISSION_ANSWER_REVIEW_SQL = """
+            SELECT selection.question_id,
+                   selection.question_version_no,
+                   selection.order_number,
+                   question_version.content AS question_content,
+                   answer.answer_id,
+                   answer.question_version_no AS answered_question_version_no,
+                   selected_option.option_text AS selected_option_text,
+                   answer.is_correct,
+                   answer.score_received AS awarded_score,
+                   selection.score AS maximum_score
+            FROM exam_version_questions selection
+            JOIN question_versions question_version
+              ON question_version.question_id = selection.question_id
+             AND question_version.version_no = selection.question_version_no
+            LEFT JOIN student_answers answer
+              ON answer.submission_id = ?
+             AND answer.question_id = selection.question_id
+            LEFT JOIN answer_options selected_option
+              ON selected_option.question_id = selection.question_id
+             AND selected_option.version_no = selection.question_version_no
+             AND selected_option.option_number = answer.selected_option_number
+            WHERE selection.exam_id = ?
+              AND selection.exam_version_no = ?
+            ORDER BY selection.order_number ASC
+            """;
+
+    private static final String STUDENT_PUBLISHED_SUMMARIES_SQL = """
+            SELECT submission.submission_id,
+                   submission.execution_id,
+                   execution.exam_id,
+                   execution.exam_version_no,
+                   version.title AS exam_title,
+                   course.name AS course_name,
+                   submission.final_score,
+                   submission.submitted_at,
+                   submission.published_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users student
+              ON student.user_id = ?
+             AND student.role = 'STUDENT'
+             AND student.status = 'ACTIVE'
+            WHERE submission.student_user_id = student.user_id
+              AND submission.status = 'PUBLISHED'
+              AND submission.final_score IS NOT NULL
+              AND submission.published_at IS NOT NULL
+            ORDER BY submission.published_at DESC,
+                     submission.submission_id DESC
+            """;
+
+    private static final String STUDENT_PUBLISHED_GRADE_SQL = """
+            SELECT submission.submission_id,
+                   submission.execution_id,
+                   execution.exam_id,
+                   execution.exam_version_no,
+                   version.title AS exam_title,
+                   course.name AS course_name,
+                   submission.status,
+                   submission.final_score,
+                   submission.teacher_feedback,
+                   submission.submitted_at,
+                   submission.reviewed_at,
+                   submission.published_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users student
+              ON student.user_id = ?
+             AND student.role = 'STUDENT'
+             AND student.status = 'ACTIVE'
+            WHERE submission.submission_id = ?
+              AND submission.student_user_id = student.user_id
+              AND submission.status = 'PUBLISHED'
+              AND submission.final_score IS NOT NULL
+              AND submission.published_at IS NOT NULL
+            """;
+
     private final DatabaseController databaseController;
 
     public ExamSubmissionRepository() {
@@ -649,6 +832,114 @@ public class ExamSubmissionRepository {
                 submissionId,
                 "Failed to load manager exam submission entity"
         );
+    }
+
+    public List<ExecutionSubmissionSummaryDTO> findSummariesForManager(
+            int authenticatedManagerUserId,
+            int executionId
+    ) {
+        List<ExecutionSubmissionSummaryDTO> summaries = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     MANAGER_SUBMISSION_SUMMARIES_SQL
+             )) {
+            statement.setInt(1, authenticatedManagerUserId);
+            statement.setInt(2, executionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    summaries.add(mapExecutionSubmissionSummary(resultSet));
+                }
+            }
+            return List.copyOf(summaries);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load execution submissions",
+                    exception
+            );
+        }
+    }
+
+    public Optional<SubmissionReviewDTO> findReviewForManager(
+            int authenticatedManagerUserId,
+            int submissionId
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     MANAGER_SUBMISSION_REVIEW_SQL
+             )) {
+            statement.setInt(1, authenticatedManagerUserId);
+            statement.setInt(2, submissionId);
+            ReviewHeader header;
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                header = mapReviewHeader(resultSet);
+                if (resultSet.next()) {
+                    throw new IllegalArgumentException(
+                            "Duplicate submission review projection: " + submissionId
+                    );
+                }
+            }
+            return Optional.of(header.toDto(loadSubmissionAnswerReviews(
+                    connection,
+                    header.submissionId(),
+                    header.examId(),
+                    header.examVersionNo()
+            )));
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load submission for review",
+                    exception
+            );
+        }
+    }
+
+    public List<PublishedGradeSummaryDTO> findPublishedSummariesForStudent(
+            int authenticatedStudentUserId
+    ) {
+        List<PublishedGradeSummaryDTO> summaries = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     STUDENT_PUBLISHED_SUMMARIES_SQL
+             )) {
+            statement.setInt(1, authenticatedStudentUserId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    summaries.add(mapPublishedGradeSummary(resultSet));
+                }
+            }
+            return List.copyOf(summaries);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load published grades", exception);
+        }
+    }
+
+    public Optional<PublishedGradeDTO> findPublishedGradeForStudent(
+            int authenticatedStudentUserId,
+            int submissionId
+    ) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     STUDENT_PUBLISHED_GRADE_SQL
+             )) {
+            statement.setInt(1, authenticatedStudentUserId);
+            statement.setInt(2, submissionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                PublishedGradeDTO grade = mapPublishedGrade(resultSet);
+                if (resultSet.next()) {
+                    throw new IllegalArgumentException(
+                            "Duplicate published grade projection: " + submissionId
+                    );
+                }
+                return Optional.of(grade);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load published grade", exception);
+        }
     }
 
     public List<ExamSubmission> findExpiredInProgressEntities(
@@ -1389,16 +1680,10 @@ public class ExamSubmissionRepository {
     private SubmissionEntityData mapSubmissionEntityData(ResultSet resultSet)
             throws SQLException {
         int submissionId = resultSet.getInt("submission_id");
-        String statusValue = resultSet.getString("status");
-        final SubmissionStatus status;
-        try {
-            status = SubmissionStatus.valueOf(statusValue);
-        } catch (IllegalArgumentException | NullPointerException exception) {
-            throw new IllegalArgumentException(
-                    "Submission status is invalid: " + submissionId,
-                    exception
-            );
-        }
+        SubmissionStatus status = parseSubmissionStatus(
+                resultSet.getString("status"),
+                submissionId
+        );
         return new SubmissionEntityData(
                 submissionId,
                 resultSet.getInt("execution_id"),
@@ -1423,6 +1708,244 @@ public class ExamSubmissionRepository {
                 resultSet.getObject("created_at", LocalDateTime.class),
                 resultSet.getObject("updated_at", LocalDateTime.class)
         );
+    }
+
+    private ExecutionSubmissionSummaryDTO mapExecutionSubmissionSummary(
+            ResultSet resultSet
+    ) throws SQLException {
+        int submissionId = resultSet.getInt("submission_id");
+        return new ExecutionSubmissionSummaryDTO(
+                submissionId,
+                resultSet.getInt("execution_id"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getString("exam_title"),
+                resultSet.getInt("student_user_id"),
+                resultSet.getString("student_name"),
+                parseSubmissionStatus(resultSet.getString("status"), submissionId),
+                readStoredScore(resultSet, "automatic_score", false,
+                        "Submission automatic score", submissionId),
+                readStoredScore(resultSet, "final_score", false,
+                        "Submission final score", submissionId),
+                resultSet.getObject("started_at", LocalDateTime.class),
+                resultSet.getObject("submitted_at", LocalDateTime.class),
+                resultSet.getObject("reviewed_at", LocalDateTime.class),
+                resultSet.getObject("published_at", LocalDateTime.class)
+        );
+    }
+
+    private ReviewHeader mapReviewHeader(ResultSet resultSet) throws SQLException {
+        int submissionId = resultSet.getInt("submission_id");
+        Integer reviewerId = resultSet.getObject("reviewed_by_user_id", Integer.class);
+        Integer publisherId = resultSet.getObject("published_by_user_id", Integer.class);
+        return new ReviewHeader(
+                submissionId,
+                resultSet.getInt("execution_id"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getString("exam_title"),
+                resultSet.getInt("student_user_id"),
+                resultSet.getString("student_name"),
+                parseSubmissionStatus(resultSet.getString("status"), submissionId),
+                readStoredScore(resultSet, "automatic_score", false,
+                        "Submission automatic score", submissionId),
+                readStoredScore(resultSet, "final_score", false,
+                        "Submission final score", submissionId),
+                resultSet.getString("teacher_feedback"),
+                resultSet.getString("manual_change_reason"),
+                reviewerId == null ? 0 : reviewerId,
+                resultSet.getObject("started_at", LocalDateTime.class),
+                resultSet.getObject("submitted_at", LocalDateTime.class),
+                resultSet.getObject("reviewed_at", LocalDateTime.class),
+                publisherId == null ? 0 : publisherId,
+                resultSet.getObject("published_at", LocalDateTime.class)
+        );
+    }
+
+    private List<SubmissionAnswerReviewDTO> loadSubmissionAnswerReviews(
+            Connection connection,
+            int submissionId,
+            int examId,
+            int examVersionNo
+    ) throws SQLException {
+        List<SubmissionAnswerReviewDTO> answers = new ArrayList<>();
+        Set<Integer> orderNumbers = new HashSet<>();
+        Set<String> questionVersions = new HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                SUBMISSION_ANSWER_REVIEW_SQL
+        )) {
+            statement.setInt(1, submissionId);
+            statement.setInt(2, examId);
+            statement.setInt(3, examVersionNo);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    int questionId = resultSet.getInt("question_id");
+                    int questionVersionNo = resultSet.getInt("question_version_no");
+                    int orderNumber = resultSet.getInt("order_number");
+                    String identity = questionId + ":" + questionVersionNo;
+                    if (orderNumber <= 0 || !orderNumbers.add(orderNumber)) {
+                        throw new IllegalArgumentException(
+                                "Submission review question order is invalid: "
+                                        + submissionId
+                        );
+                    }
+                    if (!questionVersions.add(identity)) {
+                        throw new IllegalArgumentException(
+                                "Submission review question identity is duplicated: "
+                                        + submissionId
+                        );
+                    }
+
+                    Integer answerId = resultSet.getObject("answer_id", Integer.class);
+                    String selectedOptionText = null;
+                    Boolean correct = null;
+                    BigDecimal awardedScore = null;
+                    if (answerId != null) {
+                        Integer answeredVersion = resultSet.getObject(
+                                "answered_question_version_no",
+                                Integer.class
+                        );
+                        selectedOptionText = resultSet.getString("selected_option_text");
+                        if (answeredVersion == null
+                                || answeredVersion != questionVersionNo
+                                || selectedOptionText == null) {
+                            throw new IllegalArgumentException(
+                                    "Submission answer version is invalid: " + questionId
+                            );
+                        }
+                        correct = resultSet.getObject("is_correct", Boolean.class);
+                        awardedScore = readStoredScore(
+                                resultSet,
+                                "awarded_score",
+                                false,
+                                "Submission answer score",
+                                submissionId
+                        );
+                    }
+                    answers.add(new SubmissionAnswerReviewDTO(
+                            questionId,
+                            questionVersionNo,
+                            orderNumber,
+                            resultSet.getString("question_content"),
+                            selectedOptionText,
+                            correct,
+                            awardedScore,
+                            readMaximumScore(resultSet, submissionId)
+                    ));
+                }
+            }
+        }
+        return List.copyOf(answers);
+    }
+
+    private PublishedGradeSummaryDTO mapPublishedGradeSummary(ResultSet resultSet)
+            throws SQLException {
+        int submissionId = resultSet.getInt("submission_id");
+        return new PublishedGradeSummaryDTO(
+                submissionId,
+                resultSet.getInt("execution_id"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getString("exam_title"),
+                resultSet.getString("course_name"),
+                readStoredScore(resultSet, "final_score", true,
+                        "Published final score", submissionId),
+                resultSet.getObject("submitted_at", LocalDateTime.class),
+                requirePublishedAt(resultSet, submissionId)
+        );
+    }
+
+    private PublishedGradeDTO mapPublishedGrade(ResultSet resultSet)
+            throws SQLException {
+        int submissionId = resultSet.getInt("submission_id");
+        SubmissionStatus status = parseSubmissionStatus(
+                resultSet.getString("status"),
+                submissionId
+        );
+        if (status != SubmissionStatus.PUBLISHED) {
+            throw new IllegalArgumentException(
+                    "Published grade status is invalid: " + submissionId
+            );
+        }
+        return new PublishedGradeDTO(
+                submissionId,
+                resultSet.getInt("execution_id"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getString("exam_title"),
+                resultSet.getString("course_name"),
+                status,
+                readStoredScore(resultSet, "final_score", true,
+                        "Published final score", submissionId),
+                resultSet.getString("teacher_feedback"),
+                resultSet.getObject("submitted_at", LocalDateTime.class),
+                resultSet.getObject("reviewed_at", LocalDateTime.class),
+                requirePublishedAt(resultSet, submissionId)
+        );
+    }
+
+    private SubmissionStatus parseSubmissionStatus(String value, int submissionId) {
+        try {
+            return SubmissionStatus.valueOf(value);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new IllegalArgumentException(
+                    "Submission status is invalid: " + submissionId,
+                    exception
+            );
+        }
+    }
+
+    private BigDecimal readStoredScore(ResultSet resultSet, String column,
+                                       boolean required, String label,
+                                       int submissionId) throws SQLException {
+        BigDecimal score = resultSet.getBigDecimal(column);
+        if (score == null) {
+            if (required) {
+                throw new IllegalArgumentException(
+                        label + " is missing: " + submissionId
+                );
+            }
+            return null;
+        }
+        if (score.scale() > 2
+                || score.compareTo(BigDecimal.ZERO) < 0
+                || score.compareTo(new BigDecimal("100.00")) > 0) {
+            throw new IllegalArgumentException(
+                    label + " is invalid: " + submissionId
+            );
+        }
+        return score;
+    }
+
+    private BigDecimal readMaximumScore(ResultSet resultSet, int submissionId)
+            throws SQLException {
+        BigDecimal maximum = readStoredScore(
+                resultSet,
+                "maximum_score",
+                true,
+                "Submission question maximum score",
+                submissionId
+        );
+        if (maximum.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "Submission question maximum score is invalid: " + submissionId
+            );
+        }
+        return maximum;
+    }
+
+    private LocalDateTime requirePublishedAt(ResultSet resultSet, int submissionId)
+            throws SQLException {
+        LocalDateTime publishedAt = resultSet.getObject(
+                "published_at",
+                LocalDateTime.class
+        );
+        if (publishedAt == null) {
+            throw new IllegalArgumentException(
+                    "Published grade timestamp is missing: " + submissionId
+            );
+        }
+        return publishedAt;
     }
 
     private List<StudentAnswer> loadAnswerEntities(Connection connection,
@@ -2076,6 +2599,53 @@ public class ExamSubmissionRepository {
             this.questionId = questionId;
             this.questionVersionNo = questionVersionNo;
             this.selectedOptionNumber = selectedOptionNumber;
+        }
+    }
+
+    private record ReviewHeader(
+            int submissionId,
+            int executionId,
+            int examId,
+            int examVersionNo,
+            String examTitle,
+            int studentUserId,
+            String studentName,
+            SubmissionStatus status,
+            BigDecimal automaticScore,
+            BigDecimal finalScore,
+            String teacherFeedback,
+            String adjustmentReason,
+            int reviewerUserId,
+            LocalDateTime startedAt,
+            LocalDateTime submittedAt,
+            LocalDateTime reviewedAt,
+            int publisherUserId,
+            LocalDateTime publishedAt
+    ) {
+        private SubmissionReviewDTO toDto(
+                List<SubmissionAnswerReviewDTO> answers
+        ) {
+            return new SubmissionReviewDTO(
+                    submissionId,
+                    executionId,
+                    examId,
+                    examVersionNo,
+                    examTitle,
+                    studentUserId,
+                    studentName,
+                    status,
+                    automaticScore,
+                    finalScore,
+                    teacherFeedback,
+                    adjustmentReason,
+                    reviewerUserId,
+                    startedAt,
+                    submittedAt,
+                    reviewedAt,
+                    publisherUserId,
+                    publishedAt,
+                    answers
+            );
         }
     }
 
