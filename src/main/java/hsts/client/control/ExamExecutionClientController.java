@@ -5,15 +5,22 @@ import hsts.common.ExamAttemptDTO;
 import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.ExecutionCodePayload;
+import hsts.common.ExecutionIdPayload;
+import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.ExtendSubmissionTimePayload;
+import hsts.common.PublishedGradeDTO;
+import hsts.common.PublishedGradeSummaryDTO;
+import hsts.common.PublishSubmissionPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
+import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SaveExamAnswerPayload;
 import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.StartExamPayload;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.SubmissionIdPayload;
+import hsts.common.SubmissionReviewDTO;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -134,6 +141,98 @@ public class ExamExecutionClientController {
                         responsePayload,
                         Boolean.class,
                         "Invalid time-extension response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<List<ExecutionSubmissionSummaryDTO>>
+    getExecutionSubmissions(int executionId) {
+        return sendRequest(
+                new Request(
+                        RequestType.LIST_EXECUTION_SUBMISSIONS,
+                        new ExecutionIdPayload(executionId)
+                ),
+                responsePayload -> requireListPayload(
+                        responsePayload,
+                        ExecutionSubmissionSummaryDTO.class,
+                        "Invalid execution-submissions response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<SubmissionReviewDTO> getSubmissionForReview(
+            int submissionId
+    ) {
+        return sendRequest(
+                new Request(
+                        RequestType.GET_SUBMISSION_FOR_REVIEW,
+                        new SubmissionIdPayload(submissionId)
+                ),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        SubmissionReviewDTO.class,
+                        "Invalid submission-review response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<SubmissionReviewDTO> reviewSubmissionGrade(
+            ReviewSubmissionPayload payload
+    ) {
+        if (payload == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Grade review data is missing")
+            );
+        }
+        return sendRequest(
+                new Request(RequestType.REVIEW_SUBMISSION_GRADE, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        SubmissionReviewDTO.class,
+                        "Invalid submission-review response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<SubmissionReviewDTO> publishSubmissionGrade(
+            PublishSubmissionPayload payload
+    ) {
+        if (payload == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("Grade publication data is missing")
+            );
+        }
+        return sendRequest(
+                new Request(RequestType.PUBLISH_SUBMISSION_GRADE, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        SubmissionReviewDTO.class,
+                        "Invalid submission-review response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<List<PublishedGradeSummaryDTO>> getMyPublishedGrades() {
+        return sendRequest(
+                new Request(RequestType.LIST_MY_PUBLISHED_GRADES, null),
+                responsePayload -> requireListPayload(
+                        responsePayload,
+                        PublishedGradeSummaryDTO.class,
+                        "Invalid published-grades response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<PublishedGradeDTO> getMyPublishedGrade(int submissionId) {
+        return sendRequest(
+                new Request(
+                        RequestType.GET_MY_PUBLISHED_GRADE,
+                        new SubmissionIdPayload(submissionId)
+                ),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        PublishedGradeDTO.class,
+                        "Invalid published-grade response from server"
                 )
         );
     }
