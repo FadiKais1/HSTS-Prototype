@@ -180,6 +180,12 @@ final class BotRepositoryJdbcTestSupport {
                         Object value = value(rows, cursor[0], args[0]);
                         yield value == null ? 0 : ((Number) value).intValue();
                     }
+                    case "getBoolean" -> {
+                        Object value = value(rows, cursor[0], args[0]);
+                        yield value instanceof Boolean booleanValue
+                                ? booleanValue
+                                : value != null && ((Number) value).intValue() != 0;
+                    }
                     case "getObject" -> value(rows, cursor[0], args[0]);
                     case "wasNull" -> false;
                     case "close" -> null;

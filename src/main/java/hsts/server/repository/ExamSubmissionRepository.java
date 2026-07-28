@@ -74,6 +74,19 @@ public class ExamSubmissionRepository {
             FOR UPDATE
             """;
 
+    private static final String IN_PROGRESS_FOR_STUDENT_AND_COURSE_SQL = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM exam_submissions submission
+                JOIN exam_executions execution
+                  ON execution.execution_id = submission.execution_id
+                JOIN exams exam ON exam.exam_id = execution.exam_id
+                WHERE submission.student_user_id = ?
+                  AND exam.course_id = ?
+                  AND submission.status = 'IN_PROGRESS'
+            ) AS in_progress
+            """;
+
     private static final String INSERT_SUBMISSION_SQL = """
             INSERT INTO exam_submissions (
                 execution_id,
@@ -714,6 +727,31 @@ public class ExamSubmissionRepository {
     public ExamSubmissionRepository(DatabaseController databaseController) {
         this.databaseController = databaseController;
         this.reportRepository = new ReportRepository(databaseController);
+    }
+
+    public boolean existsInProgressForStudentAndCourse(
+            int authenticatedStudentUserId, int courseId
+    ) {
+        if (authenticatedStudentUserId <= 0) {
+            throw new IllegalArgumentException("Student user ID must be positive");
+        }
+        if (courseId <= 0) {
+            throw new IllegalArgumentException("Course ID must be positive");
+        }
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     IN_PROGRESS_FOR_STUDENT_AND_COURSE_SQL
+             )) {
+            statement.setInt(1, authenticatedStudentUserId);
+            statement.setInt(2, courseId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() && resultSet.getBoolean("in_progress");
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to check active exam submission", exception
+            );
+        }
     }
 
     public ExamSubmission startOrResume(int authenticatedStudentUserId,

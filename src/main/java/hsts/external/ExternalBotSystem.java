@@ -1,4 +1,5 @@
 package hsts.external;
 
-public class ExternalBotSystem {
+public interface ExternalBotSystem {
+    BotProviderResponse answer(BotProviderRequest request);
 }

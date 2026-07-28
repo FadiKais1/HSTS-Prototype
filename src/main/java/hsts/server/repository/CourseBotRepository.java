@@ -68,6 +68,21 @@ public class CourseBotRepository {
               AND cb.status = 'ACTIVE'
             """.formatted(BOT_COLUMNS);
 
+    private static final String STUDENT_ACTIVE_BOTS_SQL = """
+            SELECT %s
+            FROM course_bots cb
+            JOIN courses c ON c.course_id = cb.course_id
+            JOIN student_courses sc
+              ON sc.course_id = cb.course_id
+             AND sc.student_user_id = ?
+            JOIN users u
+              ON u.user_id = sc.student_user_id
+             AND u.role = 'STUDENT'
+             AND u.status = 'ACTIVE'
+            WHERE cb.status = 'ACTIVE'
+            ORDER BY c.name ASC, cb.bot_id ASC
+            """.formatted(BOT_COLUMNS);
+
     private static final String SOURCES_BY_BOT_SQL = """
             SELECT %s
             FROM bot_sources bs
@@ -267,6 +282,24 @@ public class CourseBotRepository {
             ));
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to load active Course Bot", exception);
+        }
+    }
+
+    public List<CourseBot> findActiveForStudent(int authenticatedStudentUserId) {
+        requirePositive(authenticatedStudentUserId, "Student user ID must be positive");
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     STUDENT_ACTIVE_BOTS_SQL
+             )) {
+            statement.setInt(1, authenticatedStudentUserId);
+            List<BotRow> rows = readBotRows(statement);
+            List<CourseBot> bots = new ArrayList<>(rows.size());
+            for (BotRow row : rows) {
+                bots.add(hydrateBot(row, loadSources(connection, row.botId(), true)));
+            }
+            return List.copyOf(bots);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load active Course Bots", exception);
         }
     }
 
