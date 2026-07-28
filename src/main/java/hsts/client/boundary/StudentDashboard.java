@@ -30,20 +30,31 @@ public class StudentDashboard {
     private Button logoutButton;
     @FXML
     private Button examExecutionButton;
+    @FXML
+    private Button publishedGradesButton;
     private Runnable logoutHandler;
     private Runnable examExecutionHandler;
+    private Runnable publishedGradesHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
-        configure(stage, client, loginResult, logoutHandler, null);
+        configure(stage, client, loginResult, logoutHandler, null, null);
     }
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
                           Runnable logoutHandler, Runnable examExecutionHandler) {
+        configure(stage, client, loginResult, logoutHandler,
+                examExecutionHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable examExecutionHandler,
+                          Runnable publishedGradesHandler) {
         this.stage = Objects.requireNonNull(stage);
         this.client = Objects.requireNonNull(client);
         this.loginResult = Objects.requireNonNull(loginResult);
         this.logoutHandler = Objects.requireNonNull(logoutHandler);
         this.examExecutionHandler = examExecutionHandler;
+        this.publishedGradesHandler = publishedGradesHandler;
 
         displayIdentity();
         showError("");
@@ -92,6 +103,24 @@ public class StudentDashboard {
         }
     }
 
+    @FXML
+    private void handlePublishedGrades() {
+        if (loginResult == null || loginResult.getRole() != UserRole.STUDENT) {
+            showError("Published grades are available only to students");
+            return;
+        }
+        if (publishedGradesHandler == null) {
+            showError("Published grades are unavailable");
+            return;
+        }
+
+        try {
+            publishedGradesHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Unable to open published grades");
+        }
+    }
+
     private void displayIdentity() {
         if (welcomeLabel != null) {
             welcomeLabel.setText("Welcome, " + loginResult.getFullName());
@@ -117,6 +146,15 @@ public class StudentDashboard {
             examExecutionButton.setVisible(student);
             examExecutionButton.setManaged(student);
             examExecutionButton.setDisable(!student || examExecutionHandler == null);
+        }
+        if (publishedGradesButton != null) {
+            boolean student = loginResult != null
+                    && loginResult.getRole() == UserRole.STUDENT;
+            publishedGradesButton.setVisible(student);
+            publishedGradesButton.setManaged(student);
+            publishedGradesButton.setDisable(
+                    !student || publishedGradesHandler == null
+            );
         }
     }
 

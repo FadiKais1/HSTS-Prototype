@@ -7,6 +7,7 @@ import hsts.client.boundary.ExamSchedulingPage;
 import hsts.client.boundary.ExamExecutionPage;
 import hsts.client.boundary.GradeReviewPage;
 import hsts.client.boundary.PrincipalDashboard;
+import hsts.client.boundary.PublishedGradesPage;
 import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.StudentDashboard;
 import hsts.client.boundary.TeacherDashboard;
@@ -146,7 +147,8 @@ public class MainClient extends Application {
                 client,
                 loginResult,
                 this::logout,
-                () -> showExamExecution(loginResult)
+                () -> showExamExecution(loginResult),
+                () -> showPublishedGrades(loginResult)
         );
     }
 
@@ -334,6 +336,33 @@ public class MainClient extends Application {
             showStudentDashboard(loginResult);
         } catch (IOException | RuntimeException exception) {
             cleanupAfterNavigationFailure();
+        }
+    }
+
+    private void showPublishedGrades(LoginResult loginResult) {
+        if (loginResult == null || loginResult.getRole() != UserRole.STUDENT) {
+            showNavigationError("Published grades are available only to students");
+            return;
+        }
+        try {
+            PublishedGradesPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/published-grades-page.fxml",
+                    "HSTS Exam Management System - Published Grades"
+            );
+            controller.configure(
+                    stage,
+                    client,
+                    loginResult,
+                    () -> returnToStudentDashboard(loginResult)
+            );
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showStudentDashboard(loginResult);
+                showNavigationError("Unable to open published grades");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
         }
     }
 
