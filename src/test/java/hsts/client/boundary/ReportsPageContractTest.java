@@ -1,7 +1,22 @@
 package hsts.client.boundary;
 
+import hsts.common.ExamStatisticsDTO;
+import hsts.common.ReportSummaryDTO;
 import hsts.common.ScoreBandDTO;
+import hsts.common.type.ReportType;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.XYChart;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableView;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -15,12 +30,14 @@ import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -47,6 +64,24 @@ public class ReportsPageContractTest {
     private static final Path STUDENT_DASHBOARD = Path.of(
             "src/main/java/hsts/client/boundary/StudentDashboard.java"
     );
+
+    @Test
+    public void realFxmlSelectionRendersReadableDetailsAndAllBands() throws Exception {
+        String javaExecutable = Path.of(
+                System.getProperty("java.home"), "bin", "java.exe"
+        ).toString();
+        Process process = new ProcessBuilder(
+                javaExecutable,
+                "-cp",
+                System.getProperty("java.class.path"),
+                RenderingHarness.class.getName()
+        ).redirectErrorStream(true).start();
+
+        assertTrue("JavaFX rendering harness timed out",
+                process.waitFor(30, TimeUnit.SECONDS));
+        String output = new String(process.getInputStream().readAllBytes());
+        assertEquals(output, 0, process.exitValue());
+    }
 
     @Test
     public void targetValidationIsExactAndOccursBeforeControllerCalls() throws Exception {
@@ -189,7 +224,9 @@ public class ReportsPageContractTest {
                 "courseNameColumn", "openingTimeColumn", "closingTimeColumn",
                 "publishedCountColumn", "averageScoreColumn", "medianScoreColumn",
                 "startedCountColumn", "submittedCountColumn",
-                "autoSubmittedCountColumn", "scoreBandChart"
+                "autoSubmittedCountColumn", "scoreBandChart",
+                "detailContainer", "detailPromptLabel", "detailContent",
+                "scoreBandAxis", "submissionCountAxis"
         )) {
             assertTrue("Missing fx:id " + required, ids.containsKey(required));
         }
@@ -226,8 +263,8 @@ public class ReportsPageContractTest {
         assertNotNull(resource);
         String fxml = Files.readString(FXML);
         assertTrue(fxml.contains("<BarChart fx:id=\"scoreBandChart\""));
-        assertTrue(fxml.contains("<CategoryAxis label=\"Score band\""));
-        assertTrue(fxml.contains("<NumberAxis label=\"Published submissions\""));
+        assertTrue(fxml.contains("<CategoryAxis fx:id=\"scoreBandAxis\" label=\"Score band\""));
+        assertTrue(fxml.contains("<NumberAxis fx:id=\"submissionCountAxis\" label=\"Published submissions\""));
         assertTrue(fxml.contains("-fx-text-fill: #111827"));
         for (String forbidden : List.of(
                 "new Client", "sendRequest", "RequestType", "repository",
@@ -292,8 +329,190 @@ public class ReportsPageContractTest {
             case "TableView" -> javafx.scene.control.TableView.class;
             case "TableColumn" -> javafx.scene.control.TableColumn.class;
             case "HBox" -> javafx.scene.layout.HBox.class;
+            case "VBox" -> javafx.scene.layout.VBox.class;
+            case "GridPane" -> javafx.scene.layout.GridPane.class;
             case "BarChart" -> javafx.scene.chart.BarChart.class;
+            case "CategoryAxis" -> javafx.scene.chart.CategoryAxis.class;
+            case "NumberAxis" -> javafx.scene.chart.NumberAxis.class;
             default -> throw new AssertionError("Unexpected fx:id element " + tagName);
         };
+    }
+
+    public static final class RenderingHarness {
+        private RenderingHarness() {
+        }
+
+        public static void main(String[] args) {
+            Platform.startup(() -> {
+                try {
+                    verifyRendering();
+                    System.exit(0);
+                } catch (Throwable failure) {
+                    failure.printStackTrace(System.err);
+                    System.exit(1);
+                }
+            });
+        }
+
+        private static void verifyRendering() throws Exception {
+            FXMLLoader loader = new FXMLLoader(ReportsPage.class.getResource(
+                    "/hsts/client/boundary/reports-page.fxml"
+            ));
+            Parent root = loader.load();
+            ReportsPage controller = loader.getController();
+            Scene scene = new Scene(root);
+            root.applyCss();
+            root.layout();
+
+            ExamStatisticsDTO populated = execution(
+                    41, "RLYQ", new BigDecimal("100.00"),
+                    new BigDecimal("100.00"), 1
+            );
+            invokeShowReport(controller, report(List.of(populated)));
+            table(controller).getSelectionModel().selectFirst();
+            root.applyCss();
+            root.layout();
+
+            assertDetail(controller, "detailExecutionCodeLabel", "RLYQ");
+            assertDetail(controller, "detailExamTitleLabel", "Acceptance Exam");
+            assertDetail(controller, "detailVersionLabel", "3");
+            assertDetail(controller, "detailCourseLabel", "Software Engineering");
+            assertDetail(controller, "detailOpeningLabel", "2026-07-28 09:00:00");
+            assertDetail(controller, "detailClosingLabel", "2026-07-28 10:30:00");
+            assertDetail(controller, "detailPublishedLabel", "1");
+            assertDetail(controller, "detailAverageLabel", "100.00");
+            assertDetail(controller, "detailMedianLabel", "100.00");
+            assertDetail(controller, "detailStartedLabel", "3");
+            assertDetail(controller, "detailSubmittedLabel", "1");
+            assertDetail(controller, "detailAutoSubmittedLabel", "1");
+
+            VBox container = field(controller, "detailContainer", VBox.class);
+            GridPane content = field(controller, "detailContent", GridPane.class);
+            Label prompt = field(controller, "detailPromptLabel", Label.class);
+            check(container.isVisible() && container.isManaged(), "detail container hidden");
+            check(content.isVisible() && content.isManaged(), "detail content hidden");
+            check(!prompt.isVisible() && !prompt.isManaged(), "prompt remained visible");
+
+            @SuppressWarnings("unchecked")
+            javafx.scene.chart.BarChart<String, Number> chart = field(
+                    controller, "scoreBandChart", javafx.scene.chart.BarChart.class
+            );
+            check(chart.getData().size() == 1, "chart series missing");
+            List<XYChart.Data<String, Number>> data = chart.getData().get(0).getData();
+            check(data.size() == 10, "chart must retain ten bands");
+            List<String> expected = List.of(
+                    "0\u20139", "10\u201319", "20\u201329", "30\u201339", "40\u201349",
+                    "50\u201359", "60\u201369", "70\u201379", "80\u201389", "90\u2013100"
+            );
+            for (int index = 0; index < 10; index++) {
+                check(expected.get(index).equals(data.get(index).getXValue()),
+                        "wrong band order at " + index);
+                check(data.get(index).getYValue().intValue() == (index == 9 ? 1 : 0),
+                        "wrong band count at " + index);
+            }
+
+            CategoryAxis categoryAxis = field(controller, "scoreBandAxis", CategoryAxis.class);
+            NumberAxis numberAxis = field(controller, "submissionCountAxis", NumberAxis.class);
+            assertReadableAxis(categoryAxis, categoryAxis.getTickLabelFill());
+            assertReadableAxis(numberAxis, numberAxis.getTickLabelFill());
+            check(numberAxis.getUpperBound() == 1.0 && numberAxis.getTickUnit() == 1.0,
+                    "single-result numeric scale is not useful");
+
+            invokeShowReport(controller, report(List.of()));
+            check(chart.getData().isEmpty(), "old chart survived report change");
+            check(prompt.isVisible() && prompt.isManaged(), "neutral prompt missing");
+            check(!content.isVisible() && !content.isManaged(), "stale detail remained visible");
+            check("-".equals(field(controller, "detailExecutionCodeLabel", Label.class).getText()),
+                    "stale detail text remained");
+
+            ExamStatisticsDTO empty = execution(42, "ZERO", null, null, 0);
+            invokeShowReport(controller, report(List.of(empty)));
+            table(controller).getSelectionModel().selectFirst();
+            root.applyCss();
+            root.layout();
+            assertDetail(controller, "detailAverageLabel", "N/A");
+            assertDetail(controller, "detailMedianLabel", "N/A");
+            check(chart.getData().get(0).getData().stream()
+                    .allMatch(point -> point.getYValue().intValue() == 0),
+                    "zero-result chart contains a nonzero band");
+            check(scene.getRoot() == root, "scene graph changed unexpectedly");
+        }
+
+        private static void assertReadableAxis(javafx.scene.chart.Axis<?> axis,
+                                               javafx.scene.paint.Paint fill) {
+            check(axis.isVisible() && axis.isManaged() && axis.getOpacity() == 1.0,
+                    "axis hidden or transparent");
+            check(fill instanceof Color, "axis tick fill is not a color");
+            Color color = (Color) fill;
+            check(color.getOpacity() == 1.0 && color.getBrightness() < 0.65,
+                    "axis tick labels are not dark and opaque");
+        }
+
+        private static void assertDetail(ReportsPage controller, String name, String text)
+                throws Exception {
+            Label label = field(controller, name, Label.class);
+            check(text.equals(label.getText()), name + " text mismatch: " + label.getText());
+            check(label.isVisible() && label.isManaged() && label.getOpacity() == 1.0,
+                    name + " hidden or transparent");
+            check(label.getTextFill() instanceof Color, name + " fill is not a color");
+            Color color = (Color) label.getTextFill();
+            check(color.getOpacity() == 1.0 && color.getBrightness() < 0.65,
+                    name + " is not dark and opaque");
+        }
+
+        private static ReportSummaryDTO report(List<ExamStatisticsDTO> executions) {
+            return new ReportSummaryDTO(
+                    ReportType.TEACHER_EXAMS, "Authored exams",
+                    LocalDateTime.of(2026, 7, 28, 12, 0), 1002,
+                    "Development Teacher", executions
+            );
+        }
+
+        private static ExamStatisticsDTO execution(int id, String code,
+                                                    BigDecimal average,
+                                                    BigDecimal median,
+                                                    int published) {
+            List<ScoreBandDTO> bands = new ArrayList<>();
+            for (int index = 0; index < 10; index++) {
+                bands.add(new ScoreBandDTO(
+                        index * 10, index == 9 ? 100 : index * 10 + 9,
+                        published == 1 && index == 9 ? 1 : 0
+                ));
+            }
+            return new ExamStatisticsDTO(
+                    id, 7, 3, code, "Acceptance Exam", 5,
+                    "Software Engineering", LocalDateTime.of(2026, 7, 28, 9, 0),
+                    LocalDateTime.of(2026, 7, 28, 10, 30), published,
+                    average, median, bands, 3, 1, 1
+            );
+        }
+
+        private static void invokeShowReport(ReportsPage controller,
+                                             ReportSummaryDTO report) throws Exception {
+            Method method = ReportsPage.class.getDeclaredMethod(
+                    "showReport", ReportSummaryDTO.class
+            );
+            method.setAccessible(true);
+            method.invoke(controller, report);
+        }
+
+        @SuppressWarnings("unchecked")
+        private static TableView<ExamStatisticsDTO> table(ReportsPage controller)
+                throws Exception {
+            return field(controller, "executionTable", TableView.class);
+        }
+
+        private static <T> T field(ReportsPage controller, String name, Class<T> type)
+                throws Exception {
+            Field field = ReportsPage.class.getDeclaredField(name);
+            field.setAccessible(true);
+            return type.cast(field.get(controller));
+        }
+
+        private static void check(boolean condition, String message) {
+            if (!condition) {
+                throw new AssertionError(message);
+            }
+        }
     }
 }

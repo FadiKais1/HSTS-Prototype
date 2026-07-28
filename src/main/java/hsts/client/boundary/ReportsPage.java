@@ -13,6 +13,8 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.chart.BarChart;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
@@ -22,6 +24,8 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import java.math.BigDecimal;
@@ -78,6 +82,9 @@ public class ReportsPage {
     @FXML private TableColumn<ExamStatisticsDTO, String> startedCountColumn;
     @FXML private TableColumn<ExamStatisticsDTO, String> submittedCountColumn;
     @FXML private TableColumn<ExamStatisticsDTO, String> autoSubmittedCountColumn;
+    @FXML private VBox detailContainer;
+    @FXML private Label detailPromptLabel;
+    @FXML private GridPane detailContent;
     @FXML private Label detailExecutionCodeLabel;
     @FXML private Label detailExamTitleLabel;
     @FXML private Label detailVersionLabel;
@@ -91,6 +98,8 @@ public class ReportsPage {
     @FXML private Label detailSubmittedLabel;
     @FXML private Label detailAutoSubmittedLabel;
     @FXML private BarChart<String, Number> scoreBandChart;
+    @FXML private CategoryAxis scoreBandAxis;
+    @FXML private NumberAxis submissionCountAxis;
 
     @FXML
     private void initialize() {
@@ -275,6 +284,10 @@ public class ReportsPage {
         if (execution == null) {
             return;
         }
+        detailPromptLabel.setVisible(false);
+        detailPromptLabel.setManaged(false);
+        detailContent.setVisible(true);
+        detailContent.setManaged(true);
         detailExecutionCodeLabel.setText(execution.getExamCode());
         detailExamTitleLabel.setText(execution.getExamTitle());
         detailVersionLabel.setText(Integer.toString(execution.getExamVersionNo()));
@@ -302,6 +315,14 @@ public class ReportsPage {
                     band.getSubmissionCount()
             ));
         }
+        int maximumCount = execution.getScoreBands().stream()
+                .mapToInt(ScoreBandDTO::getSubmissionCount)
+                .max()
+                .orElse(0);
+        int upperBound = Math.max(1, maximumCount);
+        submissionCountAxis.setLowerBound(0);
+        submissionCountAxis.setUpperBound(upperBound);
+        submissionCountAxis.setTickUnit(Math.max(1, Math.ceil(upperBound / 5.0)));
         scoreBandChart.getData().setAll(series);
     }
 
@@ -316,6 +337,12 @@ public class ReportsPage {
     }
 
     private void clearExecutionDetail() {
+        detailContainer.setVisible(true);
+        detailContainer.setManaged(true);
+        detailPromptLabel.setVisible(true);
+        detailPromptLabel.setManaged(true);
+        detailContent.setVisible(false);
+        detailContent.setManaged(false);
         for (Label label : List.of(
                 detailExecutionCodeLabel, detailExamTitleLabel, detailVersionLabel,
                 detailCourseLabel, detailOpeningLabel, detailClosingLabel,
@@ -326,6 +353,9 @@ public class ReportsPage {
             label.setText("-");
         }
         scoreBandChart.getData().clear();
+        submissionCountAxis.setLowerBound(0);
+        submissionCountAxis.setUpperBound(1);
+        submissionCountAxis.setTickUnit(1);
     }
 
     private void configureTable() {
