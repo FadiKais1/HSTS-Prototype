@@ -100,6 +100,34 @@ public class QuestionRepository {
             ORDER BY option_row.option_number
             """;
 
+    private static final String EXACT_QUESTION_VERSION_ENTITY_SELECT = """
+            SELECT q.question_id,
+                   q.status,
+                   qv.created_at,
+                   qv.created_at AS updated_at,
+                   qv.version_no,
+                   qv.content,
+                   qv.topic,
+                   qv.question_type,
+                   qv.difficulty,
+                   qv.illustration_path,
+                   qv.correct_option_number,
+                   option_row.option_number,
+                   option_row.option_text
+            FROM questions q
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+             AND tc.teacher_user_id = ?
+            JOIN question_versions qv
+              ON qv.question_id = q.question_id
+             AND qv.version_no = ?
+            LEFT JOIN answer_options option_row
+              ON option_row.question_id = qv.question_id
+             AND option_row.version_no = qv.version_no
+            WHERE q.question_id = ?
+            ORDER BY option_row.option_number
+            """;
+
     private static final String CREATE_QUESTION_SQL = """
             INSERT INTO questions (
                 content,
@@ -532,6 +560,37 @@ public class QuestionRepository {
         }
     }
 
+    public Optional<Question> findEntityVersionForTeacher(
+            int authenticatedTeacherUserId,
+            int questionId,
+            int versionNo
+    ) {
+        requirePositiveId(authenticatedTeacherUserId, "Teacher user ID must be positive");
+        requirePositiveId(questionId, "Question ID must be positive");
+        requirePositiveId(versionNo, "Question version number must be positive");
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     EXACT_QUESTION_VERSION_ENTITY_SELECT
+             )) {
+            statement.setInt(1, authenticatedTeacherUserId);
+            statement.setInt(2, versionNo);
+            statement.setInt(3, questionId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(mapCurrentQuestionEntity(resultSet, questionId));
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load assigned question version",
+                    exception
+            );
+        }
+    }
+
     public List<Question> findAll() {
         String sql = "SELECT " + QUESTION_COLUMNS + " FROM questions ORDER BY question_id";
         List<Question> questions = new ArrayList<>();
@@ -763,6 +822,12 @@ public class QuestionRepository {
                     label + " is invalid for question: " + questionId,
                     exception
             );
+        }
+    }
+
+    private static void requirePositiveId(int value, String message) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(message);
         }
     }
 
