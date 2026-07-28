@@ -40,6 +40,9 @@ public final class PackagingVerifier {
     private static final List<String> SERVER_ENTRIES = List.of(
             "hsts/server/MainServer.class",
             "hsts/server/bot/source/BotSourceExtractor.class",
+            "hsts/server/bot/GeminiExternalBotSystem.class",
+            "hsts/server/bot/CourseBotProviderFactory.class",
+            "com/fasterxml/jackson/databind/ObjectMapper.class",
             "hsts/ocsf/AbstractServer.class",
             "hsts/ocsf/ConnectionToClient.class",
             "com/mysql/cj/jdbc/Driver.class",
@@ -59,6 +62,9 @@ public final class PackagingVerifier {
             "org/apache/commons/compress/archivers/zip/ZipArchiveInputStream.class",
             "org/apache/commons/lang3/StringUtils.class",
             "org/apache/logging/slf4j/SLF4JProvider.class"
+            , "hsts/server/bot/GeminiExternalBotSystem.class"
+            , "hsts/server/bot/CourseBotProviderFactory.class"
+            , "com/fasterxml/jackson/databind/ObjectMapper.class"
     );
 
     private static final List<String> SERVER_FORBIDDEN_ENTRIES = List.of(

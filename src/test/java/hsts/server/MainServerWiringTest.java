@@ -38,7 +38,8 @@ public class MainServerWiringTest {
         assertEquals(1, occurrences(source, "new CourseBotRepository()"));
         assertEquals(1, occurrences(source, "new BotConversationRepository()"));
         assertEquals(1, occurrences(source, "new BotSourceExtractor()"));
-        assertEquals(1, occurrences(source, "new DeterministicExternalBotSystem()"));
+        assertEquals(1, occurrences(source, "CourseBotProviderFactory.createFromEnvironment()"));
+        assertEquals(0, occurrences(source, "new DeterministicExternalBotSystem()"));
         assertEquals(1, occurrences(source, "new CourseBotService("));
         assertTrue(normalized.contains(
                 "new ExamExecutionService( examExecutionRepository, "

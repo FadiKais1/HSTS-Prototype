@@ -1,7 +1,7 @@
 package hsts.server;
 
 import hsts.external.ExternalBotSystem;
-import hsts.server.bot.DeterministicExternalBotSystem;
+import hsts.server.bot.CourseBotProviderFactory;
 import hsts.server.bot.source.BotSourceExtractor;
 import hsts.server.control.AuthService;
 import hsts.server.control.CourseBotService;
@@ -51,7 +51,7 @@ public class MainServer {
                 new BotConversationRepository();
         BotSourceExtractor botSourceExtractor = new BotSourceExtractor();
         ExternalBotSystem externalBotSystem =
-                new DeterministicExternalBotSystem();
+                CourseBotProviderFactory.createFromEnvironment();
         ExamManagementService examManagementService = new ExamManagementService(
                 questionRepository,
                 courseRepository,

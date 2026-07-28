@@ -91,6 +91,9 @@ public class PackagingConfigurationTest {
         assertEquals("2.24.3", dependencyVersion(
                 "org.apache.logging.log4j", "log4j-to-slf4j"
         ));
+        assertEquals("2.19.2", dependencyVersion(
+                "com.fasterxml.jackson.core", "jackson-databind"
+        ));
 
         List<String> clientExcludes = descendantTexts(
                 shadeExecution("package-client"), "exclude"
@@ -108,10 +111,28 @@ public class PackagingConfigurationTest {
                 "com.github.virtuald:curvesapi",
                 "com.zaxxer:SparseBitSet",
                 "org.apache.logging.log4j:*"
+                , "com.fasterxml.jackson.core:*"
         )) {
             assertTrue("Client does not exclude " + excluded,
                     clientExcludes.contains(excluded));
         }
+
+        List<String> clientProjectExcludes = projectClassExcludes(
+                shadeExecution("package-client")
+        );
+        assertTrue(clientProjectExcludes.contains("hsts/server/bot/**"));
+        assertTrue(clientProjectExcludes.contains("hsts/external/**"));
+    }
+
+    private static List<String> projectClassExcludes(Element execution) {
+        NodeList filters = execution.getElementsByTagName("filter");
+        for (int index = 0; index < filters.getLength(); index++) {
+            Element filter = (Element) filters.item(index);
+            if ("hsts:hsts-prototype".equals(descendantText(filter, "artifact"))) {
+                return descendantTexts(filter, "exclude");
+            }
+        }
+        throw new AssertionError("Missing client project-class filter");
     }
 
     private static Element shadeExecution(String executionId) throws Exception {

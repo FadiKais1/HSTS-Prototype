@@ -59,6 +59,12 @@
         </dependency>
 
         <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.19.2</version>
+        </dependency>
+
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.13.1</version>
@@ -120,9 +126,17 @@
                                     <exclude>com.github.virtuald:curvesapi</exclude>
                                     <exclude>com.zaxxer:SparseBitSet</exclude>
                                     <exclude>org.apache.logging.log4j:*</exclude>
+                                    <exclude>com.fasterxml.jackson.core:*</exclude>
                                 </excludes>
                             </artifactSet>
                             <filters>
+                                <filter>
+                                    <artifact>hsts:hsts-prototype</artifact>
+                                    <excludes>
+                                        <exclude>hsts/server/bot/**</exclude>
+                                        <exclude>hsts/external/**</exclude>
+                                    </excludes>
+                                </filter>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
