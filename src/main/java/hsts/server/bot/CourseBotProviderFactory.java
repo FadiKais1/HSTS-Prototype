@@ -15,7 +15,7 @@ public final class CourseBotProviderFactory {
     static final String TIMEOUT_VARIABLE = "HSTS_GEMINI_TIMEOUT_SECONDS";
     static final String BASE_URL_VARIABLE = "HSTS_GEMINI_BASE_URL";
 
-    static final String DEFAULT_MODEL = "gemini-2.5-flash-lite";
+    static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
     static final int DEFAULT_TIMEOUT_SECONDS = 30;
     static final int MAX_TIMEOUT_SECONDS = 300;
     static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";

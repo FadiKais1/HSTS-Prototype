@@ -198,6 +198,7 @@ public class CourseBotRepositoryTest {
                         query("WHERE cb.bot_id = ?", botRow()),
                         query("qv.version_no = ?", row("question_id", 11)),
                         update("INSERT INTO bot_sources", 1, 9),
+                        update("UPDATE course_bots", 1, 0),
                         query("WHERE bs.source_id = ?", sourceRow(9, "ACTIVE", null))
                 );
 
@@ -208,6 +209,11 @@ public class CourseBotRepositoryTest {
         assertEquals(11, database.executed.get(1).parameters.get(2));
         assertEquals(1, database.executed.get(1).parameters.get(3));
         assertFalse(database.executed.get(1).actualSql.contains("current_version_no"));
+        assertEquals(UPDATED, database.executed.get(3).parameters.get(1));
+        assertEquals(7, database.executed.get(3).parameters.get(2));
+        assertEquals(UPDATED, database.executed.get(3).parameters.get(3));
+        assertTrue(database.events.indexOf("update:INSERT INTO bot_sources")
+                < database.events.indexOf("update:UPDATE course_bots"));
         assertEquals(1, database.commits);
         database.assertConsumed();
     }
@@ -252,8 +258,10 @@ public class CourseBotRepositoryTest {
         removedRow.put("added_by_user_id", 1002);
         BotRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new BotRepositoryJdbcTestSupport.FakeDatabaseController(
+                        query("WHERE cb.bot_id = ?", botRow()),
                         query("WHERE bs.source_id = ?", activeRow),
                         update("UPDATE bot_sources", 1, 0),
+                        update("UPDATE course_bots", 1, 0),
                         query("WHERE bs.source_id = ?", removedRow)
                 );
 
@@ -262,9 +270,60 @@ public class CourseBotRepositoryTest {
 
         assertEquals(BotSourceStatus.REMOVED, removed.getStatus());
         assertEquals(removedAt, removed.getRemovedAt());
-        assertTrue(database.executed.get(1).actualSql.contains("status = 'ACTIVE'"));
-        assertFalse(database.executed.get(1).actualSql.toUpperCase().contains("DELETE"));
+        assertTrue(database.executed.get(2).actualSql.contains("status = 'ACTIVE'"));
+        assertFalse(database.executed.get(2).actualSql.toUpperCase().contains("DELETE"));
+        assertEquals(removedAt, database.executed.get(3).parameters.get(1));
+        assertTrue(database.events.indexOf("update:UPDATE bot_sources")
+                < database.events.indexOf("update:UPDATE course_bots"));
         assertEquals(1, database.commits);
+        database.assertConsumed();
+    }
+
+    @Test
+    public void parentTimestampFailureRollsBackSourceInsertion() {
+        BotSource source = BotSource.create(
+                7, BotSourceType.FREE_TEXT, "Notes", "Course notes", CHECKSUM,
+                null, null, 1003, null, UPDATED.plusNanos(123_000)
+        );
+        BotRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new BotRepositoryJdbcTestSupport.FakeDatabaseController(
+                        query("WHERE cb.bot_id = ?", botRow()),
+                        update("INSERT INTO bot_sources", 1, 9),
+                        update("UPDATE course_bots", 0, 0)
+                );
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> new CourseBotRepository(database).addSource(1003, source));
+
+        assertEquals("Course Bot was modified by another user; reload and try again",
+                failure.getMessage());
+        assertEquals(1, database.rollbacks);
+        assertEquals(0, database.commits);
+        assertTrue(database.autoCommit);
+        assertEquals(UPDATED.plusNanos(123_000),
+                database.executed.get(2).parameters.get(1));
+        database.assertConsumed();
+    }
+
+    @Test
+    public void olderSourceMutationIsRejectedBeforeParentUpdateAndRolledBack() {
+        BotSource source = BotSource.create(
+                7, BotSourceType.FREE_TEXT, "Notes", "Course notes", CHECKSUM,
+                null, null, 1003, null, UPDATED.minusNanos(1_000)
+        );
+        BotRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new BotRepositoryJdbcTestSupport.FakeDatabaseController(
+                        query("WHERE cb.bot_id = ?", botRow()),
+                        update("INSERT INTO bot_sources", 1, 9)
+                );
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> new CourseBotRepository(database).addSource(1003, source));
+
+        assertEquals("Bot source mutation time cannot precede Bot update time",
+                failure.getMessage());
+        assertEquals(1, database.rollbacks);
+        assertEquals(0, database.commits);
         database.assertConsumed();
     }
 

@@ -147,6 +147,12 @@ public class CourseBotRepository {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
+    private static final String ADVANCE_BOT_SOURCE_TIMESTAMP_SQL = """
+            UPDATE course_bots
+            SET updated_at = ?
+            WHERE bot_id = ? AND updated_at = ?
+            """;
+
     private static final String EXACT_QUESTION_VERSION_COURSE_SQL = """
             SELECT q.question_id
             FROM questions q
@@ -412,6 +418,7 @@ public class CourseBotRepository {
                 }
                 throw exception;
             }
+            advanceBotSourceTimestamp(connection, bot.get(), source.getCreatedAt());
             return findSourceById(connection, sourceId)
                     .orElseThrow(() -> new IllegalStateException(
                             "Created Bot source could not be reloaded"
@@ -432,6 +439,12 @@ public class CourseBotRepository {
         }
 
         return inTransaction("Failed to remove Bot source", connection -> {
+            BotRow bot = findOneBot(
+                    connection, LOCK_ASSIGNED_BOT_SQL,
+                    authenticatedTeacherUserId, source.getBotId()
+            ).orElseThrow(() -> new IllegalStateException(
+                    "Course Bot not found or access denied"
+            ));
             Optional<BotSource> locked = findLockedAssignedSource(
                     connection, authenticatedTeacherUserId, source.getSourceId()
             );
@@ -454,6 +467,7 @@ public class CourseBotRepository {
                     throw new IllegalStateException("Bot source removal conflicts with current state");
                 }
             }
+            advanceBotSourceTimestamp(connection, bot, source.getRemovedAt());
             return findSourceById(connection, source.getSourceId())
                     .orElseThrow(() -> new IllegalStateException(
                             "Bot source not found or access denied"
@@ -714,6 +728,28 @@ public class CourseBotRepository {
             statement.setNull(12, Types.TIMESTAMP);
         } else {
             statement.setObject(12, source.getRemovedAt());
+        }
+    }
+
+    private void advanceBotSourceTimestamp(
+            Connection connection, BotRow bot, LocalDateTime mutationTime
+    ) throws SQLException {
+        if (mutationTime.isBefore(bot.updatedAt())) {
+            throw new IllegalStateException(
+                    "Bot source mutation time cannot precede Bot update time"
+            );
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                ADVANCE_BOT_SOURCE_TIMESTAMP_SQL
+        )) {
+            statement.setObject(1, mutationTime);
+            statement.setInt(2, bot.botId());
+            statement.setObject(3, bot.updatedAt());
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException(
+                        "Course Bot was modified by another user; reload and try again"
+                );
+            }
         }
     }
 

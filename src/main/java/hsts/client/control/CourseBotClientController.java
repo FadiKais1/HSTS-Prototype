@@ -41,15 +41,29 @@ public final class CourseBotClientController {
 
     private final Client client;
     private final Function<Request, Response> requestSender;
+    private final Function<Request, Response> courseBotAnswerSender;
 
     public CourseBotClientController(Client client) {
         this.client = Objects.requireNonNull(client, "client");
         this.requestSender = this.client::sendRequest;
+        this.courseBotAnswerSender = this.client::sendCourseBotRequest;
     }
 
     CourseBotClientController(Function<Request, Response> requestSender) {
         this.client = null;
         this.requestSender = Objects.requireNonNull(requestSender, "requestSender");
+        this.courseBotAnswerSender = this.requestSender;
+    }
+
+    CourseBotClientController(
+            Function<Request, Response> requestSender,
+            Function<Request, Response> courseBotAnswerSender
+    ) {
+        this.client = null;
+        this.requestSender = Objects.requireNonNull(requestSender, "requestSender");
+        this.courseBotAnswerSender = Objects.requireNonNull(
+                courseBotAnswerSender, "courseBotAnswerSender"
+        );
     }
 
     public CompletableFuture<List<CourseBotSummaryDTO>> getMyCourseBots() {
@@ -161,7 +175,7 @@ public final class CourseBotClientController {
                 RequestType.ASK_COURSE_BOT,
                 response -> requireType(
                         response, BotQuestionResultDTO.class, INVALID_ANSWER
-                )
+                ), courseBotAnswerSender
         );
     }
 
@@ -173,6 +187,17 @@ public final class CourseBotClientController {
             return failed(new IllegalArgumentException(nullMessage));
         }
         return send(new Request(type, payload), responseMapper);
+    }
+
+    private <T, P> CompletableFuture<T> sendMutation(
+            P payload, String nullMessage, RequestType type,
+            Function<Object, T> responseMapper,
+            Function<Request, Response> sender
+    ) {
+        if (payload == null) {
+            return failed(new IllegalArgumentException(nullMessage));
+        }
+        return send(new Request(type, payload), responseMapper, sender);
     }
 
     private <T> CompletableFuture<T> sendPositiveBotId(
@@ -187,8 +212,15 @@ public final class CourseBotClientController {
     private <T> CompletableFuture<T> send(
             Request request, Function<Object, T> responseMapper
     ) {
+        return send(request, responseMapper, requestSender);
+    }
+
+    private <T> CompletableFuture<T> send(
+            Request request, Function<Object, T> responseMapper,
+            Function<Request, Response> sender
+    ) {
         return CompletableFuture.supplyAsync(() -> {
-            Response response = requestSender.apply(request);
+            Response response = sender.apply(request);
             if (response == null) {
                 throw new IllegalStateException(NULL_RESPONSE);
             }

@@ -190,7 +190,7 @@ public class CourseBotSchemaMigrationTest {
     }
 
     @Test
-    public void runtimeMigrationIsCreateOnlyIdempotentAndPreservesSqlCause() {
+    public void runtimeMigrationRepairsOnlyInconsistentParentTimestampsTransactionally() {
         String runtime = between(
                 INITIALIZER,
                 "private void migrateCourseBotSchema()",
@@ -200,24 +200,46 @@ public class CourseBotSchemaMigrationTest {
             assertContainsAll(runtime, "CREATE TABLE IF NOT EXISTS " + table);
         }
         assertContainsAll(runtime,
+                "repairCourseBotParentTimestamps(connection)",
+                "UPDATE course_bots cb",
+                "MAX(source_events.event_at) AS latest_source_at",
+                "SELECT bot_id, created_at AS event_at FROM bot_sources",
+                "SELECT bot_id, removed_at AS event_at FROM bot_sources",
+                "WHERE removed_at IS NOT NULL",
+                "SET cb.updated_at = latest.latest_source_at",
+                "WHERE cb.updated_at < latest.latest_source_at",
+                "connection.setAutoCommit(false)",
+                "connection.commit()",
+                "rollbackWithSuppressed(connection, exception)",
+                "restoreAutoCommit(connection, originalAutoCommit, repairFailure)",
                 "catch (SQLException | RuntimeException e)",
                 "throw new IllegalStateException(\"Failed to migrate course Bot schema\", e)"
         );
 
         String normalized = normalize(runtime);
-        assertFalse(normalized.contains("SETAUTOCOMMIT"));
         assertFalse(normalized.contains("START TRANSACTION"));
-        for (String table : TABLES) {
-            String normalizedTable = table.toUpperCase(Locale.ROOT);
-            assertFalse(normalized.contains("INSERT INTO " + normalizedTable));
-            assertFalse(normalized.contains("UPDATE " + normalizedTable));
-        }
+        assertEquals(1, occurrences(normalized, "UPDATE COURSE_BOTS CB"));
+        assertFalse(normalized.contains("UPDATE BOT_SOURCES"));
+        assertFalse(normalized.contains("UPDATE BOT_CONVERSATIONS"));
+        assertFalse(normalized.contains("UPDATE BOT_MESSAGES"));
+        assertFalse(normalized.contains("SET CB.NAME"));
+        assertFalse(normalized.contains("SET CB.STATUS"));
         assertFalse(normalized.contains("DELETE FROM"));
         assertFalse(normalized.contains("DROP TABLE"));
         assertFalse(normalized.contains("TRUNCATE"));
         assertFalse(normalized.contains("REPLACE INTO"));
         assertFalse(normalized.contains("INSERT IGNORE"));
         assertFalse(normalized.contains("ON DUPLICATE KEY UPDATE"));
+    }
+
+    private static int occurrences(String source, String fragment) {
+        int count = 0;
+        int position = 0;
+        while ((position = source.indexOf(fragment, position)) >= 0) {
+            count++;
+            position += fragment.length();
+        }
+        return count;
     }
 
     @Test

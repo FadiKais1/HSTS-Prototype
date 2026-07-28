@@ -41,7 +41,7 @@ public class CourseBotProviderFactoryTest {
         ));
         assertTrue(provider instanceof GeminiExternalBotSystem);
         assertEquals(URI.create("https://generativelanguage.googleapis.com/v1beta/models/"
-                        + "gemini-2.5-flash-lite:generateContent"),
+                        + "gemini-3.5-flash-lite:generateContent"),
                 field(provider, "endpoint"));
         assertEquals(Duration.ofSeconds(30), field(provider, "timeout"));
     }

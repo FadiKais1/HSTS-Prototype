@@ -109,6 +109,29 @@ public class CourseBotClientControllerTest {
     }
 
     @Test
+    public void onlyAskCourseBotUsesTheDedicatedLongRunningSender() {
+        RecordingSender ordinary = new RecordingSender();
+        RecordingSender courseBot = new RecordingSender();
+        CourseBotClientController controller = new CourseBotClientController(
+                ordinary::send, courseBot::send
+        );
+        CourseBotSummaryDTO bot = bot(7);
+        ordinary.response = Response.success("ok", List.of(bot));
+        courseBot.response = Response.success("ok", new BotQuestionResultDTO(
+                new BotMessageDTO(1, 1, "Question", "Answer",
+                        BotAnswerStatus.ANSWERED, TIME), true
+        ));
+
+        controller.getMyCourseBots().join();
+        controller.askCourseBot(new AskCourseBotPayload(1, "limits")).join();
+
+        assertEquals(1, ordinary.requests.size());
+        assertEquals(RequestType.LIST_MY_COURSE_BOTS, ordinary.last().getType());
+        assertEquals(1, courseBot.requests.size());
+        assertEquals(RequestType.ASK_COURSE_BOT, courseBot.last().getType());
+    }
+
+    @Test
     public void idsAndNullMutationsFailBeforeNetworking() {
         RecordingSender sender = new RecordingSender();
         CourseBotClientController controller = new CourseBotClientController(sender::send);

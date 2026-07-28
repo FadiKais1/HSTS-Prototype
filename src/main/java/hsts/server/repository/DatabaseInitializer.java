@@ -196,8 +196,42 @@ public class DatabaseInitializer {
             createBotSourcesTable(connection);
             createBotConversationsTable(connection);
             createBotMessagesTable(connection);
+            repairCourseBotParentTimestamps(connection);
         } catch (SQLException | RuntimeException e) {
             throw new IllegalStateException("Failed to migrate course Bot schema", e);
+        }
+    }
+
+    private void repairCourseBotParentTimestamps(Connection connection) throws SQLException {
+        boolean originalAutoCommit = connection.getAutoCommit();
+        Throwable repairFailure = null;
+        try {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, """
+                    UPDATE course_bots cb
+                    JOIN (
+                        SELECT source_events.bot_id,
+                               MAX(source_events.event_at) AS latest_source_at
+                        FROM (
+                            SELECT bot_id, created_at AS event_at
+                            FROM bot_sources
+                            UNION ALL
+                            SELECT bot_id, removed_at AS event_at
+                            FROM bot_sources
+                            WHERE removed_at IS NOT NULL
+                        ) source_events
+                        GROUP BY source_events.bot_id
+                    ) latest ON latest.bot_id = cb.bot_id
+                    SET cb.updated_at = latest.latest_source_at
+                    WHERE cb.updated_at < latest.latest_source_at
+                    """);
+            connection.commit();
+        } catch (SQLException | RuntimeException exception) {
+            repairFailure = exception;
+            rollbackWithSuppressed(connection, exception);
+            throw exception;
+        } finally {
+            restoreAutoCommit(connection, originalAutoCommit, repairFailure);
         }
     }
 
