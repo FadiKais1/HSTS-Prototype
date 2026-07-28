@@ -32,9 +32,12 @@ public class StudentDashboard {
     private Button examExecutionButton;
     @FXML
     private Button publishedGradesButton;
+    @FXML
+    private Button courseBotButton;
     private Runnable logoutHandler;
     private Runnable examExecutionHandler;
     private Runnable publishedGradesHandler;
+    private Runnable courseBotHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configure(stage, client, loginResult, logoutHandler, null, null);
@@ -49,12 +52,20 @@ public class StudentDashboard {
     public void configure(Stage stage, Client client, LoginResult loginResult,
                           Runnable logoutHandler, Runnable examExecutionHandler,
                           Runnable publishedGradesHandler) {
+        configure(stage, client, loginResult, logoutHandler, examExecutionHandler,
+                publishedGradesHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable examExecutionHandler,
+                          Runnable publishedGradesHandler, Runnable courseBotHandler) {
         this.stage = Objects.requireNonNull(stage);
         this.client = Objects.requireNonNull(client);
         this.loginResult = Objects.requireNonNull(loginResult);
         this.logoutHandler = Objects.requireNonNull(logoutHandler);
         this.examExecutionHandler = examExecutionHandler;
         this.publishedGradesHandler = publishedGradesHandler;
+        this.courseBotHandler = courseBotHandler;
 
         displayIdentity();
         showError("");
@@ -121,6 +132,23 @@ public class StudentDashboard {
         }
     }
 
+    @FXML
+    private void handleCourseBot() {
+        if (loginResult == null || loginResult.getRole() != UserRole.STUDENT) {
+            showError("Course Bot is available only to students");
+            return;
+        }
+        if (courseBotHandler == null) {
+            showError("Course Bot is unavailable");
+            return;
+        }
+        try {
+            courseBotHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Unable to open Course Bot");
+        }
+    }
+
     private void displayIdentity() {
         if (welcomeLabel != null) {
             welcomeLabel.setText("Welcome, " + loginResult.getFullName());
@@ -156,6 +184,13 @@ public class StudentDashboard {
                     !student || publishedGradesHandler == null
             );
         }
+        if (courseBotButton != null) {
+            boolean student = loginResult != null
+                    && loginResult.getRole() == UserRole.STUDENT;
+            courseBotButton.setVisible(student);
+            courseBotButton.setManaged(student);
+            courseBotButton.setDisable(!student || courseBotHandler == null);
+        }
     }
 
     public void showAvailableExams() {
@@ -189,9 +224,13 @@ public class StudentDashboard {
     }
 
     public void openCourseBot(int courseId) {
-        throw new UnsupportedOperationException(
-                "Not implemented in Assignment 2 skeleton"
-        );
+        if (courseId <= 0) {
+            throw new IllegalArgumentException("Course ID must be positive");
+        }
+        if (courseBotHandler == null) {
+            throw new IllegalStateException("Course Bot is unavailable");
+        }
+        courseBotHandler.run();
     }
 
     public void showNotifications() {

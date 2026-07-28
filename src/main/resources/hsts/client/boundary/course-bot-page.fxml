@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="hsts.client.boundary.CourseBotPage"
+            prefWidth="1000" prefHeight="680" style="-fx-background-color: #f4f7fb;">
+    <top><HBox alignment="CENTER_LEFT" spacing="12" style="-fx-background-color: white; -fx-padding: 16 24;">
+        <Button text="Back" onAction="#handleBack"/>
+        <VBox><Label text="Course Bot" style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+            <Label fx:id="identityLabel" style="-fx-text-fill: #4b5563;"/></VBox>
+        <Region HBox.hgrow="ALWAYS"/><Button text="Refresh" onAction="#handleRefresh"/>
+    </HBox></top>
+    <center><VBox spacing="12" style="-fx-padding: 22;">
+        <Label fx:id="statusLabel" wrapText="true" managed="false" visible="false"
+               style="-fx-background-color: #eef2ff; -fx-text-fill: #312e81; -fx-padding: 9;"/>
+        <HBox spacing="10" alignment="CENTER_LEFT"><Label text="Available Bot:" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+            <ComboBox fx:id="botBox" prefWidth="520"/></HBox>
+        <ListView fx:id="historyList" VBox.vgrow="ALWAYS" style="-fx-font-size: 14px;"/>
+        <Label text="Ask a question" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+        <TextArea fx:id="questionArea" promptText="Enter a question about this course" prefRowCount="3" wrapText="true"/>
+        <Button fx:id="sendButton" text="Send" onAction="#handleSend" maxWidth="Infinity"
+                style="-fx-background-color: #4338ca; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 10;"/>
+    </VBox></center>
+</BorderPane>

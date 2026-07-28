@@ -12,6 +12,8 @@ import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.ReportsPage;
 import hsts.client.boundary.StudentDashboard;
 import hsts.client.boundary.TeacherDashboard;
+import hsts.client.boundary.CourseBotManagementPage;
+import hsts.client.boundary.CourseBotPage;
 import hsts.client.navigation.SceneNavigator;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
@@ -149,7 +151,8 @@ public class MainClient extends Application {
                 loginResult,
                 this::logout,
                 () -> showExamExecution(loginResult),
-                () -> showPublishedGrades(loginResult)
+                () -> showPublishedGrades(loginResult),
+                () -> showCourseBot(loginResult)
         );
     }
 
@@ -169,8 +172,44 @@ public class MainClient extends Application {
                 () -> showApprovalRequests(loginResult),
                 () -> showExamScheduling(loginResult),
                 () -> showGradeReview(loginResult),
-                () -> showReports(loginResult)
+                () -> showReports(loginResult),
+                () -> showCourseBotManagement(loginResult)
         );
+    }
+
+    private void showCourseBotManagement(LoginResult loginResult) {
+        if (loginResult == null || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showNavigationError("Course Bots are unavailable for this role");
+            return;
+        }
+        try {
+            CourseBotManagementPage controller = SceneNavigator.switchScene(stage,
+                    "/hsts/client/boundary/course-bot-management-page.fxml",
+                    "HSTS Exam Management System - Course Bots");
+            controller.configure(stage, client, loginResult,
+                    () -> returnToTeacherDashboard(loginResult));
+        } catch (IOException | RuntimeException exception) {
+            returnToTeacherDashboard(loginResult);
+            showNavigationError("Unable to open Course Bots");
+        }
+    }
+
+    private void showCourseBot(LoginResult loginResult) {
+        if (loginResult == null || loginResult.getRole() != UserRole.STUDENT) {
+            showNavigationError("Course Bot is available only to students");
+            return;
+        }
+        try {
+            CourseBotPage controller = SceneNavigator.switchScene(stage,
+                    "/hsts/client/boundary/course-bot-page.fxml",
+                    "HSTS Exam Management System - Course Bot");
+            controller.configure(stage, client, loginResult,
+                    () -> returnToStudentDashboard(loginResult));
+        } catch (IOException | RuntimeException exception) {
+            returnToStudentDashboard(loginResult);
+            showNavigationError("Unable to open Course Bot");
+        }
     }
 
     private void showPrincipalDashboard(LoginResult loginResult) throws IOException {

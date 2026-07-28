@@ -48,6 +48,9 @@ public class TeacherDashboard {
     @FXML
     private Button reportsButton;
     private Runnable reportsHandler;
+    @FXML
+    private Button courseBotsButton;
+    private Runnable courseBotsHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
@@ -149,6 +152,16 @@ public class TeacherDashboard {
                           Runnable examManagementHandler, Runnable approvalRequestsHandler,
                           Runnable examSchedulingHandler, Runnable gradeReviewHandler,
                           Runnable reportsHandler) {
+        configure(stage, client, loginResult, logoutHandler, questionBankHandler,
+                examManagementHandler, approvalRequestsHandler, examSchedulingHandler,
+                gradeReviewHandler, reportsHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable questionBankHandler,
+                          Runnable examManagementHandler, Runnable approvalRequestsHandler,
+                          Runnable examSchedulingHandler, Runnable gradeReviewHandler,
+                          Runnable reportsHandler, Runnable courseBotsHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
         this.questionBankHandler = Objects.requireNonNull(questionBankHandler);
         this.examManagementHandler = Objects.requireNonNull(examManagementHandler);
@@ -156,10 +169,27 @@ public class TeacherDashboard {
         this.examSchedulingHandler = Objects.requireNonNull(examSchedulingHandler);
         this.gradeReviewHandler = Objects.requireNonNull(gradeReviewHandler);
         this.reportsHandler = Objects.requireNonNull(reportsHandler);
+        this.courseBotsHandler = courseBotsHandler;
         updateApprovalRequestsState();
         updateExamSchedulingState();
         updateGradeReviewState();
         updateReportsState();
+        updateCourseBotsState();
+    }
+
+    @FXML
+    private void handleCourseBots() {
+        if (courseBotsHandler == null || loginResult == null
+                || (loginResult.getRole() != UserRole.TEACHER
+                && loginResult.getRole() != UserRole.COORDINATOR)) {
+            showError("Course Bots are unavailable");
+            return;
+        }
+        try {
+            courseBotsHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Course Bots are unavailable");
+        }
     }
 
     @FXML
@@ -287,6 +317,7 @@ public class TeacherDashboard {
         this.client = Objects.requireNonNull(client);
         this.loginResult = Objects.requireNonNull(loginResult);
         this.logoutHandler = Objects.requireNonNull(logoutHandler);
+        this.courseBotsHandler = null;
 
         if (welcomeLabel != null) {
             welcomeLabel.setText("Welcome, " + loginResult.getFullName());
@@ -298,6 +329,7 @@ public class TeacherDashboard {
         updateExamSchedulingState();
         updateGradeReviewState();
         updateReportsState();
+        updateCourseBotsState();
         showError("");
     }
 
@@ -342,6 +374,17 @@ public class TeacherDashboard {
         reportsButton.setManaged(manager);
         reportsButton.setVisible(manager);
         reportsButton.setDisable(!manager || reportsHandler == null);
+    }
+
+    private void updateCourseBotsState() {
+        if (courseBotsButton == null || loginResult == null) {
+            return;
+        }
+        UserRole role = loginResult.getRole();
+        boolean manager = role == UserRole.TEACHER || role == UserRole.COORDINATOR;
+        courseBotsButton.setManaged(manager);
+        courseBotsButton.setVisible(manager);
+        courseBotsButton.setDisable(!manager || courseBotsHandler == null);
     }
 
     private void showError(String message) {
@@ -420,9 +463,13 @@ public class TeacherDashboard {
     }
 
     public void showBotStatistics(int courseId) {
-        throw new UnsupportedOperationException(
-                "Not implemented in Assignment 2 skeleton"
-        );
+        if (courseId <= 0) {
+            throw new IllegalArgumentException("Course ID must be positive");
+        }
+        if (courseBotsHandler == null) {
+            throw new IllegalStateException("Course Bots are unavailable");
+        }
+        courseBotsHandler.run();
     }
 
     public void submitExamForApproval(int examId) {

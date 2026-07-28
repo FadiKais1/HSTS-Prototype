@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="hsts.client.boundary.CourseBotManagementPage"
+            prefWidth="1180" prefHeight="760" style="-fx-background-color: #f4f7fb;">
+    <top><HBox alignment="CENTER_LEFT" spacing="12" style="-fx-background-color: white; -fx-padding: 14 22;">
+        <Button text="Back" onAction="#handleBack"/>
+        <VBox><Label text="Course Bot Management" style="-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+            <Label fx:id="identityLabel" style="-fx-text-fill: #4b5563;"/></VBox>
+        <Region HBox.hgrow="ALWAYS"/><Button text="Refresh" onAction="#handleRefresh"/>
+    </HBox></top>
+    <center><VBox spacing="10" style="-fx-padding: 16;">
+        <Label fx:id="statusLabel" managed="false" visible="false" wrapText="true"
+               style="-fx-background-color: #eef2ff; -fx-text-fill: #312e81; -fx-padding: 8;"/>
+        <GridPane hgap="10" vgap="8">
+            <Label text="Assigned course" GridPane.rowIndex="0" GridPane.columnIndex="0" style="-fx-text-fill: #374151; -fx-font-weight: bold;"/>
+            <ComboBox fx:id="courseBox" prefWidth="360" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+            <Label text="Course Bot" GridPane.rowIndex="0" GridPane.columnIndex="2" style="-fx-text-fill: #374151; -fx-font-weight: bold;"/>
+            <ComboBox fx:id="botBox" prefWidth="390" GridPane.rowIndex="0" GridPane.columnIndex="3"/>
+            <Label text="Bot name" GridPane.rowIndex="1" GridPane.columnIndex="0" style="-fx-text-fill: #374151; -fx-font-weight: bold;"/>
+            <TextField fx:id="botNameField" promptText="Course Bot name" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+            <CheckBox fx:id="activeCheck" text="Active" GridPane.rowIndex="1" GridPane.columnIndex="2"/>
+            <HBox spacing="8" GridPane.rowIndex="1" GridPane.columnIndex="3"><Button fx:id="createButton" text="Create" onAction="#handleCreate"/>
+                <Button fx:id="saveButton" text="Save configuration" onAction="#handleSave"/></HBox>
+        </GridPane>
+        <SplitPane dividerPositions="0.53" VBox.vgrow="ALWAYS">
+            <items>
+                <TabPane tabClosingPolicy="UNAVAILABLE">
+                    <tabs>
+                        <Tab text="Sources"><VBox spacing="8" style="-fx-padding: 10;">
+                            <ListView fx:id="sourceList" VBox.vgrow="ALWAYS"/>
+                            <Button fx:id="removeSourceButton" text="Remove selected active source" onAction="#handleRemoveSource"/>
+                        </VBox></Tab>
+                        <Tab text="Add text"><VBox spacing="8" style="-fx-padding: 10;">
+                            <Label text="Display name" style="-fx-text-fill: #374151;"/><TextField fx:id="textDisplayNameField"/>
+                            <Label text="Course material" style="-fx-text-fill: #374151;"/>
+                            <TextArea fx:id="sourceTextArea" wrapText="true" VBox.vgrow="ALWAYS"/>
+                            <Button fx:id="addTextButton" text="Add Text Source" onAction="#handleAddText"/>
+                        </VBox></Tab>
+                        <Tab text="Upload file"><VBox spacing="10" alignment="TOP_LEFT" style="-fx-padding: 14;">
+                            <Label text="Upload one TXT, PDF, or DOCX file (maximum 5 MiB)." wrapText="true" style="-fx-text-fill: #374151;"/>
+                            <Button fx:id="uploadButton" text="Choose and Upload File" onAction="#handleUpload"/>
+                        </VBox></Tab>
+                        <Tab text="Question Bank"><VBox spacing="8" style="-fx-padding: 10;">
+                            <Label text="Active current question versions for the selected course" wrapText="true" style="-fx-text-fill: #374151;"/>
+                            <ListView fx:id="questionList" VBox.vgrow="ALWAYS"/>
+                            <Button fx:id="addQuestionsButton" text="Add Selected Question Versions" onAction="#handleAddQuestions"/>
+                        </VBox></Tab>
+                    </tabs>
+                </TabPane>
+                <VBox spacing="8" style="-fx-background-color: white; -fx-padding: 14;">
+                    <Label text="Anonymous Usage" style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <Label fx:id="usageLabel" text="Select a Course Bot to view anonymous usage" wrapText="true" style="-fx-text-fill: #374151;"/>
+                    <Label text="Common questions" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+                    <ListView fx:id="commonQuestionsList" VBox.vgrow="ALWAYS"/>
+                </VBox>
+            </items>
+        </SplitPane>
+    </VBox></center>
+</BorderPane>
