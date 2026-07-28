@@ -600,6 +600,7 @@ public class ExamSubmissionRepository {
                    submission.started_at,
                    submission.submitted_at,
                    submission.reviewed_at,
+                   submission.updated_at,
                    submission.published_by_user_id,
                    submission.published_at
             FROM exam_submissions submission
@@ -1738,6 +1739,14 @@ public class ExamSubmissionRepository {
         int submissionId = resultSet.getInt("submission_id");
         Integer reviewerId = resultSet.getObject("reviewed_by_user_id", Integer.class);
         Integer publisherId = resultSet.getObject("published_by_user_id", Integer.class);
+        LocalDateTime updatedAt = resultSet.getObject(
+                "updated_at", LocalDateTime.class
+        );
+        if (updatedAt == null) {
+            throw new IllegalArgumentException(
+                    "Submission updated timestamp is invalid: " + submissionId
+            );
+        }
         return new ReviewHeader(
                 submissionId,
                 resultSet.getInt("execution_id"),
@@ -1757,6 +1766,7 @@ public class ExamSubmissionRepository {
                 resultSet.getObject("started_at", LocalDateTime.class),
                 resultSet.getObject("submitted_at", LocalDateTime.class),
                 resultSet.getObject("reviewed_at", LocalDateTime.class),
+                updatedAt,
                 publisherId == null ? 0 : publisherId,
                 resultSet.getObject("published_at", LocalDateTime.class)
         );
@@ -2619,6 +2629,7 @@ public class ExamSubmissionRepository {
             LocalDateTime startedAt,
             LocalDateTime submittedAt,
             LocalDateTime reviewedAt,
+            LocalDateTime updatedAt,
             int publisherUserId,
             LocalDateTime publishedAt
     ) {
@@ -2642,6 +2653,7 @@ public class ExamSubmissionRepository {
                     startedAt,
                     submittedAt,
                     reviewedAt,
+                    updatedAt,
                     publisherUserId,
                     publishedAt,
                     answers

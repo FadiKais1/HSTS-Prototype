@@ -39,6 +39,7 @@ public class ExamSubmissionRepositoryProjectionTest {
             LocalDateTime.of(2026, 8, 12, 9, 0);
     private static final LocalDateTime SUBMITTED = STARTED.plusMinutes(45);
     private static final LocalDateTime REVIEWED = SUBMITTED.plusMinutes(5);
+    private static final LocalDateTime UPDATED = REVIEWED.plusMinutes(1);
     private static final LocalDateTime PUBLISHED = REVIEWED.plusMinutes(5);
 
     @Test
@@ -129,6 +130,7 @@ public class ExamSubmissionRepositoryProjectionTest {
         assertEquals(STARTED, review.getStartedAt());
         assertEquals(SUBMITTED, review.getSubmittedAt());
         assertEquals(REVIEWED, review.getReviewedAt());
+        assertEquals(UPDATED, review.getUpdatedAt());
         assertEquals(0, review.getPublisherUserId());
         assertNull(review.getPublishedAt());
         assertEquals(List.of(30, 10), review.getAnswers().stream()
@@ -147,6 +149,7 @@ public class ExamSubmissionRepositoryProjectionTest {
         assertEquals(Map.of(1, 501, 2, 40, 3, 3),
                 answers.queryExecutions.get(0));
         assertManagerAuthorizationAndExactVersion(header.sql);
+        assertTrue(normalized(header.sql).contains("SUBMISSION.UPDATED_AT"));
         assertExactAnswerVersionWithoutCorrectOption(answers.sql);
         assertReadOnly(database, header.sql, answers.sql);
     }
@@ -174,6 +177,21 @@ public class ExamSubmissionRepositoryProjectionTest {
                         .findReviewForManager(1002, 501)
         );
         assertEquals("Submission status is invalid: 501", malformed.getMessage());
+
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController nullUpdatedDatabase =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        Map<Object, Object> nullUpdatedRow = reviewHeaderRow("SUBMITTED");
+        nullUpdatedRow.put("updated_at", null);
+        nullUpdatedDatabase.plan(MANAGER_DETAIL_MARKER).queryRows(nullUpdatedRow);
+        IllegalArgumentException nullUpdated = assertThrows(
+                IllegalArgumentException.class,
+                () -> new ExamSubmissionRepository(nullUpdatedDatabase)
+                        .findReviewForManager(1002, 501)
+        );
+        assertEquals(
+                "Submission updated timestamp is invalid: 501",
+                nullUpdated.getMessage()
+        );
     }
 
     @Test
@@ -463,6 +481,7 @@ public class ExamSubmissionRepositoryProjectionTest {
                 "started_at", STARTED,
                 "submitted_at", SUBMITTED,
                 "reviewed_at", REVIEWED,
+                "updated_at", UPDATED,
                 "published_by_user_id", null,
                 "published_at", null
         );

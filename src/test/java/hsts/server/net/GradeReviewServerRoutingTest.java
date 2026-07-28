@@ -475,6 +475,7 @@ public class GradeReviewServerRoutingTest {
                 UPDATED_AT.minusHours(2),
                 UPDATED_AT.minusHours(1),
                 UPDATED_AT,
+                UPDATED_AT.plusSeconds(1),
                 0,
                 null,
                 List.of()

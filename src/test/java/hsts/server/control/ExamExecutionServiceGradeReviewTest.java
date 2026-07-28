@@ -873,6 +873,7 @@ public class ExamExecutionServiceGradeReviewTest {
                 NOW.minusHours(2),
                 NOW.minusHours(1),
                 EXPECTED_UPDATED_AT,
+                status == SubmissionStatus.PUBLISHED ? NOW : EXPECTED_UPDATED_AT,
                 status == SubmissionStatus.PUBLISHED ? COORDINATOR_ID : 0,
                 status == SubmissionStatus.PUBLISHED ? NOW : null,
                 List.of()

@@ -26,6 +26,7 @@ public class SubmissionReviewDTO implements Serializable {
     private final LocalDateTime startedAt;
     private final LocalDateTime submittedAt;
     private final LocalDateTime reviewedAt;
+    private final LocalDateTime updatedAt;
     private final int publisherUserId;
     private final LocalDateTime publishedAt;
     private final List<SubmissionAnswerReviewDTO> answers;
@@ -37,7 +38,8 @@ public class SubmissionReviewDTO implements Serializable {
             BigDecimal finalScore, String teacherFeedback,
             String adjustmentReason, int reviewerUserId,
             LocalDateTime startedAt, LocalDateTime submittedAt,
-            LocalDateTime reviewedAt, int publisherUserId,
+            LocalDateTime reviewedAt, LocalDateTime updatedAt,
+            int publisherUserId,
             LocalDateTime publishedAt, List<SubmissionAnswerReviewDTO> answers
     ) {
         this.submissionId = submissionId;
@@ -56,6 +58,7 @@ public class SubmissionReviewDTO implements Serializable {
         this.startedAt = startedAt;
         this.submittedAt = submittedAt;
         this.reviewedAt = reviewedAt;
+        this.updatedAt = updatedAt;
         this.publisherUserId = publisherUserId;
         this.publishedAt = publishedAt;
         this.answers = List.copyOf(answers);
@@ -77,6 +80,7 @@ public class SubmissionReviewDTO implements Serializable {
     public LocalDateTime getStartedAt() { return startedAt; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public LocalDateTime getReviewedAt() { return reviewedAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
     public int getPublisherUserId() { return publisherUserId; }
     public LocalDateTime getPublishedAt() { return publishedAt; }
     public List<SubmissionAnswerReviewDTO> getAnswers() { return answers; }

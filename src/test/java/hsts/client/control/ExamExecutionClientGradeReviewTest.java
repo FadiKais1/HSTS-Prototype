@@ -56,7 +56,8 @@ public class ExamExecutionClientGradeReviewTest {
         );
 
         ReviewSubmissionPayload reviewPayload = new ReviewSubmissionPayload(
-                501, new BigDecimal("94.50"), "Good work", "Manual adjustment", NOW
+                501, new BigDecimal("94.50"), "Good work", "Manual adjustment",
+                review.getUpdatedAt()
         );
         sender.setResponse(Response.success("Reviewed", review));
         assertSame(review, controller.reviewSubmissionGrade(reviewPayload).join());
@@ -65,7 +66,7 @@ public class ExamExecutionClientGradeReviewTest {
         );
 
         PublishSubmissionPayload publishPayload =
-                new PublishSubmissionPayload(501, NOW.plusMinutes(1));
+                new PublishSubmissionPayload(501, review.getUpdatedAt());
         sender.setResponse(Response.success("Published", review));
         assertSame(review, controller.publishSubmissionGrade(publishPayload).join());
         assertExactPayloadRequest(
@@ -339,7 +340,8 @@ public class ExamExecutionClientGradeReviewTest {
                 submissionId, 81, 40, 3, "Midterm", 1001, "Student",
                 SubmissionStatus.SUBMITTED, new BigDecimal("90.00"),
                 new BigDecimal("94.50"), "Good work", "Manual adjustment",
-                1002, NOW.minusHours(1), NOW, NOW.plusMinutes(1), 0,
+                1002, NOW.minusHours(1), NOW, NOW.plusMinutes(1),
+                NOW.plusMinutes(2), 0,
                 null, List.of()
         );
     }

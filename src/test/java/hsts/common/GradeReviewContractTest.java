@@ -32,6 +32,7 @@ public class GradeReviewContractTest {
             LocalDateTime.of(2026, 8, 12, 9, 0);
     private static final LocalDateTime SUBMITTED = STARTED.plusMinutes(45);
     private static final LocalDateTime REVIEWED = SUBMITTED.plusMinutes(5);
+    private static final LocalDateTime UPDATED = REVIEWED.plusMinutes(1);
     private static final LocalDateTime PUBLISHED = REVIEWED.plusMinutes(5);
 
     private static final List<Class<?>> CONTRACT_TYPES = List.of(
@@ -117,7 +118,7 @@ public class GradeReviewContractTest {
                 "Development Student", SubmissionStatus.SUBMITTED,
                 new BigDecimal("60.00"), new BigDecimal("65.00"),
                 "Reviewed response", "Accepted ambiguity", 1002,
-                STARTED, SUBMITTED, REVIEWED, 0, null, supplied
+                STARTED, SUBMITTED, REVIEWED, UPDATED, 0, null, supplied
         );
 
         supplied.clear();
@@ -142,10 +143,26 @@ public class GradeReviewContractTest {
         assertEquals(STARTED, restored.getStartedAt());
         assertEquals(SUBMITTED, restored.getSubmittedAt());
         assertEquals(REVIEWED, restored.getReviewedAt());
+        assertEquals(UPDATED, restored.getUpdatedAt());
         assertEquals(0, restored.getPublisherUserId());
         assertNull(restored.getPublishedAt());
         assertEquals(30, restored.getAnswers().get(0).getQuestionId());
         assertEquals(10, restored.getAnswers().get(1).getQuestionId());
+
+        assertEquals(
+                restored.getUpdatedAt(),
+                new ReviewSubmissionPayload(
+                        restored.getSubmissionId(), new BigDecimal("65.00"),
+                        "Reviewed response", "Accepted ambiguity",
+                        restored.getUpdatedAt()
+                ).getExpectedUpdatedAt()
+        );
+        assertEquals(
+                restored.getUpdatedAt(),
+                new PublishSubmissionPayload(
+                        restored.getSubmissionId(), restored.getUpdatedAt()
+                ).getExpectedUpdatedAt()
+        );
     }
 
     @Test
@@ -294,7 +311,7 @@ public class GradeReviewContractTest {
                 501, 81, 40, 3, "Algebra Final", 1001,
                 "Development Student", SubmissionStatus.SUBMITTED,
                 null, null, null, null, 0, STARTED, null, null,
-                0, null, answers
+                UPDATED, 0, null, answers
         );
     }
 
