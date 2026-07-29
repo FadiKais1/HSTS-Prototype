@@ -11,6 +11,7 @@ import hsts.common.StudentExamQuestionDTO;
 import hsts.common.SubmissionAnswerReviewDTO;
 import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.ExecutionStatus;
+import hsts.common.type.NotificationType;
 import hsts.common.type.PublishedAnswerOutcome;
 import hsts.common.type.SubmissionStatus;
 import hsts.server.entity.ExamExecution;
@@ -318,7 +319,10 @@ public class ExamSubmissionRepository {
                    submission.started_at,
                    submission.status,
                    submission.allocated_duration_minutes,
-                   submission.extra_minutes
+                   submission.extra_minutes,
+                   execution.opening_time AS execution_opening_time,
+                   execution.closing_time AS execution_closing_time,
+                   execution.status AS execution_status
             FROM exam_submissions submission
             JOIN exam_executions execution
               ON execution.execution_id = submission.execution_id
@@ -343,6 +347,67 @@ public class ExamSubmissionRepository {
                 created_at
             )
             VALUES (?, ?, ?, ?, ?)
+            """;
+
+    private static final String LOCK_MANAGER_EXECUTION_EXTENSION_SQL = """
+            SELECT execution.execution_id, execution.execution_code,
+                   execution.opening_time, execution.closing_time,
+                   execution.duration_minutes,
+                   execution.cumulative_extension_minutes,
+                   execution.status, execution.exam_id,
+                   execution.exam_version_no, version.title AS exam_title
+            FROM exam_executions execution
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users manager
+              ON manager.user_id = ?
+             AND manager.status = 'ACTIVE'
+            WHERE execution.execution_id = ?
+              AND (
+                    (manager.role = 'TEACHER' AND EXISTS (
+                        SELECT 1 FROM teacher_courses assignment
+                        WHERE assignment.teacher_user_id = manager.user_id
+                          AND assignment.course_id = exam.course_id
+                    ))
+                 OR (manager.role = 'COORDINATOR' AND EXISTS (
+                        SELECT 1 FROM subject_coordinators assignment
+                        WHERE assignment.coordinator_user_id = manager.user_id
+                          AND assignment.subject_id = course.subject_id
+                    ))
+              )
+            FOR UPDATE
+            """;
+
+    private static final String UPDATE_EXECUTION_EXTENSION_SQL = """
+            UPDATE exam_executions
+            SET duration_minutes = ?, cumulative_extension_minutes = ?, updated_at = ?
+            WHERE execution_id = ?
+              AND duration_minutes = ?
+              AND cumulative_extension_minutes = ?
+            """;
+
+    private static final String UPDATE_ACTIVE_SUBMISSION_DURATIONS_SQL = """
+            UPDATE exam_submissions
+            SET allocated_duration_minutes = allocated_duration_minutes + ?,
+                updated_at = ?
+            WHERE execution_id = ? AND status = 'IN_PROGRESS'
+            """;
+
+    private static final String ACTIVE_EXECUTION_STUDENTS_SQL = """
+            SELECT student_user_id
+            FROM exam_submissions
+            WHERE execution_id = ? AND status = 'IN_PROGRESS'
+            ORDER BY student_user_id
+            """;
+
+    private static final String INSERT_EXECUTION_EXTENSION_AUDIT_SQL = """
+            INSERT INTO execution_time_extensions (
+                execution_id, added_minutes, reason,
+                extended_by_user_id, created_at
+            ) VALUES (?, ?, ?, ?, ?)
             """;
 
     private static final String SUBMISSION_ENTITY_SELECT = """
@@ -590,6 +655,10 @@ public class ExamSubmissionRepository {
                    submission.automatic_score,
                    submission.final_score,
                    submission.started_at,
+                   TIMESTAMPADD(MINUTE,
+                       submission.allocated_duration_minutes + submission.extra_minutes,
+                       submission.started_at) AS authoritative_deadline,
+                   submission.extra_minutes,
                    submission.submitted_at,
                    submission.reviewed_at,
                    submission.published_at
@@ -647,7 +716,12 @@ public class ExamSubmissionRepository {
                    version.title AS exam_title, submission.student_user_id,
                    student.full_name AS student_name, submission.status,
                    submission.automatic_score, submission.final_score,
-                   submission.started_at, submission.submitted_at,
+                   submission.started_at,
+                   TIMESTAMPADD(MINUTE,
+                       submission.allocated_duration_minutes + submission.extra_minutes,
+                       submission.started_at) AS authoritative_deadline,
+                   submission.extra_minutes,
+                   submission.submitted_at,
                    submission.reviewed_at, submission.published_at
             FROM exam_submissions submission
             JOIN exam_executions execution
@@ -1515,6 +1589,16 @@ public class ExamSubmissionRepository {
             if (target.status != SubmissionStatus.IN_PROGRESS) {
                 throw new IllegalStateException("Exam attempt already submitted");
             }
+            if (!isExtensionWindowOpen(
+                    target.executionStatus,
+                    target.executionOpeningTime,
+                    target.executionClosingTime,
+                    currentTime
+            )) {
+                throw new IllegalStateException(
+                        "Execution is not open for time extensions"
+                );
+            }
             if (!currentTime.isBefore(target.deadline())) {
                 throw new IllegalStateException("Exam time has expired");
             }
@@ -1545,6 +1629,82 @@ public class ExamSubmissionRepository {
                     currentTime
             );
             return loadInternalEntity(connection, submission.getSubmissionId());
+        });
+    }
+
+    public int extendExecutionForAll(int authenticatedManagerUserId,
+                                     int executionId, int addedMinutes,
+                                     String reason, LocalDateTime currentTime) {
+        if (executionId <= 0) {
+            throw new IllegalArgumentException("Execution ID must be positive");
+        }
+        if (addedMinutes <= 0) {
+            throw new IllegalArgumentException("Extra minutes must be positive");
+        }
+        String normalizedReason = requireText(reason, "Extension reason is required");
+        Objects.requireNonNull(currentTime, "Server time is required");
+
+        return executeInTransaction("Failed to extend exam execution", connection -> {
+            ExecutionExtensionTarget target = lockExecutionExtensionTarget(
+                    connection, authenticatedManagerUserId, executionId
+            ).orElseThrow(() -> new IllegalArgumentException(
+                    "Execution not found: " + executionId
+            ));
+            if (target.status == ExecutionStatus.CLOSED) {
+                throw new IllegalStateException(
+                        "Closed executions cannot be extended"
+                );
+            }
+            if (!isExtensionWindowOpen(
+                    target.status,
+                    target.openingTime,
+                    target.closingTime,
+                    currentTime
+            )) {
+                throw new IllegalStateException(
+                        "Execution is not open for time extensions"
+                );
+            }
+            int newDuration;
+            int newCumulative;
+            try {
+                newDuration = Math.addExact(target.durationMinutes, addedMinutes);
+                newCumulative = Math.addExact(
+                        target.cumulativeExtensionMinutes,
+                        addedMinutes
+                );
+            } catch (ArithmeticException exception) {
+                throw new IllegalArgumentException(
+                        "Execution extension is too large", exception
+                );
+            }
+
+            updateExecutionExtension(connection, target, newDuration,
+                    newCumulative, currentTime);
+            List<Integer> recipients = loadActiveExecutionStudents(
+                    connection, executionId
+            );
+            updateActiveSubmissionDurations(
+                    connection, executionId, addedMinutes, currentTime
+            );
+            int extensionId = insertExecutionExtensionAudit(
+                    connection, authenticatedManagerUserId, executionId,
+                    addedMinutes, normalizedReason, currentTime
+            );
+            for (Integer recipientId : recipients) {
+                NotificationRepository.insert(
+                        connection, recipientId,
+                        NotificationType.EXECUTION_EXTENDED,
+                        "Exam time extended",
+                        target.examTitle + " (execution " + target.executionCode
+                                + ") received " + addedMinutes
+                                + " additional minutes.",
+                        target.examId, executionId, null,
+                        "execution-extension:" + extensionId + ":" + recipientId,
+                        currentTime
+                );
+            }
+            return recipients.size();
         });
     }
 
@@ -1604,6 +1764,20 @@ public class ExamSubmissionRepository {
                     }
                     requirePublicationSourceState(source, submission);
                     updatePublication(connection, source, submission);
+                    NotificationRepository.insert(
+                            connection,
+                            source.studentUserId,
+                            NotificationType.GRADE_PUBLISHED,
+                            "Grade published",
+                            "Your grade for exam #" + source.examId
+                                    + " version " + source.examVersionNo
+                                    + " is available in Published Grades.",
+                            source.examId,
+                            source.executionId,
+                            source.submissionId,
+                            "grade-published:" + source.submissionId,
+                            submission.getPublishedAt()
+                    );
                     reportRepository.refreshExecutionStatistics(
                             connection,
                             source.executionId
@@ -2041,6 +2215,8 @@ public class ExamSubmissionRepository {
                 readStoredScore(resultSet, "final_score", false,
                         "Submission final score", submissionId),
                 resultSet.getObject("started_at", LocalDateTime.class),
+                resultSet.getObject("authoritative_deadline", LocalDateTime.class),
+                resultSet.getInt("extra_minutes"),
                 resultSet.getObject("submitted_at", LocalDateTime.class),
                 resultSet.getObject("reviewed_at", LocalDateTime.class),
                 resultSet.getObject("published_at", LocalDateTime.class)
@@ -2780,8 +2956,125 @@ public class ExamSubmissionRepository {
                         resultSet.getObject("started_at", LocalDateTime.class),
                         SubmissionStatus.valueOf(resultSet.getString("status")),
                         resultSet.getInt("allocated_duration_minutes"),
-                        resultSet.getInt("extra_minutes")
+                        resultSet.getInt("extra_minutes"),
+                        resultSet.getObject(
+                                "execution_opening_time",
+                                LocalDateTime.class
+                        ),
+                        resultSet.getObject(
+                                "execution_closing_time",
+                                LocalDateTime.class
+                        ),
+                        ExecutionStatus.valueOf(
+                                resultSet.getString("execution_status")
+                        )
                 ));
+            }
+        }
+    }
+
+    private Optional<ExecutionExtensionTarget> lockExecutionExtensionTarget(
+            Connection connection, int authenticatedManagerId, int executionId
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                LOCK_MANAGER_EXECUTION_EXTENSION_SQL
+        )) {
+            statement.setInt(1, authenticatedManagerId);
+            statement.setInt(2, executionId);
+            try (ResultSet rows = statement.executeQuery()) {
+                if (!rows.next()) return Optional.empty();
+                return Optional.of(new ExecutionExtensionTarget(
+                        rows.getInt("execution_id"),
+                        rows.getString("execution_code"),
+                        rows.getInt("exam_id"),
+                        rows.getInt("exam_version_no"),
+                        rows.getString("exam_title"),
+                        rows.getObject("opening_time", LocalDateTime.class),
+                        rows.getObject("closing_time", LocalDateTime.class),
+                        rows.getInt("duration_minutes"),
+                        rows.getInt("cumulative_extension_minutes"),
+                        ExecutionStatus.valueOf(rows.getString("status"))
+                ));
+            }
+        }
+    }
+
+    private void updateExecutionExtension(Connection connection,
+                                          ExecutionExtensionTarget target,
+                                          int newDuration, int newCumulative,
+                                          LocalDateTime currentTime)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_EXECUTION_EXTENSION_SQL
+        )) {
+            statement.setInt(1, newDuration);
+            statement.setInt(2, newCumulative);
+            statement.setObject(3, currentTime);
+            statement.setInt(4, target.executionId);
+            statement.setInt(5, target.durationMinutes);
+            statement.setInt(6, target.cumulativeExtensionMinutes);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalStateException("Execution extension state changed");
+            }
+        }
+    }
+
+    private List<Integer> loadActiveExecutionStudents(Connection connection,
+                                                       int executionId)
+            throws SQLException {
+        List<Integer> students = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                ACTIVE_EXECUTION_STUDENTS_SQL
+        )) {
+            statement.setInt(1, executionId);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) students.add(rows.getInt("student_user_id"));
+            }
+        }
+        return List.copyOf(students);
+    }
+
+    private void updateActiveSubmissionDurations(Connection connection,
+                                                 int executionId,
+                                                 int addedMinutes,
+                                                 LocalDateTime currentTime)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                UPDATE_ACTIVE_SUBMISSION_DURATIONS_SQL
+        )) {
+            statement.setInt(1, addedMinutes);
+            statement.setObject(2, currentTime);
+            statement.setInt(3, executionId);
+            statement.executeUpdate();
+        }
+    }
+
+    private int insertExecutionExtensionAudit(Connection connection,
+                                              int authenticatedManagerId,
+                                              int executionId,
+                                              int addedMinutes,
+                                              String reason,
+                                              LocalDateTime currentTime)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                INSERT_EXECUTION_EXTENSION_AUDIT_SQL,
+                Statement.RETURN_GENERATED_KEYS
+        )) {
+            statement.setInt(1, executionId);
+            statement.setInt(2, addedMinutes);
+            statement.setString(3, reason);
+            statement.setInt(4, authenticatedManagerId);
+            statement.setObject(5, currentTime);
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException("Execution extension audit insert failed");
+            }
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                if (!keys.next() || keys.getInt(1) <= 0) {
+                    throw new SQLException(
+                            "Execution extension audit did not return an ID"
+                    );
+                }
+                return keys.getInt(1);
             }
         }
     }
@@ -3335,22 +3628,77 @@ public class ExamSubmissionRepository {
 
     }
 
+    private static boolean isExtensionWindowOpen(
+            ExecutionStatus persistedStatus,
+            LocalDateTime openingTime,
+            LocalDateTime closingTime,
+            LocalDateTime serverTime
+    ) {
+        return persistedStatus != ExecutionStatus.CLOSED
+                && openingTime != null
+                && closingTime != null
+                && !serverTime.isBefore(openingTime)
+                && serverTime.isBefore(closingTime);
+    }
+
     private static final class ExtensionTarget {
         private final LocalDateTime startedAt;
         private final SubmissionStatus status;
         private final int allocatedDurationMinutes;
         private final int extraMinutes;
+        private final LocalDateTime executionOpeningTime;
+        private final LocalDateTime executionClosingTime;
+        private final ExecutionStatus executionStatus;
 
         private ExtensionTarget(LocalDateTime startedAt, SubmissionStatus status,
-                                int allocatedDurationMinutes, int extraMinutes) {
+                                int allocatedDurationMinutes, int extraMinutes,
+                                LocalDateTime executionOpeningTime,
+                                LocalDateTime executionClosingTime,
+                                ExecutionStatus executionStatus) {
             this.startedAt = startedAt;
             this.status = status;
             this.allocatedDurationMinutes = allocatedDurationMinutes;
             this.extraMinutes = extraMinutes;
+            this.executionOpeningTime = executionOpeningTime;
+            this.executionClosingTime = executionClosingTime;
+            this.executionStatus = executionStatus;
         }
 
         private LocalDateTime deadline() {
             return startedAt.plusMinutes((long) allocatedDurationMinutes + extraMinutes);
+        }
+    }
+
+    private static final class ExecutionExtensionTarget {
+        private final int executionId;
+        private final String executionCode;
+        private final int examId;
+        private final int examVersionNo;
+        private final String examTitle;
+        private final LocalDateTime openingTime;
+        private final LocalDateTime closingTime;
+        private final int durationMinutes;
+        private final int cumulativeExtensionMinutes;
+        private final ExecutionStatus status;
+
+        private ExecutionExtensionTarget(int executionId, String executionCode,
+                                         int examId, int examVersionNo,
+                                         String examTitle,
+                                         LocalDateTime openingTime,
+                                         LocalDateTime closingTime,
+                                         int durationMinutes,
+                                         int cumulativeExtensionMinutes,
+                                         ExecutionStatus status) {
+            this.executionId = executionId;
+            this.executionCode = executionCode;
+            this.examId = examId;
+            this.examVersionNo = examVersionNo;
+            this.examTitle = examTitle;
+            this.openingTime = openingTime;
+            this.closingTime = closingTime;
+            this.durationMinutes = durationMinutes;
+            this.cumulativeExtensionMinutes = cumulativeExtensionMinutes;
+            this.status = status;
         }
     }
 }

@@ -316,6 +316,7 @@ CREATE TABLE IF NOT EXISTS exam_versions (
     version_no INT NOT NULL,
     title VARCHAR(255) NOT NULL,
     duration_minutes INT NOT NULL,
+    cumulative_extension_minutes INT NOT NULL DEFAULT 0,
     teacher_notes TEXT NOT NULL,
     student_instructions TEXT NOT NULL,
     total_score DECIMAL(7,2) NOT NULL,
@@ -428,6 +429,9 @@ CREATE TABLE IF NOT EXISTS exam_executions (
         CHECK (opening_time < closing_time),
     CONSTRAINT chk_exam_executions_duration
         CHECK (duration_minutes > 0),
+    CONSTRAINT chk_exam_executions_extension
+        CHECK (cumulative_extension_minutes >= 0
+            AND cumulative_extension_minutes < duration_minutes),
     CONSTRAINT chk_exam_executions_status
         CHECK (status IN ('SCHEDULED', 'OPEN', 'CLOSED')),
     CONSTRAINT chk_exam_executions_counts
@@ -532,6 +536,50 @@ CREATE TABLE IF NOT EXISTS submission_time_extensions (
         FOREIGN KEY (extended_by_user_id) REFERENCES users (user_id),
     CONSTRAINT chk_submission_time_extensions_minutes
         CHECK (added_minutes > 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS execution_time_extensions (
+    extension_id INT NOT NULL AUTO_INCREMENT,
+    execution_id INT NOT NULL,
+    added_minutes INT NOT NULL,
+    reason TEXT NOT NULL,
+    extended_by_user_id INT NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (extension_id),
+    KEY idx_execution_time_extensions_execution_created
+        (execution_id, created_at),
+    CONSTRAINT fk_execution_time_extensions_execution
+        FOREIGN KEY (execution_id) REFERENCES exam_executions (execution_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_execution_time_extensions_user
+        FOREIGN KEY (extended_by_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_execution_time_extensions_minutes
+        CHECK (added_minutes > 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id INT NOT NULL AUTO_INCREMENT,
+    recipient_user_id INT NOT NULL,
+    notification_type VARCHAR(32) NOT NULL,
+    title VARCHAR(160) NOT NULL,
+    message TEXT NOT NULL,
+    related_exam_id INT NULL,
+    related_execution_id INT NULL,
+    related_submission_id INT NULL,
+    deduplication_key VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    read_at DATETIME(6) NULL,
+    PRIMARY KEY (notification_id),
+    CONSTRAINT uq_notifications_deduplication UNIQUE (deduplication_key),
+    KEY idx_notifications_recipient_created (recipient_user_id, created_at),
+    KEY idx_notifications_recipient_read (recipient_user_id, read_at),
+    CONSTRAINT fk_notifications_recipient
+        FOREIGN KEY (recipient_user_id) REFERENCES users (user_id),
+    CONSTRAINT chk_notifications_type CHECK (notification_type IN
+        ('EXAM_APPROVED', 'EXAM_REJECTED', 'EXAM_SCHEDULED',
+         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED')),
+    CONSTRAINT chk_notifications_read_time
+        CHECK (read_at IS NULL OR read_at >= created_at)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS exam_execution_deciles (

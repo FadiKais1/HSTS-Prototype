@@ -151,6 +151,43 @@ public class ExamSubmissionRepositoryExtensionTest {
     }
 
     @Test
+    public void individualExtensionRequiresAuthoritativeExecutionWindow() {
+        LocalDateTime currentTime = STARTED.plusMinutes(30);
+        for (LocalDateTime[] window : List.of(
+                new LocalDateTime[]{currentTime.plusMinutes(1),
+                        currentTime.plusHours(1)},
+                new LocalDateTime[]{currentTime.minusHours(1), currentTime},
+                new LocalDateTime[]{currentTime.minusHours(2),
+                        currentTime.minusMinutes(1)}
+        )) {
+            ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                    new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+            Map<Object, Object> row = executionSubmissionRow(
+                    "IN_PROGRESS", STARTED, 75, 0
+            );
+            row.put("execution_opening_time", window[0]);
+            row.put("execution_closing_time", window[1]);
+            database.plan(LOCK_MARKER).queryRows(row);
+
+            IllegalStateException failure = assertThrows(
+                    IllegalStateException.class,
+                    () -> new ExamSubmissionRepository(database).persistExtension(
+                            1002,
+                            extendedSubmission(0, 5, "Reason", currentTime),
+                            5,
+                            "Reason",
+                            currentTime
+                    )
+            );
+
+            assertEquals("Execution is not open for time extensions",
+                    failure.getMessage());
+            assertEquals(1, database.rollbackCount);
+            assertEquals(0, database.commitCount);
+        }
+    }
+
+    @Test
     public void auditFailureRollsBackUpdateAndPreservesExactWrapperAndCleanupFailures() {
         SQLException original = new SQLException("audit failed");
         SQLException rollbackFailure = new SQLException("rollback failed");

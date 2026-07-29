@@ -1,10 +1,12 @@
 package hsts.client.boundary;
 
+import hsts.client.control.NotificationClientController;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
 import hsts.common.type.UserRole;
 import hsts.server.entity.Teacher;
 import javafx.fxml.FXML;
+import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.stage.Stage;
@@ -51,6 +53,9 @@ public class TeacherDashboard {
     @FXML
     private Button courseBotsButton;
     private Runnable courseBotsHandler;
+    @FXML private Button notificationsButton;
+    private Runnable notificationsHandler;
+    private NotificationClientController notificationClientController;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configureDashboard(stage, client, loginResult, logoutHandler);
@@ -309,6 +314,31 @@ public class TeacherDashboard {
         } catch (RuntimeException exception) {
             showError("Reports are unavailable");
         }
+    }
+
+    public void configureNotifications(Runnable notificationsHandler) {
+        this.notificationsHandler = Objects.requireNonNull(notificationsHandler);
+        this.notificationClientController = new NotificationClientController(client);
+        notificationsButton.setDisable(false);
+        refreshNotificationCount();
+    }
+
+    @FXML
+    private void handleNotifications() {
+        if (notificationsHandler == null) {
+            showError("Notifications are unavailable");
+            return;
+        }
+        notificationsHandler.run();
+    }
+
+    private void refreshNotificationCount() {
+        notificationClientController.getUnreadCount().whenComplete((count, failure) ->
+                Platform.runLater(() -> {
+                    if (failure == null && notificationsButton != null) {
+                        notificationsButton.setText("Notifications (" + count + ")");
+                    }
+                }));
     }
 
     private void configureDashboard(Stage stage, Client client, LoginResult loginResult,

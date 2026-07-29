@@ -183,12 +183,33 @@ public class ExamExecutionDomainTest {
         ExamExecution execution = execution();
 
         assertThrows(
-                IllegalStateException.class,
+                UnsupportedOperationException.class,
                 () -> execution.extendTime(5, "Reason")
         );
         assertThrows(IllegalStateException.class, execution::updateStatistics);
         assertEquals(75, execution.getDurationMinutes());
         assertEquals(ExecutionStatus.SCHEDULED, execution.getStatus());
+    }
+
+    @Test
+    public void executionWideExtensionsAreCumulativeAndPreserveAccessWindow() {
+        ExamExecution execution = execution();
+        LocalDateTime firstUpdate = CREATED.plusMinutes(1);
+        LocalDateTime secondUpdate = CREATED.plusMinutes(2);
+
+        execution.extendForAll(20, "  Accessibility accommodation  ", firstUpdate);
+        execution.extendForAll(5, "Additional accommodation", secondUpdate);
+
+        assertEquals(100, execution.getDurationMinutes());
+        assertEquals(25, execution.getCumulativeExtensionMinutes());
+        assertEquals(OPENING, execution.getOpeningTime());
+        assertEquals(CLOSING, execution.getClosingTime());
+        assertEquals(secondUpdate, execution.getUpdatedAt());
+        assertEquals(ExecutionStatus.SCHEDULED, execution.getStatus());
+        assertThrows(IllegalArgumentException.class,
+                () -> execution.extendForAll(0, "Reason", secondUpdate));
+        assertThrows(IllegalArgumentException.class,
+                () -> execution.extendForAll(5, "  ", secondUpdate));
     }
 
     private static ExamExecution execution() {

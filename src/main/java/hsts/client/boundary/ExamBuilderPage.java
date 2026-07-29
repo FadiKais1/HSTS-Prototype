@@ -63,6 +63,7 @@ public class ExamBuilderPage {
     // COMPATIBILITY-ONLY: JavaFX state for the Assignment 3 manual exam workflow.
     private Stage stage;
     private Runnable backHandler;
+    private Runnable questionBankHandler;
     private ExamClientController examClientController;
     private QuestionClientController questionClientController;
     private ExamDTO loadedExam;
@@ -80,6 +81,8 @@ public class ExamBuilderPage {
     private long questionRequestGeneration;
     private long automaticRequestGeneration;
     private QuestionIllustrationRenderer illustrationRenderer;
+    private EditorState pendingEditorState;
+    private String baselineFingerprint;
 
     private final ObservableList<CourseSummaryDTO> assignedCourses =
             FXCollections.observableArrayList();
@@ -134,6 +137,7 @@ public class ExamBuilderPage {
     @FXML private Button submitButton;
     @FXML private Button refreshButton;
     @FXML private Button backButton;
+    @FXML private Button questionBankButton;
     @FXML private Button addButton;
     @FXML private Button removeButton;
     @FXML private Button moveUpButton;
@@ -141,6 +145,8 @@ public class ExamBuilderPage {
     @FXML private VBox questionIllustrationContainer;
     @FXML private ImageView questionIllustrationView;
     @FXML private Label questionIllustrationErrorLabel;
+    @FXML private VBox rejectionReasonPanel;
+    @FXML private Label rejectionReasonLabel;
 
     @FXML
     private void initialize() {
@@ -188,9 +194,21 @@ public class ExamBuilderPage {
     }
 
     public void configure(Stage stage, Client client, Runnable backHandler) {
+        configure(stage, client, backHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, Runnable backHandler,
+                          Runnable questionBankHandler) {
+        configure(stage, client, backHandler, questionBankHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, Runnable backHandler,
+                          Runnable questionBankHandler, EditorState editorState) {
         this.stage = Objects.requireNonNull(stage, "stage");
         this.client = Objects.requireNonNull(client, "client");
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
+        this.questionBankHandler = questionBankHandler;
+        this.pendingEditorState = editorState;
         this.examClientController = new ExamClientController(client);
         this.questionClientController = new QuestionClientController(client);
         this.closed = false;
@@ -297,6 +315,13 @@ public class ExamBuilderPage {
                         return;
                     }
                     assignedCourses.setAll(courses);
+                    if (pendingEditorState != null) {
+                        EditorState state = pendingEditorState;
+                        pendingEditorState = null;
+                        restoreEditorState(state);
+                        updateActionState();
+                        return;
+                    }
                     if (loadedExam != null) {
                         courseComboBox.setValue(findCourse(loadedExam.getCourseId()));
                     } else if (courseComboBox.getValue() == null
@@ -305,6 +330,9 @@ public class ExamBuilderPage {
                     }
                     if (assignedCourses.isEmpty()) {
                         setStatus("No assigned courses are available.");
+                    }
+                    if (baselineFingerprint == null) {
+                        baselineFingerprint = editorFingerprint();
                     }
                     updateActionState();
                 })
@@ -381,6 +409,7 @@ public class ExamBuilderPage {
         if (savePending || submitPending || generationPending) {
             return;
         }
+        if (!confirmDiscardIfDirty()) return;
         loadedExam = null;
         loadedExamLabel.setText("New DRAFT exam");
         versionStatusLabel.setText("Unsaved DRAFT");
@@ -389,6 +418,7 @@ public class ExamBuilderPage {
         teacherNotesArea.clear();
         studentInstructionsArea.clear();
         selectedQuestionItems.clear();
+        showRejectionReason(null);
         examTable.getSelectionModel().clearSelection();
         courseComboBox.setDisable(false);
         if (courseComboBox.getValue() == null && !assignedCourses.isEmpty()) {
@@ -401,6 +431,7 @@ public class ExamBuilderPage {
                 ? "Complete the criteria and generate a new DRAFT exam."
                 : "Complete the form and save the new DRAFT exam.");
         updateActionState();
+        baselineFingerprint = editorFingerprint();
     }
 
     @FXML
@@ -457,6 +488,21 @@ public class ExamBuilderPage {
         selectExamSummary(loaded.getExamId());
         updateTotal();
         updateEditabilityMessage();
+        showRejectionReason(loaded);
+        baselineFingerprint = editorFingerprint();
+    }
+
+    private void showRejectionReason(ExamDTO loaded) {
+        boolean rejected = loaded != null && loaded.getStatus() == ExamStatus.REJECTED
+                && loaded.getRejectionReason() != null
+                && !loaded.getRejectionReason().isBlank();
+        if (rejectionReasonPanel != null) {
+            rejectionReasonPanel.setManaged(rejected);
+            rejectionReasonPanel.setVisible(rejected);
+        }
+        if (rejectionReasonLabel != null) {
+            rejectionReasonLabel.setText(rejected ? loaded.getRejectionReason() : "");
+        }
     }
 
     private void updateEditabilityMessage() {
@@ -751,17 +797,28 @@ public class ExamBuilderPage {
     }
 
     @FXML
+    private void handleOpenQuestionBank() {
+        if (questionBankHandler == null || savePending || submitPending
+                || generationPending) {
+            setStatus("Question Bank is unavailable.");
+            return;
+        }
+        try {
+            questionBankHandler.run();
+            closeForNavigation();
+        } catch (RuntimeException exception) {
+            setStatus("Unable to open Question Bank.");
+        }
+    }
+
+    @FXML
     private void handleBack() {
         if (backHandler == null) {
             setStatus("Back navigation is unavailable.");
             return;
         }
-        closed = true;
-        courseRequestGeneration++;
-        summaryRequestGeneration++;
-        detailRequestGeneration++;
-        questionRequestGeneration++;
-        automaticRequestGeneration++;
+        if (!confirmDiscardIfDirty()) return;
+        closeForNavigation();
         try {
             backHandler.run();
             illustrationRenderer.dispose();
@@ -769,6 +826,108 @@ public class ExamBuilderPage {
             closed = false;
             setStatus("Unable to return to dashboard.");
         }
+    }
+
+    public EditorState snapshotEditorState() {
+        return new EditorState(
+                loadedExam,
+                courseComboBox.getValue() == null
+                        ? 0 : courseComboBox.getValue().getCourseId(),
+                titleField.getText(), durationField.getText(),
+                teacherNotesArea.getText(), studentInstructionsArea.getText(),
+                isAutomaticMode(), topicField.getText(),
+                difficultyComboBox.getValue(), questionCountField.getText(),
+                selectedQuestionItems.stream().map(SelectedQuestionItem::copy).toList(),
+                baselineFingerprint,
+                isDirty()
+        );
+    }
+
+    private void restoreEditorState(EditorState state) {
+        loadedExam = state.loadedExam;
+        CourseSummaryDTO course = findCourse(state.courseId);
+        if (state.courseId > 0 && course == null) {
+            setStatus("The preserved course is no longer available.");
+        }
+        courseComboBox.setValue(course);
+        courseComboBox.setDisable(loadedExam != null);
+        titleField.setText(state.title);
+        durationField.setText(state.duration);
+        teacherNotesArea.setText(state.teacherNotes);
+        studentInstructionsArea.setText(state.studentInstructions);
+        topicField.setText(state.topic);
+        difficultyComboBox.setValue(state.difficulty);
+        questionCountField.setText(state.questionCount);
+        if (state.automatic && loadedExam == null) automaticModeRadio.setSelected(true);
+        else manualModeRadio.setSelected(true);
+        updateModeVisibility();
+        selectedQuestionItems.setAll(
+                state.selectedQuestions.stream().map(SelectedQuestionItem::copy).toList()
+        );
+        renumberSelectedQuestions();
+        if (loadedExam == null) {
+            loadedExamLabel.setText("New DRAFT exam");
+            versionStatusLabel.setText("Unsaved DRAFT");
+        } else {
+            loadedExamLabel.setText(safe(loadedExam.getExamCode()) + " — "
+                    + safe(loadedExam.getTitle()));
+            versionStatusLabel.setText("Version " + loadedExam.getVersionNo()
+                    + " • " + loadedExam.getStatus());
+            updateEditabilityMessage();
+        }
+        showRejectionReason(loadedExam);
+        baselineFingerprint = state.baselineFingerprint;
+        updateTotal();
+        if (course != null && !isAutomaticMode()) {
+            loadActiveQuestions(course.getCourseId());
+        }
+        setStatus(state.dirty
+                ? "Unfinished Exam Builder state restored."
+                : "Exam Builder state restored.");
+    }
+
+    private void closeForNavigation() {
+        closed = true;
+        courseRequestGeneration++;
+        summaryRequestGeneration++;
+        detailRequestGeneration++;
+        questionRequestGeneration++;
+        automaticRequestGeneration++;
+        if (illustrationRenderer != null) illustrationRenderer.dispose();
+    }
+
+    private boolean confirmDiscardIfDirty() {
+        if (!isDirty()) return true;
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.setTitle("Discard unsaved exam changes?");
+        confirmation.setHeaderText("Unsaved Exam Builder changes will be lost.");
+        confirmation.setContentText("Choose Cancel to keep editing.");
+        return confirmation.showAndWait().filter(ButtonType.OK::equals).isPresent();
+    }
+
+    private boolean isDirty() {
+        return baselineFingerprint != null
+                && !baselineFingerprint.equals(editorFingerprint());
+    }
+
+    private String editorFingerprint() {
+        StringBuilder value = new StringBuilder();
+        value.append(loadedExam == null ? 0 : loadedExam.getExamId()).append('|')
+                .append(loadedExam == null ? 0 : loadedExam.getVersionNo()).append('|')
+                .append(courseComboBox.getValue() == null ? 0
+                        : courseComboBox.getValue().getCourseId()).append('|')
+                .append(titleField.getText()).append('|').append(durationField.getText())
+                .append('|').append(teacherNotesArea.getText()).append('|')
+                .append(studentInstructionsArea.getText()).append('|')
+                .append(isAutomaticMode()).append('|').append(topicField.getText())
+                .append('|').append(difficultyComboBox.getValue()).append('|')
+                .append(questionCountField.getText());
+        for (SelectedQuestionItem item : selectedQuestionItems) {
+            value.append('|').append(item.questionId).append(':')
+                    .append(item.questionVersionNo).append(':')
+                    .append(item.orderNumber).append(':').append(item.score);
+        }
+        return value.toString();
     }
 
     private String validateEditor() {
@@ -981,6 +1140,9 @@ public class ExamBuilderPage {
         if (refreshButton != null) refreshButton.setDisable(!configured
                 || coursesLoading || examsLoading || generationPending);
         if (backButton != null) backButton.setDisable(generationPending);
+        if (questionBankButton != null) {
+            questionBankButton.setDisable(!configured || busy || questionBankHandler == null);
+        }
         if (addButton != null) addButton.setDisable(!editable || questionsLoading
                 || !selectedAvailable);
         if (removeButton != null) removeButton.setDisable(!editable || selectedIndex < 0);
@@ -1128,6 +1290,55 @@ public class ExamBuilderPage {
         double getScore() { return score; }
         void setOrderNumber(int orderNumber) { this.orderNumber = orderNumber; }
         void setScore(double score) { this.score = score; }
+
+        SelectedQuestionItem copy() {
+            return new SelectedQuestionItem(
+                    questionId, questionVersionNo, content, topic, difficulty,
+                    illustration, answerOption1, answerOption2, answerOption3,
+                    answerOption4, correctOptionNumber, orderNumber, score
+            );
+        }
+    }
+
+    public static final class EditorState {
+        private final ExamDTO loadedExam;
+        private final int courseId;
+        private final String title;
+        private final String duration;
+        private final String teacherNotes;
+        private final String studentInstructions;
+        private final boolean automatic;
+        private final String topic;
+        private final DifficultyLevel difficulty;
+        private final String questionCount;
+        private final List<SelectedQuestionItem> selectedQuestions;
+        private final String baselineFingerprint;
+        private final boolean dirty;
+
+        private EditorState(ExamDTO loadedExam, int courseId, String title,
+                            String duration, String teacherNotes,
+                            String studentInstructions, boolean automatic,
+                            String topic, DifficultyLevel difficulty,
+                            String questionCount,
+                            List<SelectedQuestionItem> selectedQuestions,
+                            String baselineFingerprint, boolean dirty) {
+            this.loadedExam = loadedExam;
+            this.courseId = courseId;
+            this.title = title;
+            this.duration = duration;
+            this.teacherNotes = teacherNotes;
+            this.studentInstructions = studentInstructions;
+            this.automatic = automatic;
+            this.topic = topic;
+            this.difficulty = difficulty;
+            this.questionCount = questionCount;
+            this.selectedQuestions = selectedQuestions.stream()
+                    .map(SelectedQuestionItem::copy).toList();
+            this.baselineFingerprint = baselineFingerprint;
+            this.dirty = dirty;
+        }
+
+        public boolean isDirty() { return dirty; }
     }
 
     public void chooseManualExam(int examId) {

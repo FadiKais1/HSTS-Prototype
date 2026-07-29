@@ -130,6 +130,7 @@ public class PackagingConfigurationTest {
                 shadeExecution("package-client")
         );
         assertTrue(clientProjectExcludes.contains("hsts/server/bot/**"));
+        assertTrue(clientProjectExcludes.contains("hsts/server/report/**"));
         assertTrue(clientProjectExcludes.contains("hsts/external/**"));
     }
 

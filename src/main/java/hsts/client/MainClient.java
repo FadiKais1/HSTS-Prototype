@@ -10,6 +10,7 @@ import hsts.client.boundary.PrincipalDashboard;
 import hsts.client.boundary.PublishedGradesPage;
 import hsts.client.boundary.QuestionBankPageController;
 import hsts.client.boundary.ReportsPage;
+import hsts.client.boundary.NotificationsPage;
 import hsts.client.boundary.StudentDashboard;
 import hsts.client.boundary.TeacherDashboard;
 import hsts.client.boundary.CourseBotManagementPage;
@@ -154,6 +155,7 @@ public class MainClient extends Application {
                 () -> showPublishedGrades(loginResult),
                 () -> showCourseBot(loginResult)
         );
+        dashboard.configureNotifications(() -> showNotifications(loginResult));
     }
 
     private void showTeacherDashboard(LoginResult loginResult) throws IOException {
@@ -175,6 +177,30 @@ public class MainClient extends Application {
                 () -> showReports(loginResult),
                 () -> showCourseBotManagement(loginResult)
         );
+        dashboard.configureNotifications(() -> showNotifications(loginResult));
+    }
+
+    private void showNotifications(LoginResult loginResult) {
+        try {
+            NotificationsPage controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/notifications-page.fxml",
+                    "HSTS Exam Management System - Notifications"
+            );
+            controller.configure(stage, client, loginResult, () -> {
+                try {
+                    if (loginResult.getRole() == UserRole.STUDENT) {
+                        showStudentDashboard(loginResult);
+                    } else {
+                        showTeacherDashboard(loginResult);
+                    }
+                } catch (IOException exception) {
+                    cleanupAfterNavigationFailure();
+                }
+            });
+        } catch (IOException | RuntimeException exception) {
+            showNavigationError("Unable to open notifications");
+        }
     }
 
     private void showCourseBotManagement(LoginResult loginResult) {
@@ -338,13 +364,27 @@ public class MainClient extends Application {
     }
 
     private void showExamBuilder(LoginResult loginResult) {
+        showExamBuilder(loginResult, null);
+    }
+
+    private void showExamBuilder(LoginResult loginResult,
+                                 ExamBuilderPage.EditorState editorState) {
         try {
             ExamBuilderPage controller = SceneNavigator.switchScene(
                     stage,
                     "/hsts/client/boundary/exam-builder-page.fxml",
                     "HSTS Exam Management System - Exam Builder"
             );
-            controller.configure(stage, client, () -> returnToTeacherDashboard(loginResult));
+            controller.configure(
+                    stage,
+                    client,
+                    () -> returnToTeacherDashboard(loginResult),
+                    () -> showQuestionBankFromExamBuilder(
+                            loginResult,
+                            controller.snapshotEditorState()
+                    ),
+                    editorState
+            );
         } catch (IOException | RuntimeException exception) {
             try {
                 showTeacherDashboard(loginResult);
@@ -352,6 +392,26 @@ public class MainClient extends Application {
             } catch (IOException | RuntimeException restoreException) {
                 cleanupAfterNavigationFailure();
             }
+        }
+    }
+
+    private void showQuestionBankFromExamBuilder(
+            LoginResult loginResult,
+            ExamBuilderPage.EditorState editorState
+    ) {
+        try {
+            QuestionBankPageController controller = SceneNavigator.switchScene(
+                    stage,
+                    "/hsts/client/boundary/question-bank-page.fxml",
+                    "HSTS Exam Management System - Question Bank"
+            );
+            controller.configure(
+                    client,
+                    () -> showExamBuilder(loginResult, editorState)
+            );
+        } catch (IOException | RuntimeException exception) {
+            showExamBuilder(loginResult, editorState);
+            showNavigationError("Unable to open question bank");
         }
     }
 

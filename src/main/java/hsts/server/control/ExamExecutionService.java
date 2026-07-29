@@ -6,6 +6,7 @@ import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.ExecutionCodePayload;
 import hsts.common.ExtendSubmissionTimePayload;
+import hsts.common.ExtendExecutionTimePayload;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishedGradeDTO;
@@ -34,6 +35,7 @@ import hsts.server.repository.UserRepository;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -171,30 +173,45 @@ public class ExamExecutionService {
                 payload.getOpeningTime(),
                 payload.getClosingTime()
         );
-        return examExecutionRepository.findByIdForManager(
+        ExamExecutionSummaryDTO summary = examExecutionRepository.findByIdForManager(
                 authenticatedManagerId,
                 execution.getExecutionId()
         ).orElseThrow(() -> new IllegalArgumentException(
                 "Execution not found: " + execution.getExecutionId()
         ));
+        return deriveManagerSummary(summary, currentTime());
     }
 
     public List<ExamExecutionSummaryDTO> getMyExecutions(int authenticatedManagerId) {
         authorizeManager(authenticatedManagerId);
         requireDependencies();
-        return examExecutionRepository.findCreatedByManager(authenticatedManagerId);
+        List<ExamExecutionSummaryDTO> summaries =
+                examExecutionRepository.findCreatedByManager(authenticatedManagerId);
+        LocalDateTime serverTime = currentTime();
+        List<ExamExecutionSummaryDTO> derived = new ArrayList<>(summaries.size());
+        boolean changed = false;
+        for (ExamExecutionSummaryDTO summary : summaries) {
+            ExamExecutionSummaryDTO evaluated = deriveManagerSummary(
+                    summary,
+                    serverTime
+            );
+            derived.add(evaluated);
+            changed |= evaluated != summary;
+        }
+        return changed ? List.copyOf(derived) : summaries;
     }
 
     public ExamExecutionSummaryDTO getExecutionForManager(int authenticatedManagerId,
                                                            int executionId) {
         authorizeManager(authenticatedManagerId);
         requireDependencies();
-        return examExecutionRepository.findByIdForManager(
+        ExamExecutionSummaryDTO summary = examExecutionRepository.findByIdForManager(
                 authenticatedManagerId,
                 executionId
         ).orElseThrow(() -> new IllegalArgumentException(
                 "Execution not found: " + executionId
         ));
+        return deriveManagerSummary(summary, currentTime());
     }
 
     public List<ExecutionSubmissionSummaryDTO> getExecutionSubmissions(
@@ -664,6 +681,79 @@ public class ExamExecutionService {
                 currentTime
         );
         return true;
+    }
+
+    public ExamExecutionSummaryDTO extendExecutionTime(
+            int authenticatedManagerId,
+            ExtendExecutionTimePayload payload
+    ) {
+        authorizeManager(authenticatedManagerId);
+        requireDependencies();
+        if (payload == null) {
+            throw new IllegalArgumentException("Time extension data is missing");
+        }
+        if (payload.getExecutionId() <= 0) {
+            throw new IllegalArgumentException("Execution ID must be positive");
+        }
+        if (payload.getAddedMinutes() <= 0) {
+            throw new IllegalArgumentException("Extra minutes must be positive");
+        }
+        if (isBlank(payload.getReason())) {
+            throw new IllegalArgumentException("Extension reason is required");
+        }
+        examSubmissionRepository.extendExecutionForAll(
+                authenticatedManagerId,
+                payload.getExecutionId(),
+                payload.getAddedMinutes(),
+                payload.getReason().trim(),
+                currentTime()
+        );
+        ExamExecutionSummaryDTO summary = examExecutionRepository.findByIdForManager(
+                authenticatedManagerId,
+                payload.getExecutionId()
+        ).orElseThrow(() -> new IllegalArgumentException(
+                "Execution not found: " + payload.getExecutionId()
+        ));
+        return deriveManagerSummary(summary, currentTime());
+    }
+
+    private ExamExecutionSummaryDTO deriveManagerSummary(
+            ExamExecutionSummaryDTO summary,
+            LocalDateTime serverTime
+    ) {
+        ExecutionStatus derivedStatus;
+        if (summary.getStatus() == ExecutionStatus.CLOSED
+                || !serverTime.isBefore(summary.getClosingTime())) {
+            derivedStatus = ExecutionStatus.CLOSED;
+        } else if (serverTime.isBefore(summary.getOpeningTime())) {
+            derivedStatus = ExecutionStatus.SCHEDULED;
+        } else {
+            derivedStatus = ExecutionStatus.OPEN;
+        }
+        if (derivedStatus == summary.getStatus()) {
+            return summary;
+        }
+        return new ExamExecutionSummaryDTO(
+                summary.getExecutionId(),
+                summary.getExecutionCode(),
+                summary.getExamId(),
+                summary.getExamVersionNo(),
+                summary.getExamCode(),
+                summary.getExamTitle(),
+                summary.getCourseId(),
+                summary.getCourseName(),
+                summary.getOpeningTime(),
+                summary.getClosingTime(),
+                summary.getDurationMinutes(),
+                summary.getCumulativeExtensionMinutes(),
+                derivedStatus,
+                summary.getCreatedByUserId(),
+                summary.getCreatorName(),
+                summary.getCreatedAt(),
+                summary.getStartedCount(),
+                summary.getSubmittedCount(),
+                summary.getAutoSubmittedCount()
+        );
     }
 
     public ExamExecution createExamExecution(int examId, LocalDateTime openingTime, LocalDateTime closingTime) {

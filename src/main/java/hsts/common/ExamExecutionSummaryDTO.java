@@ -19,6 +19,7 @@ public class ExamExecutionSummaryDTO implements Serializable {
     private final LocalDateTime openingTime;
     private final LocalDateTime closingTime;
     private final int durationMinutes;
+    private final int cumulativeExtensionMinutes;
     private final ExecutionStatus status;
     private final int createdByUserId;
     private final String creatorName;
@@ -38,6 +39,25 @@ public class ExamExecutionSummaryDTO implements Serializable {
                                    LocalDateTime createdAt, Integer startedCount,
                                    Integer submittedCount,
                                    Integer autoSubmittedCount) {
+        this(executionId, executionCode, examId, examVersionNo, examCode,
+                examTitle, courseId, courseName, openingTime, closingTime,
+                durationMinutes, 0, status, createdByUserId, creatorName,
+                createdAt, startedCount, submittedCount, autoSubmittedCount);
+    }
+
+    public ExamExecutionSummaryDTO(int executionId, String executionCode,
+                                   int examId, int examVersionNo,
+                                   String examCode, String examTitle,
+                                   int courseId, String courseName,
+                                   LocalDateTime openingTime,
+                                   LocalDateTime closingTime,
+                                   int durationMinutes,
+                                   int cumulativeExtensionMinutes,
+                                   ExecutionStatus status,
+                                   int createdByUserId, String creatorName,
+                                   LocalDateTime createdAt, Integer startedCount,
+                                   Integer submittedCount,
+                                   Integer autoSubmittedCount) {
         this.executionId = executionId;
         this.executionCode = executionCode;
         this.examId = examId;
@@ -49,6 +69,7 @@ public class ExamExecutionSummaryDTO implements Serializable {
         this.openingTime = openingTime;
         this.closingTime = closingTime;
         this.durationMinutes = durationMinutes;
+        this.cumulativeExtensionMinutes = cumulativeExtensionMinutes;
         this.status = status;
         this.createdByUserId = createdByUserId;
         this.creatorName = creatorName;
@@ -69,6 +90,7 @@ public class ExamExecutionSummaryDTO implements Serializable {
     public LocalDateTime getOpeningTime() { return openingTime; }
     public LocalDateTime getClosingTime() { return closingTime; }
     public int getDurationMinutes() { return durationMinutes; }
+    public int getCumulativeExtensionMinutes() { return cumulativeExtensionMinutes; }
     public ExecutionStatus getStatus() { return status; }
     public int getCreatedByUserId() { return createdByUserId; }
     public String getCreatorName() { return creatorName; }

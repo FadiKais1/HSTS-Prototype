@@ -132,6 +132,7 @@
                                     <artifact>hsts:hsts-prototype</artifact>
                                     <excludes>
                                         <exclude>hsts/server/bot/**</exclude>
+                                        <exclude>hsts/server/report/**</exclude>
                                         <exclude>hsts/external/**</exclude>
                                     </excludes>
                                 </filter>

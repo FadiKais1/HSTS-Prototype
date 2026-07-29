@@ -1,10 +1,12 @@
 package hsts.client.boundary;
 
+import hsts.client.control.NotificationClientController;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
 import hsts.common.type.UserRole;
 import hsts.server.entity.Student;
 import javafx.fxml.FXML;
+import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.stage.Stage;
@@ -38,6 +40,9 @@ public class StudentDashboard {
     private Runnable examExecutionHandler;
     private Runnable publishedGradesHandler;
     private Runnable courseBotHandler;
+    @FXML private Button notificationsButton;
+    private Runnable notificationsHandler;
+    private NotificationClientController notificationClientController;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configure(stage, client, loginResult, logoutHandler, null, null);
@@ -147,6 +152,27 @@ public class StudentDashboard {
         } catch (RuntimeException exception) {
             showError("Unable to open Course Bot");
         }
+    }
+
+    public void configureNotifications(Runnable notificationsHandler) {
+        this.notificationsHandler = Objects.requireNonNull(notificationsHandler);
+        this.notificationClientController = new NotificationClientController(client);
+        notificationsButton.setDisable(false);
+        notificationClientController.getUnreadCount().whenComplete((count, failure) ->
+                Platform.runLater(() -> {
+                    if (failure == null && notificationsButton != null) {
+                        notificationsButton.setText("Notifications (" + count + ")");
+                    }
+                }));
+    }
+
+    @FXML
+    private void handleNotifications() {
+        if (notificationsHandler == null) {
+            showError("Notifications are unavailable");
+            return;
+        }
+        notificationsHandler.run();
     }
 
     private void displayIdentity() {

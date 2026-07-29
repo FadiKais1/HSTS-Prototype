@@ -3,6 +3,8 @@ package hsts.server.control;
 import hsts.common.CourseSummaryDTO;
 import hsts.common.ExamStatisticsDTO;
 import hsts.common.ReportSummaryDTO;
+import hsts.common.ReportExportPayload;
+import hsts.common.ReportExportResult;
 import hsts.common.ScoreBandDTO;
 import hsts.common.type.ReportType;
 import hsts.common.type.UserRole;
@@ -11,6 +13,7 @@ import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.ReportRepository;
 import hsts.server.repository.UserRepository;
+import hsts.server.report.ReportExportGenerator;
 
 import java.io.File;
 import java.time.Clock;
@@ -26,6 +29,7 @@ public class ReportService {
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
     private final Clock clock;
+    private final ReportExportGenerator exportGenerator = new ReportExportGenerator();
 
     public ReportService(ReportRepository reportRepository,
                          UserRepository userRepository,
@@ -133,6 +137,38 @@ public class ReportService {
         );
     }
 
+    public ReportExportResult exportReport(int authenticatedUserId,
+                                           ReportExportPayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Report export data is required");
+        }
+        if (payload.getReportType() == null) {
+            throw new IllegalArgumentException("Report type is required");
+        }
+        if (payload.getFormat() == null) {
+            throw new IllegalArgumentException("Report export format is required");
+        }
+        Integer targetId = payload.getTargetId();
+        ReportSummaryDTO report = switch (payload.getReportType()) {
+            case TEACHER_EXAMS -> targetId == null
+                    ? getMyAuthoredExamsReport(authenticatedUserId)
+                    : getTeacherExamsReport(authenticatedUserId, targetId);
+            case COURSE_EXAMS -> getCourseExamsReport(
+                    authenticatedUserId,
+                    requireExportTarget(targetId)
+            );
+            case STUDENT_EXAMS -> getStudentExamsReport(
+                    authenticatedUserId,
+                    requireExportTarget(targetId)
+            );
+            case EXAM_EXECUTION -> getExamExecutionReport(
+                    authenticatedUserId,
+                    requireExportTarget(targetId)
+            );
+        };
+        return exportGenerator.generate(report, payload.getFormat());
+    }
+
     public Report generateTeacherExamsReport(int teacherId) {
         throw legacyContextRequired();
     }
@@ -175,6 +211,13 @@ public class ReportService {
                 statistics
         );
         return toDto(report);
+    }
+
+    private int requireExportTarget(Integer targetId) {
+        if (targetId == null || targetId <= 0) {
+            throw new IllegalArgumentException("Report target ID must be positive");
+        }
+        return targetId;
     }
 
     private ReportSummaryDTO toDto(Report report) {

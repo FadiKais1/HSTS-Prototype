@@ -28,6 +28,7 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
     private static final String PUBLICATION_MARKER = "SET status = ?";
     private static final String ANSWER_MARKER =
             "ORDER BY selection.order_number ASC,";
+    private static final String NOTIFICATION_MARKER = "INSERT INTO notifications";
     private static final LocalDateTime STARTED =
             LocalDateTime.of(2026, 8, 1, 9, 15);
     private static final LocalDateTime SUBMITTED = STARTED.plusMinutes(30);
@@ -138,6 +139,7 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         ExamRepositoryJdbcTestSupport.StatementPlan update = database.plan(
                 PUBLICATION_MARKER
         ).updateResults(1);
+        database.plan(NOTIFICATION_MARKER).updateResults(1);
         planStatisticsRefresh(database);
         database.plan(ANSWER_MARKER).queryRows(gradedAnswerRow());
 
@@ -196,6 +198,7 @@ public class ExamSubmissionRepositoryReviewPublicationTest {
         ));
         ExamRepositoryJdbcTestSupport.StatementPlan publication =
                 database.plan(PUBLICATION_MARKER).updateResults(1);
+        database.plan(NOTIFICATION_MARKER).updateResults(1);
         database.plan("SELECT execution_id FROM exam_executions")
                 .queryRows(row("execution_id", 81));
         database.plan("SELECT submission.final_score")

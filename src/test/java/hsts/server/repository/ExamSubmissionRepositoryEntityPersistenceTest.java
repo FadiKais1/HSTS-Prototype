@@ -243,7 +243,10 @@ public class ExamSubmissionRepositoryEntityPersistenceTest {
                 "started_at", STARTED,
                 "status", "IN_PROGRESS",
                 "allocated_duration_minutes", 75,
-                "extra_minutes", 10
+                "extra_minutes", 10,
+                "execution_opening_time", OPENING,
+                "execution_closing_time", CLOSING,
+                "execution_status", "SCHEDULED"
         ));
         ExamRepositoryJdbcTestSupport.StatementPlan update = database.plan(
                 ENTITY_EXTENSION_MARKER
@@ -354,7 +357,10 @@ public class ExamSubmissionRepositoryEntityPersistenceTest {
                 "started_at", STARTED,
                 "status", "IN_PROGRESS",
                 "allocated_duration_minutes", 75,
-                "extra_minutes", 10
+                "extra_minutes", 10,
+                "execution_opening_time", OPENING,
+                "execution_closing_time", CLOSING,
+                "execution_status", "SCHEDULED"
         ));
         database.plan(ENTITY_EXTENSION_MARKER).updateResults(1);
         database.plan(AUDIT_MARKER).updateFailure(failure);

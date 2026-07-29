@@ -2,7 +2,10 @@ package hsts.server.control;
 
 import hsts.common.CourseSummaryDTO;
 import hsts.common.ExamStatisticsDTO;
+import hsts.common.ReportExportPayload;
+import hsts.common.ReportExportResult;
 import hsts.common.ReportSummaryDTO;
+import hsts.common.type.ReportExportFormat;
 import hsts.common.type.ReportType;
 import hsts.common.type.UserStatus;
 import hsts.server.entity.Coordinator;
@@ -190,6 +193,34 @@ public class ReportServiceTest {
                 "Report file export is not available");
         assertMessage(() -> service.exportReportToExcel(1),
                 "Report file export is not available");
+    }
+
+    @Test
+    public void exportReconstructsAuthorizedReportFromRepositoryData() {
+        RecordingReportRepository reports = new RecordingReportRepository();
+        reports.byAuthor.put(8001, List.of(statistics(71, "91.25", "91.25")));
+        ReportService service = service(reports, users(
+                teacher(8001, "Exporting Teacher", UserStatus.ACTIVE)
+        ), new RecordingCourseRepository());
+
+        ReportExportResult result = service.exportReport(
+                8001,
+                new ReportExportPayload(
+                        ReportType.TEACHER_EXAMS, null, ReportExportFormat.PDF
+                )
+        );
+
+        assertTrue(result.getSuggestedFilename().endsWith(".pdf"));
+        assertEquals("application/pdf", result.getMediaType());
+        assertEquals("%PDF", new String(result.getBytes(), 0, 4));
+        assertEquals(List.of(8001), reports.authorRequests);
+        assertMessage(() -> service.exportReport(
+                        8001,
+                        new ReportExportPayload(
+                                ReportType.TEACHER_EXAMS, 8002,
+                                ReportExportFormat.PDF
+                        )),
+                "Report comparison requires principal role");
     }
 
     private static ReportService service(RecordingReportRepository reports,

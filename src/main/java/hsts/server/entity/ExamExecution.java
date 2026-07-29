@@ -20,7 +20,8 @@ public class ExamExecution {
     private final int examVersionNo;
     private final LocalDateTime openingTime;
     private final LocalDateTime closingTime;
-    private final int durationMinutes;
+    private int durationMinutes;
+    private int cumulativeExtensionMinutes;
     private final int createdByUserId;
     private final LocalDateTime createdAt;
 
@@ -41,7 +42,8 @@ public class ExamExecution {
                           int examId, int examVersionNo,
                           LocalDateTime openingTime,
                           LocalDateTime closingTime,
-                          int durationMinutes, ExecutionStatus status,
+                          int durationMinutes, int cumulativeExtensionMinutes,
+                          ExecutionStatus status,
                           int createdByUserId, LocalDateTime createdAt,
                           LocalDateTime closedAt,
                           BigDecimal averageScore,
@@ -59,6 +61,12 @@ public class ExamExecution {
         requirePositive(createdByUserId, "Execution creator ID must be positive");
         if (durationMinutes <= 0) {
             throw new IllegalArgumentException("Execution duration must be positive");
+        }
+        if (cumulativeExtensionMinutes < 0
+                || cumulativeExtensionMinutes >= durationMinutes) {
+            throw new IllegalArgumentException(
+                    "Cumulative execution extension is invalid"
+            );
         }
         this.executionId = executionId;
         this.executionCode = requireExecutionCode(executionCode);
@@ -78,6 +86,7 @@ public class ExamExecution {
             );
         }
         this.durationMinutes = durationMinutes;
+        this.cumulativeExtensionMinutes = cumulativeExtensionMinutes;
         this.status = Objects.requireNonNull(status, "Execution status is required");
         this.createdByUserId = createdByUserId;
         this.createdAt = Objects.requireNonNull(
@@ -130,6 +139,7 @@ public class ExamExecution {
                 openingTime,
                 closingTime,
                 durationMinutes,
+                0,
                 ExecutionStatus.SCHEDULED,
                 createdByUserId,
                 createdAt,
@@ -166,6 +176,35 @@ public class ExamExecution {
             LocalDateTime updatedAt,
             List<ExamSubmission> examSubmissions
     ) {
+        return rehydrate(executionId, executionCode, examId, examVersionNo,
+                openingTime, closingTime, durationMinutes, 0, status,
+                createdByUserId, createdAt, closedAt, averageScore, medianScore,
+                decileDistribution, startedCount, submittedCount,
+                autoSubmittedCount, updatedAt, examSubmissions);
+    }
+
+    public static ExamExecution rehydrate(
+            int executionId,
+            String executionCode,
+            int examId,
+            int examVersionNo,
+            LocalDateTime openingTime,
+            LocalDateTime closingTime,
+            int durationMinutes,
+            int cumulativeExtensionMinutes,
+            ExecutionStatus status,
+            int createdByUserId,
+            LocalDateTime createdAt,
+            LocalDateTime closedAt,
+            BigDecimal averageScore,
+            BigDecimal medianScore,
+            List<Integer> decileDistribution,
+            int startedCount,
+            int submittedCount,
+            int autoSubmittedCount,
+            LocalDateTime updatedAt,
+            List<ExamSubmission> examSubmissions
+    ) {
         if (executionId <= 0) {
             throw new IllegalArgumentException("Persisted execution ID must be positive");
         }
@@ -177,6 +216,7 @@ public class ExamExecution {
                 openingTime,
                 closingTime,
                 durationMinutes,
+                cumulativeExtensionMinutes,
                 status,
                 createdByUserId,
                 createdAt,
@@ -199,6 +239,9 @@ public class ExamExecution {
     public LocalDateTime getOpeningTime() { return openingTime; }
     public LocalDateTime getClosingTime() { return closingTime; }
     public int getDurationMinutes() { return durationMinutes; }
+    public int getCumulativeExtensionMinutes() {
+        return cumulativeExtensionMinutes;
+    }
     public ExecutionStatus getStatus() { return status; }
     public int getCreatedByUserId() { return createdByUserId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
@@ -363,11 +406,34 @@ public class ExamExecution {
         touch(timestamp);
     }
 
-    // COMPATIBILITY-ONLY: Execution-wide extension conflicts with the implemented
-    // per-student extension and audit model.
+    public void extendForAll(int addedMinutes, String reason,
+                             LocalDateTime extendedAt) {
+        if (addedMinutes <= 0) {
+            throw new IllegalArgumentException("Extra minutes must be positive");
+        }
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new IllegalArgumentException("Extension reason is required");
+        }
+        LocalDateTime timestamp = requireMutationTimestamp(extendedAt);
+        try {
+            durationMinutes = Math.addExact(durationMinutes, addedMinutes);
+            cumulativeExtensionMinutes = Math.addExact(
+                    cumulativeExtensionMinutes,
+                    addedMinutes
+            );
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(
+                    "Execution extension is too large",
+                    exception
+            );
+        }
+        touch(timestamp);
+    }
+
+    // COMPATIBILITY-ONLY: The UML method has no authoritative timestamp.
     public void extendTime(int extraMinutes, String reason) {
-        throw new IllegalStateException(
-                "Time extensions must target an individual submission"
+        throw new UnsupportedOperationException(
+                "Not implemented in Assignment 2 skeleton"
         );
     }
 

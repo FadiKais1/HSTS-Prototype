@@ -18,17 +18,18 @@ import static org.junit.Assert.assertTrue;
 public class ExamExecutionRepositoryEntityScheduleTest {
     private static final String LOCK_MARKER = "FROM exams e";
     private static final String INSERT_MARKER = "INSERT INTO exam_executions (";
+    private static final String RECIPIENTS_MARKER = "FROM student_courses enrollment";
 
     @Test
     public void schedulesEntityWithExactApprovedVersionAndAuthoritativeValues() {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         ExamRepositoryJdbcTestSupport.StatementPlan lock = database.plan(LOCK_MARKER)
-                .queryRows(row("exam_id", 40, "version_no", 3,
-                        "duration_minutes", 75));
+                .queryRows(approvedVersionRow());
         ExamRepositoryJdbcTestSupport.StatementPlan insert = database.plan(INSERT_MARKER)
                 .updateResults(1)
                 .generatedKey(901);
+        database.plan(RECIPIENTS_MARKER).queryRows();
 
         ExamExecution execution = new ExamExecutionRepository(database, () -> "A7Z9")
                 .schedule(1002, 40, 3, openingTime(), closingTime());
@@ -90,6 +91,7 @@ public class ExamExecutionRepositoryEntityScheduleTest {
         ExamRepositoryJdbcTestSupport.StatementPlan insert = database.plan(INSERT_MARKER)
                 .updateResults(1)
                 .generatedKey(902);
+        database.plan(RECIPIENTS_MARKER).queryRows();
 
         ExamExecution execution = new ExamExecutionRepository(database, () -> "L0C1")
                 .schedule(1002, 40, 3, teacherOpening, teacherClosing);
@@ -145,6 +147,7 @@ public class ExamExecutionRepositoryEntityScheduleTest {
                 .updateFailure(collision)
                 .updateResults(1)
                 .generatedKey(903);
+        database.plan(RECIPIENTS_MARKER).queryRows();
         Deque<String> codes = new ArrayDeque<>();
         codes.add("AAAA");
         codes.add("B2B2");
@@ -218,7 +221,19 @@ public class ExamExecutionRepositoryEntityScheduleTest {
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         database.plan(LOCK_MARKER).queryRows(row("duration_minutes", 75));
         database.plan(INSERT_MARKER).updateResults(1).generatedKey(generatedId);
+        database.plan(RECIPIENTS_MARKER).queryRows();
         return database;
+    }
+
+    private static Map<Object, Object> approvedVersionRow() {
+        return row(
+                "exam_id", 40,
+                "version_no", 3,
+                "duration_minutes", 75,
+                "exam_title", "Algebra Midterm",
+                "course_id", 7,
+                "course_name", "Legacy Course"
+        );
     }
 
     private static LocalDateTime openingTime() {

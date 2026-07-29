@@ -20,6 +20,8 @@ public class ExecutionSubmissionSummaryDTO implements Serializable {
     private final BigDecimal automaticScore;
     private final BigDecimal finalScore;
     private final LocalDateTime startedAt;
+    private final LocalDateTime deadline;
+    private final int individualExtensionMinutes;
     private final LocalDateTime submittedAt;
     private final LocalDateTime reviewedAt;
     private final LocalDateTime publishedAt;
@@ -29,6 +31,20 @@ public class ExecutionSubmissionSummaryDTO implements Serializable {
             String examTitle, int studentUserId, String studentName,
             SubmissionStatus status, BigDecimal automaticScore,
             BigDecimal finalScore, LocalDateTime startedAt,
+            LocalDateTime submittedAt, LocalDateTime reviewedAt,
+            LocalDateTime publishedAt
+    ) {
+        this(submissionId, executionId, examId, examVersionNo, examTitle,
+                studentUserId, studentName, status, automaticScore, finalScore,
+                startedAt, null, 0, submittedAt, reviewedAt, publishedAt);
+    }
+
+    public ExecutionSubmissionSummaryDTO(
+            int submissionId, int executionId, int examId, int examVersionNo,
+            String examTitle, int studentUserId, String studentName,
+            SubmissionStatus status, BigDecimal automaticScore,
+            BigDecimal finalScore, LocalDateTime startedAt,
+            LocalDateTime deadline, int individualExtensionMinutes,
             LocalDateTime submittedAt, LocalDateTime reviewedAt,
             LocalDateTime publishedAt
     ) {
@@ -43,6 +59,8 @@ public class ExecutionSubmissionSummaryDTO implements Serializable {
         this.automaticScore = automaticScore;
         this.finalScore = finalScore;
         this.startedAt = startedAt;
+        this.deadline = deadline;
+        this.individualExtensionMinutes = individualExtensionMinutes;
         this.submittedAt = submittedAt;
         this.reviewedAt = reviewedAt;
         this.publishedAt = publishedAt;
@@ -59,6 +77,8 @@ public class ExecutionSubmissionSummaryDTO implements Serializable {
     public BigDecimal getAutomaticScore() { return automaticScore; }
     public BigDecimal getFinalScore() { return finalScore; }
     public LocalDateTime getStartedAt() { return startedAt; }
+    public LocalDateTime getDeadline() { return deadline; }
+    public int getIndividualExtensionMinutes() { return individualExtensionMinutes; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public LocalDateTime getReviewedAt() { return reviewedAt; }
     public LocalDateTime getPublishedAt() { return publishedAt; }

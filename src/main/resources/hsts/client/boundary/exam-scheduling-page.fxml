@@ -10,6 +10,7 @@
 <?import javafx.scene.control.Spinner?>
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
@@ -122,6 +123,51 @@
                                 <Label text="No scheduled executions."/>
                             </placeholder>
                         </TableView>
+                    </VBox>
+
+                    <VBox spacing="12"
+                          style="-fx-background-color: white; -fx-background-radius: 14; -fx-border-color: #dbe3ef; -fx-border-radius: 14; -fx-padding: 18;">
+                        <Label text="Time Extensions"
+                               style="-fx-font-size: 19px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <Label fx:id="extensionSummaryLabel"
+                               text="Select an execution to manage time extensions."
+                               wrapText="true" style="-fx-text-fill: #374151;"/>
+                        <TableView fx:id="submissionTable" prefHeight="230">
+                            <columns>
+                                <TableColumn fx:id="submissionIdColumn" text="Submission ID" prefWidth="95"/>
+                                <TableColumn fx:id="studentColumn" text="Student" prefWidth="220"/>
+                                <TableColumn fx:id="submissionStatusColumn" text="Status" prefWidth="110"/>
+                                <TableColumn fx:id="deadlineColumn" text="Current deadline" prefWidth="170"/>
+                                <TableColumn fx:id="individualMinutesColumn" text="Individual minutes" prefWidth="125"/>
+                            </columns>
+                            <placeholder><Label text="No submissions for the selected execution."/></placeholder>
+                        </TableView>
+                        <VBox spacing="7"
+                              style="-fx-background-color: #f8fafc; -fx-background-radius: 10; -fx-padding: 12;">
+                            <Label text="Extend Selected Student"
+                                   style="-fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                            <HBox spacing="8" alignment="CENTER_LEFT">
+                                <TextField fx:id="individualMinutesField" promptText="Positive whole minutes" prefWidth="180"/>
+                                <TextField fx:id="individualReasonField" promptText="Required reason" HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="extendStudentButton" text="Extend Selected Student"
+                                        onAction="#handleExtendStudent"
+                                        style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8;"/>
+                            </HBox>
+                        </VBox>
+                        <VBox spacing="7"
+                              style="-fx-background-color: #fffbeb; -fx-background-radius: 10; -fx-padding: 12;">
+                            <Label text="Extend Entire Execution"
+                                   style="-fx-font-weight: bold; -fx-text-fill: #78350f;"/>
+                            <Label text="Adds time to every active and future attempt. Opening and closing times do not change."
+                                   wrapText="true" style="-fx-text-fill: #92400e;"/>
+                            <HBox spacing="8" alignment="CENTER_LEFT">
+                                <TextField fx:id="executionMinutesField" promptText="Positive whole minutes" prefWidth="180"/>
+                                <TextField fx:id="executionReasonField" promptText="Required reason" HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="extendExecutionButton" text="Extend Entire Execution"
+                                        onAction="#handleExtendExecution"
+                                        style="-fx-background-color: #b45309; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8;"/>
+                            </HBox>
+                        </VBox>
                     </VBox>
                 </VBox>
             </content>

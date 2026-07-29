@@ -10,6 +10,7 @@ import hsts.server.control.ExamManagementService;
 import hsts.server.control.GradingService;
 import hsts.server.control.PrincipalOversightService;
 import hsts.server.control.ReportService;
+import hsts.server.control.NotificationService;
 import hsts.server.net.Server;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.CourseBotRepository;
@@ -23,6 +24,7 @@ import hsts.server.repository.ReportRepository;
 import hsts.server.repository.StudentEnrollmentRepository;
 import hsts.server.repository.StudentProfileRepository;
 import hsts.server.repository.UserRepository;
+import hsts.server.repository.NotificationRepository;
 
 import java.time.Clock;
 import java.util.UUID;
@@ -47,6 +49,7 @@ public class MainServer {
         StudentProfileRepository studentProfileRepository =
                 new StudentProfileRepository();
         ReportRepository reportRepository = new ReportRepository();
+        NotificationRepository notificationRepository = new NotificationRepository();
         CourseBotRepository courseBotRepository = new CourseBotRepository();
         BotConversationRepository botConversationRepository =
                 new BotConversationRepository();
@@ -77,6 +80,11 @@ public class MainServer {
                 courseRepository,
                 Clock.systemDefaultZone()
         );
+        NotificationService notificationService = new NotificationService(
+                notificationRepository,
+                userRepository,
+                Clock.systemDefaultZone()
+        );
         CourseBotService courseBotService = new CourseBotService(
                 courseBotRepository,
                 botConversationRepository,
@@ -105,7 +113,8 @@ public class MainServer {
                 examExecutionService,
                 reportService,
                 courseBotService,
-                principalOversightService
+                principalOversightService,
+                notificationService
         );
         server.startServer();
     }

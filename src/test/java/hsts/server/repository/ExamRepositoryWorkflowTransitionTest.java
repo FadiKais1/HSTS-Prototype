@@ -25,6 +25,7 @@ public class ExamRepositoryWorkflowTransitionTest {
     private static final String SUBMIT_MARKER = "submitted_at = ?";
     private static final String APPROVE_MARKER = "rejection_reason = NULL";
     private static final String REJECT_MARKER = "rejection_reason = ?";
+    private static final String NOTIFICATION_MARKER = "INSERT INTO notifications";
 
     @Test
     public void submitLocksCreatorScopeAndUpdatesOnlyCurrentDraftWorkflowFields() {
@@ -66,6 +67,7 @@ public class ExamRepositoryWorkflowTransitionTest {
                         .queryRows(lockedExam(4, ExamStatus.PENDING_APPROVAL));
         ExamRepositoryJdbcTestSupport.StatementPlan approve = database.plan(APPROVE_MARKER)
                 .updateResults(1);
+        database.plan(NOTIFICATION_MARKER).updateResults(1);
 
         Exam exam = approvedExam(55, coordinatorId, 4, coordinatorId);
         boolean approved = new ExamRepository(database)
@@ -102,6 +104,7 @@ public class ExamRepositoryWorkflowTransitionTest {
                 .queryRows(lockedExam(6, ExamStatus.PENDING_APPROVAL));
         ExamRepositoryJdbcTestSupport.StatementPlan reject = database.plan(REJECT_MARKER)
                 .updateResults(1);
+        database.plan(NOTIFICATION_MARKER).updateResults(1);
 
         Exam exam = rejectedExam(65, 1002, 6, coordinatorId, reason);
         boolean rejected = new ExamRepository(database)

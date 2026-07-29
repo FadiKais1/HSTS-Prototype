@@ -5,7 +5,10 @@ import hsts.client.net.Client;
 import hsts.common.ExamStatisticsDTO;
 import hsts.common.LoginResult;
 import hsts.common.ReportSummaryDTO;
+import hsts.common.ReportExportPayload;
+import hsts.common.ReportExportResult;
 import hsts.common.ScoreBandDTO;
+import hsts.common.type.ReportExportFormat;
 import hsts.common.type.UserRole;
 import javafx.application.Platform;
 import javafx.beans.property.ReadOnlyStringWrapper;
@@ -27,13 +30,23 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.FileChooser;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 
 public class ReportsPage {
     private static final String CONFIGURATION_ERROR = "Reports page is not configured";
@@ -55,6 +68,9 @@ public class ReportsPage {
     private boolean loading;
     private boolean disposed;
     private boolean automaticLoadStarted;
+    private boolean exporting;
+    private ReportExportResult pendingExport;
+    private ReportExportFormat pendingExportFormat;
 
     @FXML private Label roleContextLabel;
     @FXML private HBox principalControls;
@@ -63,6 +79,8 @@ public class ReportsPage {
     @FXML private Button loadButton;
     @FXML private Button refreshButton;
     @FXML private Button backButton;
+    @FXML private Button exportPdfButton;
+    @FXML private Button exportExcelButton;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private Label statusLabel;
     @FXML private Label errorLabel;
@@ -191,6 +209,100 @@ public class ReportsPage {
     }
 
     @FXML
+    private void handleExportPdf() {
+        exportCurrentReport(ReportExportFormat.PDF);
+    }
+
+    @FXML
+    private void handleExportExcel() {
+        exportCurrentReport(ReportExportFormat.XLSX);
+    }
+
+    private void exportCurrentReport(ReportExportFormat format) {
+        if (!isConfigured() || currentReport == null || exporting) return;
+        if (pendingExport != null && pendingExportFormat == format) {
+            chooseExportDestination(pendingExport, format);
+            return;
+        }
+        exporting = true;
+        setError("");
+        setStatus("Generating report export...");
+        updateControlState();
+        ReportExportPayload payload = new ReportExportPayload(
+                currentReport.getReportType(),
+                loginResult.getRole() == UserRole.PRINCIPAL
+                        ? currentReport.getTargetId()
+                        : currentReport.getReportType()
+                        == hsts.common.type.ReportType.EXAM_EXECUTION
+                        ? currentReport.getTargetId()
+                        : null,
+                format
+        );
+        reportClientController.exportReport(payload).whenComplete((result, failure) ->
+                Platform.runLater(() -> finishExport(result, format, failure)));
+    }
+
+    private void finishExport(ReportExportResult result, ReportExportFormat format,
+                              Throwable failure) {
+        if (disposed) return;
+        if (failure != null || result == null) {
+            exporting = false;
+            setError(failure == null ? "Unable to export report" : cleanError(failure));
+            setStatus("");
+            updateControlState();
+            return;
+        }
+        pendingExport = result;
+        pendingExportFormat = format;
+        chooseExportDestination(result, format);
+    }
+
+    private void chooseExportDestination(ReportExportResult result,
+                                         ReportExportFormat format) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Save report export");
+        FileChooser.ExtensionFilter filter = extensionFilter(format);
+        chooser.getExtensionFilters().setAll(filter);
+        chooser.setSelectedExtensionFilter(filter);
+        chooser.setInitialFileName(normalizeFilename(
+                result.getSuggestedFilename(),
+                format
+        ));
+        java.io.File selected = chooser.showSaveDialog(stage);
+        if (selected == null) {
+            exporting = false;
+            setStatus("Export canceled.");
+            updateControlState();
+            return;
+        }
+        Path destination = normalizeDestination(selected.toPath(), format);
+        exporting = true;
+        setError("");
+        setStatus("Saving report export...");
+        updateControlState();
+        CompletableFuture.runAsync(() -> {
+            try {
+                writeAtomically(destination, result.getBytes());
+            } catch (IOException | SecurityException exception) {
+                throw new java.util.concurrent.CompletionException(exception);
+            }
+        }).whenComplete((unused, writeFailure) -> Platform.runLater(() -> {
+            if (disposed) return;
+            exporting = false;
+            if (writeFailure != null) {
+                setError(saveFailureMessage(writeFailure));
+                setStatus("");
+            } else {
+                pendingExport = null;
+                pendingExportFormat = null;
+                setError("");
+                setStatus("Report exported successfully.");
+            }
+            updateControlState();
+        }));
+    }
+
+    @FXML
     private void handleBack() {
         if (!isConfigured()) {
             setError(CONFIGURATION_ERROR);
@@ -274,6 +386,8 @@ public class ReportsPage {
     }
 
     private void showReport(ReportSummaryDTO report) {
+        pendingExport = null;
+        pendingExportFormat = null;
         currentReport = report;
         reportTitleLabel.setText(report.getTitle());
         targetNameLabel.setText(report.getTargetDisplayName() == null
@@ -408,6 +522,10 @@ public class ReportsPage {
         boolean principal = configured && loginResult.getRole() == UserRole.PRINCIPAL;
         if (loadButton != null) loadButton.setDisable(!principal || loading);
         if (refreshButton != null) refreshButton.setDisable(!configured || loading);
+        boolean exportDisabled = !configured || loading || exporting
+                || currentReport == null;
+        if (exportPdfButton != null) exportPdfButton.setDisable(exportDisabled);
+        if (exportExcelButton != null) exportExcelButton.setDisable(exportDisabled);
         if (comparisonModeComboBox != null) {
             comparisonModeComboBox.setDisable(!principal || loading);
         }
@@ -459,6 +577,117 @@ public class ReportsPage {
     static boolean isStale(boolean disposed, long responseGeneration,
                            long currentGeneration) {
         return disposed || responseGeneration != currentGeneration;
+    }
+
+    static FileChooser.ExtensionFilter extensionFilter(ReportExportFormat format) {
+        return switch (Objects.requireNonNull(format, "format")) {
+            case PDF -> new FileChooser.ExtensionFilter(
+                    "PDF files (*.pdf)", "*.pdf"
+            );
+            case XLSX -> new FileChooser.ExtensionFilter(
+                    "Excel workbooks (*.xlsx)", "*.xlsx"
+            );
+        };
+    }
+
+    static String normalizeFilename(String suggested,
+                                    ReportExportFormat format) {
+        String extension = format == ReportExportFormat.PDF ? ".pdf" : ".xlsx";
+        String name = suggested == null ? "" : suggested.trim();
+        if (name.isBlank()) name = "hsts-report";
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        while (lower.endsWith(".pdf") || lower.endsWith(".xlsx")) {
+            int separator = name.lastIndexOf('.');
+            name = name.substring(0, separator);
+            lower = name.toLowerCase(java.util.Locale.ROOT);
+        }
+        return name + extension;
+    }
+
+    static Path normalizeDestination(Path selected,
+                                     ReportExportFormat format) {
+        Objects.requireNonNull(selected, "selected");
+        Path filename = selected.getFileName();
+        String normalized = normalizeFilename(
+                filename == null ? null : filename.toString(),
+                format
+        );
+        Path parent = selected.getParent();
+        return parent == null ? Path.of(normalized) : parent.resolve(normalized);
+    }
+
+    static void writeAtomically(Path destination, byte[] bytes) throws IOException {
+        Objects.requireNonNull(destination, "destination");
+        Objects.requireNonNull(bytes, "bytes");
+        Path absolute = destination.toAbsolutePath();
+        Path directory = absolute.getParent();
+        if (directory == null) {
+            throw new IOException("Export destination has no parent directory");
+        }
+        Path temporary = null;
+        Throwable failure = null;
+        try {
+            temporary = Files.createTempFile(
+                    directory,
+                    "." + absolute.getFileName() + ".",
+                    ".tmp"
+            );
+            try (FileChannel channel = FileChannel.open(
+                    temporary,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            )) {
+                ByteBuffer buffer = ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) channel.write(buffer);
+                channel.force(true);
+            }
+            try {
+                Files.move(
+                        temporary,
+                        absolute,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(
+                        temporary,
+                        absolute,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            }
+            temporary = null;
+        } catch (IOException | RuntimeException exception) {
+            failure = exception;
+            throw exception;
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException | RuntimeException cleanupFailure) {
+                    if (failure != null) {
+                        failure.addSuppressed(cleanupFailure);
+                    } else if (cleanupFailure instanceof IOException ioFailure) {
+                        throw ioFailure;
+                    } else {
+                        throw cleanupFailure;
+                    }
+                }
+            }
+        }
+    }
+
+    static String saveFailureMessage(Throwable failure) {
+        Throwable current = failure;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        if (current instanceof AccessDeniedException
+                || current instanceof SecurityException) {
+            return "The selected folder does not allow this application to save "
+                    + "files. Choose another folder or allow Java through Windows "
+                    + "Controlled Folder Access.";
+        }
+        return "Unable to save report export. Choose another folder.";
     }
 
     private String cleanError(Throwable failure) {

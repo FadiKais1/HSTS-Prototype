@@ -3,6 +3,7 @@ package hsts.server.control;
 import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.ScheduleExamExecutionPayload;
+import hsts.common.type.ExecutionStatus;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
 import hsts.server.entity.Exam;
@@ -111,6 +112,42 @@ public class ExamExecutionServiceManagerTest {
             assertEquals(userId, executions.lastManagerId);
             assertEquals(81, executions.lastExecutionId);
         }
+    }
+
+    @Test
+    public void managerSummariesUseInjectedServerClockForWindowStatus() {
+        ExamExecutionServiceTestSupport.RecordingExecutionRepository executions =
+                new ExamExecutionServiceTestSupport.RecordingExecutionRepository();
+        ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions =
+                new ExamExecutionServiceTestSupport.RecordingSubmissionRepository();
+        ExamExecutionServiceTestSupport.RecordingUserRepository users =
+                new ExamExecutionServiceTestSupport.RecordingUserRepository(
+                        user(101, UserRole.TEACHER, UserStatus.ACTIVE)
+                );
+        executions.summaries = List.of(
+                summaryAt(81, NOW.plusMinutes(1), NOW.plusHours(1)),
+                summaryAt(82, NOW, NOW.plusHours(1)),
+                summaryAt(83, NOW.minusMinutes(1), NOW.plusHours(1)),
+                summaryAt(84, NOW.minusHours(1), NOW),
+                summaryAt(85, NOW.minusHours(2), NOW.minusMinutes(1))
+        );
+        ExamExecutionService service = service(
+                executions,
+                submissions,
+                new ExamExecutionServiceTestSupport.RecordingEnrollmentRepository(),
+                new ExamExecutionServiceTestSupport.RecordingProfileRepository(),
+                users
+        );
+
+        List<ExamExecutionSummaryDTO> actual = service.getMyExecutions(101);
+
+        assertEquals(ExecutionStatus.SCHEDULED, actual.get(0).getStatus());
+        assertEquals(ExecutionStatus.OPEN, actual.get(1).getStatus());
+        assertEquals(ExecutionStatus.OPEN, actual.get(2).getStatus());
+        assertEquals(ExecutionStatus.CLOSED, actual.get(3).getStatus());
+        assertEquals(ExecutionStatus.CLOSED, actual.get(4).getStatus());
+        assertEquals(ExecutionStatus.SCHEDULED,
+                executions.summaries.get(2).getStatus());
     }
 
     @Test
@@ -331,6 +368,19 @@ public class ExamExecutionServiceManagerTest {
                 enrollments,
                 profiles,
                 users
+        );
+    }
+
+    private static ExamExecutionSummaryDTO summaryAt(
+            int executionId,
+            LocalDateTime opening,
+            LocalDateTime closing
+    ) {
+        return new ExamExecutionSummaryDTO(
+                executionId, "A1B2", 40, 3, "EX1234", "Approved Midterm",
+                7, "Mathematics", opening, closing, 75,
+                ExecutionStatus.SCHEDULED, 101, "Development Teacher",
+                NOW.minusDays(1), 0, 0, 0
         );
     }
 

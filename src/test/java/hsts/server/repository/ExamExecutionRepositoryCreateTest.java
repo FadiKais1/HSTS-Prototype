@@ -19,6 +19,8 @@ import static org.junit.Assert.assertTrue;
 public class ExamExecutionRepositoryCreateTest {
     private static final String LOCK_MARKER = "FROM exams e";
     private static final String INSERT_MARKER = "INSERT INTO exam_executions (";
+    private static final String RECIPIENTS_MARKER = "FROM student_courses enrollment";
+    private static final String NOTIFICATION_MARKER = "INSERT INTO notifications";
 
     @Test
     public void missingScheduleTimesFailBeforeObtainingConnection() {
@@ -41,9 +43,10 @@ public class ExamExecutionRepositoryCreateTest {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         ExamRepositoryJdbcTestSupport.StatementPlan lock = database.plan(LOCK_MARKER)
-                .queryRows(row("exam_id", 40, "version_no", 3, "duration_minutes", 75));
+                .queryRows(approvedVersionRow());
         ExamRepositoryJdbcTestSupport.StatementPlan insert = database.plan(INSERT_MARKER)
                 .updateResults(1).generatedKey(901);
+        database.plan(RECIPIENTS_MARKER).queryRows();
 
         int executionId = schedule(
                 new ExamExecutionRepository(database, () -> "A7Z9"), 1002
@@ -120,9 +123,10 @@ public class ExamExecutionRepositoryCreateTest {
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         database.plan(LOCK_MARKER)
-                .queryRows(row("duration_minutes", 75));
+                .queryRows(approvedVersionRow());
         ExamRepositoryJdbcTestSupport.StatementPlan insert = database.plan(INSERT_MARKER)
                 .updateFailure(collision).updateResults(1).generatedKey(902);
+        database.plan(RECIPIENTS_MARKER).queryRows();
         Deque<String> codes = new ArrayDeque<>();
         codes.add("AAAA");
         codes.add("B2B2");
@@ -207,6 +211,71 @@ public class ExamExecutionRepositoryCreateTest {
     }
 
     @Test
+    public void schedulingNotifiesOnlyActiveEnrolledStudentsInsideTheTransaction() {
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        database.plan(LOCK_MARKER).queryRows(approvedVersionRow());
+        database.plan(INSERT_MARKER).updateResults(1).generatedKey(903);
+        ExamRepositoryJdbcTestSupport.StatementPlan recipients =
+                database.plan(RECIPIENTS_MARKER).queryRows(
+                        row("user_id", 1001),
+                        row("user_id", 1005)
+                );
+        ExamRepositoryJdbcTestSupport.StatementPlan notifications =
+                database.plan(NOTIFICATION_MARKER).updateResults(1, 1);
+
+        int executionId = schedule(
+                new ExamExecutionRepository(database, () -> "Q7W9"), 1002
+        );
+
+        assertEquals(903, executionId);
+        String recipientSql = normalized(recipients.sql);
+        assertTrue(recipientSql.contains("STUDENT.ROLE = 'STUDENT'"));
+        assertTrue(recipientSql.contains("STUDENT.STATUS = 'ACTIVE'"));
+        assertTrue(recipientSql.contains("ENROLLMENT.COURSE_ID = ?"));
+        assertEquals(Map.of(1, 7), recipients.queryExecutions.get(0));
+        assertEquals(2, notifications.updateExecutions.size());
+        for (int index = 0; index < 2; index++) {
+            Map<Integer, Object> values = notifications.updateExecutions.get(index);
+            assertEquals(index == 0 ? 1001 : 1005, values.get(1));
+            assertEquals("EXAM_SCHEDULED", values.get(2));
+            assertEquals("Exam scheduled", values.get(3));
+            assertTrue(values.get(4).toString().contains("Algebra Midterm"));
+            assertTrue(values.get(4).toString().contains("Legacy Course"));
+            assertTrue(values.get(4).toString().contains("Q7W9"));
+            assertTrue(values.get(4).toString().contains("75 minutes"));
+            assertEquals(40, values.get(5));
+            assertEquals(903, values.get(6));
+        }
+        assertTrue(database.events.indexOf("update:" + NOTIFICATION_MARKER)
+                < database.events.indexOf("commit"));
+    }
+
+    @Test
+    public void schedulingNotificationFailureRollsBackExecutionAndNotifications() {
+        SQLException failure = new SQLException("notification insert failed");
+        ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
+                new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
+        database.plan(LOCK_MARKER).queryRows(approvedVersionRow());
+        database.plan(INSERT_MARKER).updateResults(1).generatedKey(904);
+        database.plan(RECIPIENTS_MARKER).queryRows(row("user_id", 1001));
+        database.plan(NOTIFICATION_MARKER).updateFailure(failure);
+
+        IllegalStateException thrown = assertThrows(
+                IllegalStateException.class,
+                () -> schedule(
+                        new ExamExecutionRepository(database, () -> "R8X0"), 1002
+                )
+        );
+
+        assertEquals("Failed to schedule exam execution", thrown.getMessage());
+        assertSame(failure, thrown.getCause());
+        assertEquals(1, database.rollbackCount);
+        assertEquals(0, database.commitCount);
+        assertTrue(database.autoCommit);
+    }
+
+    @Test
     public void rollbackAndRestorationFailuresAreSuppressedOnOriginalJdbcCause() {
         SQLException original = new SQLException("insert failed");
         SQLException rollbackFailure = new SQLException("rollback failed");
@@ -260,6 +329,17 @@ public class ExamExecutionRepositoryCreateTest {
     private static int schedule(ExamExecutionRepository repository, int userId) {
         return repository.schedule(userId, 40, 3, openingTime(), closingTime())
                 .getExecutionId();
+    }
+
+    private static Map<Object, Object> approvedVersionRow() {
+        return row(
+                "exam_id", 40,
+                "version_no", 3,
+                "duration_minutes", 75,
+                "exam_title", "Algebra Midterm",
+                "course_id", 7,
+                "course_name", "Legacy Course"
+        );
     }
 
     private static LocalDateTime openingTime() {

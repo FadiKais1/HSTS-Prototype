@@ -44,6 +44,8 @@
                         onAction="#handleSubmitForApproval"
                         style="-fx-background-color: #0f766e; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button fx:id="refreshButton" text="Refresh" onAction="#handleRefresh"/>
+                <Button fx:id="questionBankButton" text="Open Question Bank"
+                        onAction="#handleOpenQuestionBank"/>
                 <Button fx:id="backButton" text="Back" onAction="#handleBack"/>
             </HBox>
             <Label fx:id="statusLabel" text="Waiting for authenticated client." wrapText="true"
@@ -116,6 +118,16 @@
                                               GridPane.rowIndex="2" GridPane.columnIndex="1"
                                               GridPane.columnSpan="3"/>
                                 </GridPane>
+                            </VBox>
+
+                            <VBox fx:id="rejectionReasonPanel" spacing="6"
+                                  visible="false" managed="false"
+                                  style="-fx-background-color: #fef2f2; -fx-background-radius: 12; -fx-border-color: #ef4444; -fx-border-radius: 12; -fx-padding: 14;">
+                                <Label text="Rejection reason"
+                                       style="-fx-font-weight: bold; -fx-text-fill: #7f1d1d; -fx-opacity: 1;"/>
+                                <Label fx:id="rejectionReasonLabel" text=""
+                                       wrapText="true" maxWidth="Infinity"
+                                       style="-fx-text-fill: #1f2937; -fx-opacity: 1;"/>
                             </VBox>
 
                             <VBox fx:id="automaticCriteriaPane" spacing="12"

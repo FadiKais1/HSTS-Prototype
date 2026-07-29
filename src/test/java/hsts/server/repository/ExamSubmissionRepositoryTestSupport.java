@@ -44,7 +44,10 @@ final class ExamSubmissionRepositoryTestSupport {
                 "started_at", startedAt,
                 "status", status,
                 "allocated_duration_minutes", allocatedMinutes,
-                "extra_minutes", extraMinutes
+                "extra_minutes", extraMinutes,
+                "execution_opening_time", STARTED.minusHours(1),
+                "execution_closing_time", STARTED.plusHours(3),
+                "execution_status", "SCHEDULED"
         );
     }
 

@@ -192,12 +192,38 @@ public class ExamBuilderPageContractTest {
         assertFalse(Boolean.parseBoolean(examButton.getAttribute("disable")));
 
         String source = Files.readString(MAIN_CLIENT_PATH);
-        String navigationMethod = methodSource(source, "private void showExamBuilder(");
+        String navigationMethod = methodSource(
+                source,
+                "private void showExamBuilder(LoginResult loginResult,"
+        );
         assertTrue(navigationMethod.contains("/hsts/client/boundary/exam-builder-page.fxml"));
-        assertTrue(navigationMethod.contains("controller.configure(stage, client"));
+        assertTrue(navigationMethod.contains("controller.configure("));
+        assertTrue(navigationMethod.contains("stage,"));
+        assertTrue(navigationMethod.contains("client,"));
         assertTrue(navigationMethod.contains("returnToTeacherDashboard(loginResult)"));
         assertFalse(navigationMethod.contains("new Client("));
         assertFalse(navigationMethod.contains("closeQuietly("));
+    }
+
+    @Test
+    public void rejectedReasonAndQuestionBankStatePreservationAreReachable() throws Exception {
+        String controller = Files.readString(CONTROLLER_PATH);
+        String fxml = Files.readString(FXML_PATH);
+        String main = Files.readString(MAIN_CLIENT_PATH);
+
+        assertTrue(fxml.contains("text=\"Rejection reason\""));
+        assertTrue(fxml.contains("fx:id=\"rejectionReasonLabel\""));
+        assertTrue(fxml.contains("text=\"Open Question Bank\""));
+        assertTrue(controller.contains("loaded.getStatus() == ExamStatus.REJECTED"));
+        assertTrue(controller.contains("loaded.getRejectionReason()"));
+        assertTrue(controller.contains("snapshotEditorState()"));
+        assertTrue(controller.contains("restoreEditorState(state)"));
+        assertTrue(controller.contains("SelectedQuestionItem::copy"));
+        assertTrue(controller.contains("confirmDiscardIfDirty()"));
+        assertTrue(main.contains("showQuestionBankFromExamBuilder("));
+        assertTrue(main.contains("controller.snapshotEditorState()"));
+        assertTrue(main.contains("showExamBuilder(loginResult, editorState)"));
+        assertFalse(controller.contains("examClientController.saveDraft"));
     }
 
     private static QuestionDTO question(int id, int version, String content) {

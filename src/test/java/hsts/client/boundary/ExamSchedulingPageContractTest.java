@@ -83,12 +83,19 @@ public class ExamSchedulingPageContractTest {
                 "feedbackLabel", "generatedCodeLabel", "generatedDetailsLabel",
                 "executionTable", "executionIdColumn", "examTitleColumn",
                 "examCodeColumn", "versionColumn", "executionCodeColumn",
-                "openingColumn", "closingColumn", "durationColumn", "statusColumn"
+                "openingColumn", "closingColumn", "durationColumn", "statusColumn",
+                "extensionSummaryLabel", "submissionTable", "submissionIdColumn",
+                "studentColumn", "submissionStatusColumn", "deadlineColumn",
+                "individualMinutesColumn", "individualMinutesField",
+                "individualReasonField", "extendStudentButton",
+                "executionMinutesField", "executionReasonField",
+                "extendExecutionButton"
         )) {
             assertTrue("Missing required fx:id: " + id, ids.containsKey(id));
         }
         assertEquals(
-                Set.of("handleSchedule", "handleRefresh", "handleBack"),
+                Set.of("handleSchedule", "handleRefresh", "handleBack",
+                        "handleExtendStudent", "handleExtendExecution"),
                 actions
         );
     }
@@ -231,6 +238,47 @@ public class ExamSchedulingPageContractTest {
         assertSame(CLOSING, execution.getClosingTime());
     }
 
+    @Test
+    public void extensionValidationAndAsyncRefreshAreWiredWithoutNetworkingInBoundary()
+            throws Exception {
+        assertEquals(Integer.valueOf(20),
+                ExamSchedulingPage.parsePositiveMinutes(" 20 "));
+        assertEquals(null, ExamSchedulingPage.parsePositiveMinutes("0"));
+        assertEquals(null, ExamSchedulingPage.parsePositiveMinutes("-1"));
+        assertEquals(null, ExamSchedulingPage.parsePositiveMinutes("1.5"));
+        assertEquals(null, ExamSchedulingPage.parsePositiveMinutes("minutes"));
+
+        String source = Files.readString(CONTROLLER_PATH);
+        assertTrue(source.contains(".getExecutionSubmissions("));
+        assertTrue(source.contains(".extendSubmissionTime("));
+        assertTrue(source.contains(".extendExecutionTime("));
+        assertTrue(source.contains("selected.getStatus() != SubmissionStatus.IN_PROGRESS"));
+        assertTrue(source.contains("generation != submissionRequestGeneration"));
+        assertTrue(source.contains("individualExtensionPending"));
+        assertTrue(source.contains("executionExtensionPending"));
+        assertFalse(source.contains("client.sendRequest"));
+    }
+
+    @Test
+    public void extensionEligibilityUsesOnlyTypedServerDerivedStatus() throws Exception {
+        assertFalse(ExamSchedulingPage.isExtensionEligible(execution()));
+        assertTrue(ExamSchedulingPage.isExtensionEligible(execution(
+                ExecutionStatus.OPEN
+        )));
+        assertFalse(ExamSchedulingPage.isExtensionEligible(execution(
+                ExecutionStatus.CLOSED
+        )));
+
+        String source = Files.readString(CONTROLLER_PATH);
+        String method = methodSource(
+                source,
+                "static boolean isExtensionEligible("
+        );
+        assertTrue(method.contains("ExecutionStatus.OPEN"));
+        assertFalse(method.contains("LocalDateTime.now"));
+        assertFalse(method.contains("System.currentTimeMillis"));
+    }
+
     private static ExamSummaryDTO exam(int examId, int version, ExamStatus status) {
         return new ExamSummaryDTO(
                 examId, "EX" + examId, 7, "Mathematics", 3, "Mathematics",
@@ -240,10 +288,14 @@ public class ExamSchedulingPageContractTest {
     }
 
     private static ExamExecutionSummaryDTO execution() {
+        return execution(ExecutionStatus.SCHEDULED);
+    }
+
+    private static ExamExecutionSummaryDTO execution(ExecutionStatus status) {
         return new ExamExecutionSummaryDTO(
                 81, "A1B2", 40, 3, "EX1234", "Approved Midterm",
                 7, "Mathematics", OPENING, CLOSING, 75,
-                ExecutionStatus.SCHEDULED, 1002, "Teacher", OPENING.minusDays(1),
+                status, 1002, "Teacher", OPENING.minusDays(1),
                 0, 0, 0
         );
     }

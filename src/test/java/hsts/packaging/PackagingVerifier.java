@@ -35,7 +35,8 @@ public final class PackagingVerifier {
             "hsts/client/boundary/exam-execution-page.fxml",
             "hsts/client/boundary/grade-review-page.fxml",
             "hsts/client/boundary/published-grades-page.fxml",
-            "hsts/client/boundary/reports-page.fxml"
+            "hsts/client/boundary/reports-page.fxml",
+            "hsts/client/boundary/notifications-page.fxml"
     );
 
     private static final List<String> SERVER_ENTRIES = List.of(
@@ -43,6 +44,7 @@ public final class PackagingVerifier {
             "hsts/server/bot/source/BotSourceExtractor.class",
             "hsts/server/bot/GeminiExternalBotSystem.class",
             "hsts/server/bot/CourseBotProviderFactory.class",
+            "hsts/server/report/ReportExportGenerator.class",
             "com/fasterxml/jackson/databind/ObjectMapper.class",
             "hsts/ocsf/AbstractServer.class",
             "hsts/ocsf/ConnectionToClient.class",
@@ -66,6 +68,7 @@ public final class PackagingVerifier {
             , "hsts/server/bot/GeminiExternalBotSystem.class"
             , "hsts/server/bot/CourseBotProviderFactory.class"
             , "com/fasterxml/jackson/databind/ObjectMapper.class"
+            , "hsts/server/report/ReportExportGenerator.class"
     );
 
     private static final List<String> SERVER_FORBIDDEN_ENTRIES = List.of(

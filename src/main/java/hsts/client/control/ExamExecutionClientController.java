@@ -8,6 +8,7 @@ import hsts.common.ExecutionCodePayload;
 import hsts.common.ExecutionIdPayload;
 import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.ExtendSubmissionTimePayload;
+import hsts.common.ExtendExecutionTimePayload;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishedGradeSummaryDTO;
@@ -142,6 +143,19 @@ public class ExamExecutionClientController {
                         responsePayload,
                         Boolean.class,
                         "Invalid time-extension response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<ExamExecutionSummaryDTO> extendExecutionTime(
+            ExtendExecutionTimePayload payload
+    ) {
+        return sendRequest(
+                new Request(RequestType.EXTEND_EXAM_EXECUTION, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamExecutionSummaryDTO.class,
+                        "Invalid execution-extension response from server"
                 )
         );
     }

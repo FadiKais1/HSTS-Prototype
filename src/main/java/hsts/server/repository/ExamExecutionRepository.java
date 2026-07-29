@@ -3,6 +3,7 @@ package hsts.server.repository;
 import hsts.common.ExamExecutionPreviewDTO;
 import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.type.ExecutionStatus;
+import hsts.common.type.NotificationType;
 import hsts.server.entity.ExamExecution;
 
 import java.security.SecureRandom;
@@ -13,6 +14,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -26,15 +28,21 @@ public class ExamExecutionRepository {
     private static final int MAX_EXECUTION_CODE_ATTEMPTS = 5;
     private static final int MYSQL_DUPLICATE_KEY_ERROR = 1062;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final DateTimeFormatter NOTIFICATION_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private static final String LOCK_APPROVED_EXAM_VERSION_SQL = """
             SELECT e.exam_id,
                    ev.version_no,
-                   ev.duration_minutes
+                   ev.duration_minutes,
+                   ev.title AS exam_title,
+                   e.course_id,
+                   course.name AS course_name
             FROM exams e
             JOIN exam_versions ev
               ON ev.exam_id = e.exam_id
              AND ev.version_no = ?
+            JOIN courses course ON course.course_id = e.course_id
             JOIN teacher_courses tc
               ON tc.course_id = e.course_id
              AND tc.teacher_user_id = ?
@@ -69,6 +77,17 @@ public class ExamExecutionRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
+    private static final String SCHEDULE_NOTIFICATION_RECIPIENTS_SQL = """
+            SELECT student.user_id
+            FROM student_courses enrollment
+            JOIN users student
+              ON student.user_id = enrollment.student_user_id
+             AND student.role = 'STUDENT'
+             AND student.status = 'ACTIVE'
+            WHERE enrollment.course_id = ?
+            ORDER BY student.user_id
+            """;
+
     private static final String EXECUTION_ENTITY_SELECT = """
             SELECT execution.execution_id,
                    execution.execution_code,
@@ -77,6 +96,7 @@ public class ExamExecutionRepository {
                    execution.opening_time,
                    execution.closing_time,
                    execution.duration_minutes,
+                   execution.cumulative_extension_minutes,
                    execution.status,
                    execution.created_by_user_id,
                    execution.created_at,
@@ -146,6 +166,7 @@ public class ExamExecutionRepository {
                    execution.opening_time,
                    execution.closing_time,
                    execution.duration_minutes,
+                   execution.cumulative_extension_minutes,
                    execution.status,
                    execution.created_by_user_id,
                    creator.full_name AS creator_name,
@@ -288,17 +309,24 @@ public class ExamExecutionRepository {
                 connection.setAutoCommit(false);
                 transactionStarted = true;
 
-                int durationMinutes = loadApprovedDuration(
+                ScheduleDetails scheduleDetails = loadApprovedScheduleDetails(
                         connection,
                         authenticatedManagerId,
                         command
                 );
+                LocalDateTime createdAt = LocalDateTime.now();
                 ExamExecution execution = insertWithUniqueCode(
                         connection,
                         authenticatedManagerId,
                         command,
-                        durationMinutes,
-                        LocalDateTime.now()
+                        scheduleDetails.durationMinutes(),
+                        createdAt
+                );
+                insertScheduleNotifications(
+                        connection,
+                        execution,
+                        scheduleDetails,
+                        createdAt
                 );
                 connection.commit();
                 return execution;
@@ -474,8 +502,11 @@ public class ExamExecutionRepository {
         }
     }
 
-    private int loadApprovedDuration(Connection connection, int authenticatedManagerId,
-                                     SchedulingCommand command)
+    private ScheduleDetails loadApprovedScheduleDetails(
+            Connection connection,
+            int authenticatedManagerId,
+            SchedulingCommand command
+    )
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 LOCK_APPROVED_EXAM_VERSION_SQL
@@ -490,8 +521,55 @@ public class ExamExecutionRepository {
                             "Exam version is not approved or accessible"
                     );
                 }
-                return resultSet.getInt("duration_minutes");
+                return new ScheduleDetails(
+                        resultSet.getInt("duration_minutes"),
+                        resultSet.getString("exam_title"),
+                        resultSet.getInt("course_id"),
+                        resultSet.getString("course_name")
+                );
             }
+        }
+    }
+
+    private void insertScheduleNotifications(
+            Connection connection,
+            ExamExecution execution,
+            ScheduleDetails details,
+            LocalDateTime createdAt
+    ) throws SQLException {
+        List<Integer> recipients = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                SCHEDULE_NOTIFICATION_RECIPIENTS_SQL
+        )) {
+            statement.setInt(1, details.courseId());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    recipients.add(resultSet.getInt("user_id"));
+                }
+            }
+        }
+
+        String message = details.examTitle() + " for " + details.courseName()
+                + " is scheduled. Execution code: " + execution.getExecutionCode()
+                + ". Opens: " + NOTIFICATION_TIME_FORMAT.format(
+                        execution.getOpeningTime())
+                + ". Closes: " + NOTIFICATION_TIME_FORMAT.format(
+                        execution.getClosingTime())
+                + ". Duration: " + execution.getDurationMinutes() + " minutes.";
+        for (Integer recipientUserId : recipients) {
+            NotificationRepository.insert(
+                    connection,
+                    recipientUserId,
+                    NotificationType.EXAM_SCHEDULED,
+                    "Exam scheduled",
+                    message,
+                    execution.getExamId(),
+                    execution.getExecutionId(),
+                    null,
+                    "exam-scheduled:" + execution.getExecutionId()
+                            + ":" + recipientUserId,
+                    createdAt
+            );
         }
     }
 
@@ -619,6 +697,7 @@ public class ExamExecutionRepository {
                 resultSet.getObject("opening_time", LocalDateTime.class),
                 resultSet.getObject("closing_time", LocalDateTime.class),
                 resultSet.getInt("duration_minutes"),
+                resultSet.getInt("cumulative_extension_minutes"),
                 parseExecutionStatus(resultSet.getString("status"), executionId),
                 resultSet.getInt("created_by_user_id"),
                 resultSet.getObject("created_at", LocalDateTime.class),
@@ -700,6 +779,7 @@ public class ExamExecutionRepository {
                 resultSet.getObject("opening_time", LocalDateTime.class),
                 resultSet.getObject("closing_time", LocalDateTime.class),
                 resultSet.getInt("duration_minutes"),
+                resultSet.getInt("cumulative_extension_minutes"),
                 ExecutionStatus.valueOf(resultSet.getString("status")),
                 resultSet.getInt("created_by_user_id"),
                 resultSet.getString("creator_name"),
@@ -771,6 +851,10 @@ public class ExamExecutionRepository {
                                      LocalDateTime closingTime) {
     }
 
+    private record ScheduleDetails(int durationMinutes, String examTitle,
+                                   int courseId, String courseName) {
+    }
+
     private record ExecutionEntityData(
             int executionId,
             String executionCode,
@@ -779,6 +863,7 @@ public class ExamExecutionRepository {
             LocalDateTime openingTime,
             LocalDateTime closingTime,
             int durationMinutes,
+            int cumulativeExtensionMinutes,
             ExecutionStatus status,
             int createdByUserId,
             LocalDateTime createdAt,
@@ -799,6 +884,7 @@ public class ExamExecutionRepository {
                     openingTime,
                     closingTime,
                     durationMinutes,
+                    cumulativeExtensionMinutes,
                     status,
                     createdByUserId,
                     createdAt,

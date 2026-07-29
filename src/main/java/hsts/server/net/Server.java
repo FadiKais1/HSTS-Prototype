@@ -13,6 +13,7 @@ import hsts.common.ExecutionIdPayload;
 import hsts.common.ExamVersionPayload;
 import hsts.common.ExamVersionSelectionPayload;
 import hsts.common.ExtendSubmissionTimePayload;
+import hsts.common.ExtendExecutionTimePayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
@@ -24,6 +25,8 @@ import hsts.common.RequestType;
 import hsts.common.RejectExamPayload;
 import hsts.common.RemoveBotSourcePayload;
 import hsts.common.ReportTargetPayload;
+import hsts.common.ReportExportPayload;
+import hsts.common.NotificationIdPayload;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.Response;
 import hsts.common.ReviewSubmissionPayload;
@@ -105,6 +108,17 @@ public class Server extends AbstractServer {
                   ReportService reportService,
                   CourseBotService courseBotService,
                   PrincipalOversightService principalOversightService) {
+        this(port, examManagementService, authService, examExecutionService,
+                reportService, courseBotService, principalOversightService, null);
+    }
+
+    public Server(int port, ExamManagementService examManagementService,
+                  AuthService authService,
+                  ExamExecutionService examExecutionService,
+                  ReportService reportService,
+                  CourseBotService courseBotService,
+                  PrincipalOversightService principalOversightService,
+                  NotificationService notificationService) {
         super(port);
         this.port = port;
         this.examManagementService = examManagementService;
@@ -113,6 +127,7 @@ public class Server extends AbstractServer {
         this.reportService = reportService;
         this.courseBotService = courseBotService;
         this.principalOversightService = principalOversightService;
+        this.notificationService = notificationService;
     }
 
     public void startServer() {
@@ -170,13 +185,16 @@ public class Server extends AbstractServer {
                      VALIDATE_EXECUTION_CODE, START_EXAM_ATTEMPT,
                      GET_ACTIVE_EXAM_ATTEMPT, SAVE_EXAM_ANSWER,
                      SUBMIT_EXAM_ATTEMPT, EXTEND_SUBMISSION_TIME,
+                     EXTEND_EXAM_EXECUTION,
                      LIST_EXECUTION_SUBMISSIONS, GET_SUBMISSION_FOR_REVIEW,
                      REVIEW_SUBMISSION_GRADE, PUBLISH_SUBMISSION_GRADE,
                      LIST_MY_PUBLISHED_GRADES, GET_MY_PUBLISHED_GRADE,
                      GET_MY_PUBLISHED_EXAM_REVIEW,
                      GET_MY_AUTHORED_EXAMS_REPORT, GET_TEACHER_EXAMS_REPORT,
                      GET_COURSE_EXAMS_REPORT, GET_STUDENT_EXAMS_REPORT,
-                     GET_EXAM_EXECUTION_REPORT, LIST_MY_COURSE_BOTS,
+                     GET_EXAM_EXECUTION_REPORT, EXPORT_REPORT,
+                     LIST_MY_NOTIFICATIONS, GET_UNREAD_NOTIFICATION_COUNT,
+                     MARK_NOTIFICATION_READ, LIST_MY_COURSE_BOTS,
                      CREATE_COURSE_BOT, UPDATE_COURSE_BOT, GET_BOT_SOURCES,
                      ADD_BOT_TEXT_SOURCE, UPLOAD_BOT_SOURCE,
                      ADD_BOT_QUESTION_SOURCES, REMOVE_BOT_SOURCE, GET_BOT_USAGE,
@@ -497,6 +515,22 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case EXTEND_EXAM_EXECUTION -> {
+                    if (!(request.getPayload()
+                            instanceof ExtendExecutionTimePayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Time extension data is missing"
+                        );
+                    }
+                    yield Response.success(
+                            "Exam execution extended successfully",
+                            requireExamExecutionService().extendExecutionTime(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
                 case LIST_EXECUTION_SUBMISSIONS -> {
                     if (!(request.getPayload() instanceof ExecutionIdPayload payload)) {
                         throw new IllegalArgumentException(
@@ -653,6 +687,56 @@ public class Server extends AbstractServer {
                             requireReportService().getExamExecutionReport(
                                     authenticatedUserId,
                                     payload.getTargetId()
+                            )
+                    );
+                }
+
+                case EXPORT_REPORT -> {
+                    if (!(request.getPayload() instanceof ReportExportPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Report export data is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Report exported successfully",
+                            requireReportService().exportReport(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
+                }
+
+                case LIST_MY_NOTIFICATIONS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Notifications loaded successfully",
+                            requireNotificationService().getMyNotifications(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case GET_UNREAD_NOTIFICATION_COUNT -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Unread notification count loaded successfully",
+                            requireNotificationService().getUnreadCount(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case MARK_NOTIFICATION_READ -> {
+                    if (!(request.getPayload() instanceof NotificationIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Notification data is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Notification marked as read",
+                            requireNotificationService().markAsRead(
+                                    authenticatedUserId,
+                                    payload.getNotificationId()
                             )
                     );
                 }
@@ -1023,6 +1107,13 @@ public class Server extends AbstractServer {
             throw new IllegalStateException("Report service is not configured");
         }
         return reportService;
+    }
+
+    private NotificationService requireNotificationService() {
+        if (notificationService == null) {
+            throw new IllegalStateException("Notification service is not configured");
+        }
+        return notificationService;
     }
 
     private CourseBotService requireCourseBotService() {

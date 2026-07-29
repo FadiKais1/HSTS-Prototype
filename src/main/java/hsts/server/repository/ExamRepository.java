@@ -5,6 +5,7 @@ import hsts.common.ExamQuestionDTO;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.ExamStatus;
+import hsts.common.type.NotificationType;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
 import hsts.server.entity.AnswerOption;
@@ -691,7 +692,10 @@ public class ExamRepository {
                 exam.getExamId(),
                 exam.getCurrentVersionNo(),
                 exam.getCourseId(),
-                exam.getReviewedAt()
+                exam.getReviewedAt(),
+                exam.getCreatedByUserId(),
+                exam.getExamCode(),
+                exam.getTitle()
         );
     }
 
@@ -706,7 +710,10 @@ public class ExamRepository {
                 exam.getCurrentVersionNo(),
                 exam.getCourseId(),
                 exam.getRejectionReason(),
-                exam.getReviewedAt()
+                exam.getReviewedAt(),
+                exam.getCreatedByUserId(),
+                exam.getExamCode(),
+                exam.getTitle()
         );
     }
 
@@ -1182,7 +1189,9 @@ public class ExamRepository {
     private boolean persistApproval(int authenticatedUserId, int examId,
                                     int expectedVersionNo,
                                     int expectedCourseId,
-                                    LocalDateTime reviewedAt) {
+                                    LocalDateTime reviewedAt,
+                                    int authorUserId, String examCode,
+                                    String examTitle) {
         return executeInTransaction("Failed to approve exam", connection -> {
             Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
                     connection,
@@ -1204,6 +1213,15 @@ public class ExamRepository {
                     currentExam.versionNo,
                     reviewedAt
             );
+            NotificationRepository.insert(
+                    connection, authorUserId, NotificationType.EXAM_APPROVED,
+                    "Exam approved",
+                    examTitle + " (" + examCode + ", version "
+                            + currentExam.versionNo + ") was approved.",
+                    examId, null, null,
+                    "exam-approved:" + examId + ":" + currentExam.versionNo,
+                    reviewedAt
+            );
             return true;
         });
     }
@@ -1211,7 +1229,9 @@ public class ExamRepository {
     private boolean persistRejection(int authenticatedUserId, int examId,
                                      int expectedVersionNo, int expectedCourseId,
                                      String reason,
-                                     LocalDateTime reviewedAt) {
+                                     LocalDateTime reviewedAt,
+                                     int authorUserId, String examCode,
+                                     String examTitle) {
         return executeInTransaction("Failed to reject exam", connection -> {
             Optional<LockedExam> lockedExam = lockCoordinatorCurrentExam(
                     connection,
@@ -1232,6 +1252,16 @@ public class ExamRepository {
                     examId,
                     currentExam.versionNo,
                     reason,
+                    reviewedAt
+            );
+            NotificationRepository.insert(
+                    connection, authorUserId, NotificationType.EXAM_REJECTED,
+                    "Exam rejected",
+                    examTitle + " (" + examCode + ", version "
+                            + currentExam.versionNo + ") was rejected. Reason: "
+                            + reason,
+                    examId, null, null,
+                    "exam-rejected:" + examId + ":" + currentExam.versionNo,
                     reviewedAt
             );
             return true;

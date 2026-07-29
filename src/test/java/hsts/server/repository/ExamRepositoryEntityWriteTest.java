@@ -34,6 +34,7 @@ public class ExamRepositoryEntityWriteTest {
     private static final String TEACHER_LOCK = "AND e.created_by_user_id = ?";
     private static final String COORDINATOR_LOCK = "JOIN subject_coordinators sc";
     private static final String VERSION_POINTER = "SET current_version_no = ?";
+    private static final String NOTIFICATION_INSERT = "INSERT INTO notifications";
 
     @Test
     public void invalidEntityStateFailsBeforeOpeningAConnection() {
@@ -264,6 +265,7 @@ public class ExamRepositoryEntityWriteTest {
                 .queryRows(lockedExam(3, ExamStatus.PENDING_APPROVAL));
         ExamRepositoryJdbcTestSupport.StatementPlan approve = approveDatabase
                 .plan("rejection_reason = NULL").updateResults(1);
+        approveDatabase.plan(NOTIFICATION_INSERT).updateResults(1);
         assertTrue(new ExamRepository(approveDatabase).persistApproval(1003, approved));
         assertEquals(1003, approve.updateExecutions.get(0).get(2));
         assertEquals(approved.getReviewedAt(), approve.updateExecutions.get(0).get(3));
@@ -277,6 +279,7 @@ public class ExamRepositoryEntityWriteTest {
                 .queryRows(lockedExam(3, ExamStatus.PENDING_APPROVAL));
         ExamRepositoryJdbcTestSupport.StatementPlan reject = rejectDatabase
                 .plan("rejection_reason = ?").updateResults(1);
+        rejectDatabase.plan(NOTIFICATION_INSERT).updateResults(1);
         assertTrue(new ExamRepository(rejectDatabase).persistRejection(1003, rejected));
         assertEquals("Needs revision", reject.updateExecutions.get(0).get(4));
         assertEquals(rejected.getReviewedAt(), reject.updateExecutions.get(0).get(3));

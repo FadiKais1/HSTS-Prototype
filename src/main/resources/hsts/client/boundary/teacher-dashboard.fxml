@@ -62,6 +62,9 @@
                 <Button fx:id="courseBotsButton" text="Course Bots" onAction="#handleCourseBots"
                         maxWidth="Infinity" prefHeight="46"
                         style="-fx-background-color: #4338ca; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                <Button fx:id="notificationsButton" text="Notifications"
+                        onAction="#handleNotifications" maxWidth="Infinity" prefHeight="46"
+                        style="-fx-background-color: #475569; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
             </VBox>
         </StackPane>
     </center>

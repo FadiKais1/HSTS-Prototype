@@ -4,11 +4,16 @@ import hsts.client.control.ExamClientController;
 import hsts.client.control.ExamExecutionClientController;
 import hsts.client.net.Client;
 import hsts.common.ExamExecutionSummaryDTO;
+import hsts.common.ExecutionSubmissionSummaryDTO;
+import hsts.common.ExtendSubmissionTimePayload;
+import hsts.common.ExtendExecutionTimePayload;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.LoginResult;
 import hsts.common.ScheduleExamExecutionPayload;
 import hsts.common.type.ExamStatus;
+import hsts.common.type.ExecutionStatus;
 import hsts.common.type.UserRole;
+import hsts.common.type.SubmissionStatus;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -24,6 +29,7 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 
@@ -44,6 +50,8 @@ public class ExamSchedulingPage {
             FXCollections.observableArrayList();
     private final ObservableList<ExamExecutionSummaryDTO> executions =
             FXCollections.observableArrayList();
+    private final ObservableList<ExecutionSubmissionSummaryDTO> submissions =
+            FXCollections.observableArrayList();
 
     private Stage stage;
     private Client client;
@@ -55,9 +63,13 @@ public class ExamSchedulingPage {
     private boolean examsLoading;
     private boolean executionsLoading;
     private boolean scheduling;
+    private boolean submissionsLoading;
+    private boolean individualExtensionPending;
+    private boolean executionExtensionPending;
     private long examRequestGeneration;
     private long executionRequestGeneration;
     private long scheduleRequestGeneration;
+    private long submissionRequestGeneration;
 
     @FXML private Label userLabel;
     @FXML private Label roleLabel;
@@ -85,12 +97,26 @@ public class ExamSchedulingPage {
     @FXML private TableColumn<ExamExecutionSummaryDTO, String> closingColumn;
     @FXML private TableColumn<ExamExecutionSummaryDTO, Number> durationColumn;
     @FXML private TableColumn<ExamExecutionSummaryDTO, String> statusColumn;
+    @FXML private Label extensionSummaryLabel;
+    @FXML private TableView<ExecutionSubmissionSummaryDTO> submissionTable;
+    @FXML private TableColumn<ExecutionSubmissionSummaryDTO, Number> submissionIdColumn;
+    @FXML private TableColumn<ExecutionSubmissionSummaryDTO, String> studentColumn;
+    @FXML private TableColumn<ExecutionSubmissionSummaryDTO, String> submissionStatusColumn;
+    @FXML private TableColumn<ExecutionSubmissionSummaryDTO, String> deadlineColumn;
+    @FXML private TableColumn<ExecutionSubmissionSummaryDTO, Number> individualMinutesColumn;
+    @FXML private TextField individualMinutesField;
+    @FXML private TextField individualReasonField;
+    @FXML private Button extendStudentButton;
+    @FXML private TextField executionMinutesField;
+    @FXML private TextField executionReasonField;
+    @FXML private Button extendExecutionButton;
 
     @FXML
     private void initialize() {
         configureExamSelector();
         configureTimeControls();
         configureExecutionTable();
+        configureSubmissionTable();
         setFeedback("Waiting for authenticated teacher or coordinator.");
         showGeneratedExecution(null);
         updateActionState();
@@ -188,6 +214,164 @@ public class ExamSchedulingPage {
                         ? ""
                         : data.getValue().getStatus().name()
         ));
+        executionTable.getSelectionModel().selectedItemProperty().addListener(
+                (observable, previous, selected) -> selectExecutionForExtensions(selected)
+        );
+    }
+
+    private void configureSubmissionTable() {
+        submissionTable.setItems(submissions);
+        submissionTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        submissionIdColumn.setCellValueFactory(data ->
+                new SimpleIntegerProperty(data.getValue().getSubmissionId()));
+        studentColumn.setCellValueFactory(data -> new SimpleStringProperty(
+                safe(data.getValue().getStudentName()) + " (#"
+                        + data.getValue().getStudentUserId() + ")"
+        ));
+        submissionStatusColumn.setCellValueFactory(data -> new SimpleStringProperty(
+                data.getValue().getStatus() == null ? ""
+                        : data.getValue().getStatus().name()
+        ));
+        deadlineColumn.setCellValueFactory(data -> new SimpleStringProperty(
+                formatDateTime(data.getValue().getDeadline())
+        ));
+        individualMinutesColumn.setCellValueFactory(data ->
+                new SimpleIntegerProperty(
+                        data.getValue().getIndividualExtensionMinutes()
+                ));
+        submissionTable.getSelectionModel().selectedItemProperty().addListener(
+                (observable, previous, selected) -> {
+                    individualMinutesField.clear();
+                    individualReasonField.clear();
+                    updateActionState();
+                }
+        );
+    }
+
+    private void selectExecutionForExtensions(ExamExecutionSummaryDTO selected) {
+        submissionRequestGeneration++;
+        submissions.clear();
+        submissionTable.getSelectionModel().clearSelection();
+        individualMinutesField.clear();
+        individualReasonField.clear();
+        executionMinutesField.clear();
+        executionReasonField.clear();
+        if (selected == null || closed) {
+            extensionSummaryLabel.setText("Select an execution to manage time extensions.");
+            submissionsLoading = false;
+            updateActionState();
+            return;
+        }
+        extensionSummaryLabel.setText(
+                "Effective duration: " + selected.getDurationMinutes()
+                        + " minutes · cumulative execution extension: "
+                        + selected.getCumulativeExtensionMinutes() + " minutes"
+        );
+        if (!isExtensionEligible(selected)) {
+            extensionSummaryLabel.setText(
+                    "Time extensions are available only while the execution "
+                            + "access window is open."
+            );
+            submissionsLoading = false;
+            updateActionState();
+            return;
+        }
+        loadSubmissions(selected.getExecutionId(), null);
+    }
+
+    private void loadSubmissions(int executionId, String completionMessage) {
+        long generation = ++submissionRequestGeneration;
+        submissionsLoading = true;
+        updateActionState();
+        executionClientController.getExecutionSubmissions(executionId)
+                .whenComplete((loaded, error) -> Platform.runLater(() -> {
+                    ExamExecutionSummaryDTO selected =
+                            executionTable.getSelectionModel().getSelectedItem();
+                    if (closed || generation != submissionRequestGeneration
+                            || selected == null
+                            || selected.getExecutionId() != executionId) return;
+                    submissionsLoading = false;
+                    if (error != null) {
+                        setFeedback(cleanError(error));
+                    } else {
+                        submissions.setAll(loaded);
+                        if (completionMessage != null) setFeedback(completionMessage);
+                    }
+                    updateActionState();
+                }));
+    }
+
+    @FXML
+    private void handleExtendStudent() {
+        ExecutionSubmissionSummaryDTO selected =
+                submissionTable.getSelectionModel().getSelectedItem();
+        if (selected == null || selected.getStatus() != SubmissionStatus.IN_PROGRESS
+                || individualExtensionPending) return;
+        Integer minutes = parsePositiveMinutes(individualMinutesField.getText());
+        if (minutes == null) {
+            setFeedback("Minutes must be a positive whole number.");
+            return;
+        }
+        String reason = individualReasonField.getText();
+        if (reason == null || reason.trim().isEmpty()) {
+            setFeedback("Extension reason is required");
+            return;
+        }
+        individualExtensionPending = true;
+        updateActionState();
+        executionClientController.extendSubmissionTime(
+                new ExtendSubmissionTimePayload(
+                        selected.getSubmissionId(), minutes, reason.trim()
+                )
+        ).whenComplete((unused, error) -> Platform.runLater(() -> {
+            individualExtensionPending = false;
+            ExamExecutionSummaryDTO execution =
+                    executionTable.getSelectionModel().getSelectedItem();
+            if (closed || execution == null) return;
+            if (error != null) {
+                setFeedback(cleanError(error));
+                updateActionState();
+            } else {
+                individualMinutesField.clear();
+                individualReasonField.clear();
+                loadSubmissions(execution.getExecutionId(),
+                        "Selected Student received additional time.");
+            }
+        }));
+    }
+
+    @FXML
+    private void handleExtendExecution() {
+        ExamExecutionSummaryDTO selected =
+                executionTable.getSelectionModel().getSelectedItem();
+        if (selected == null || executionExtensionPending) return;
+        Integer minutes = parsePositiveMinutes(executionMinutesField.getText());
+        if (minutes == null) {
+            setFeedback("Minutes must be a positive whole number.");
+            return;
+        }
+        String reason = executionReasonField.getText();
+        if (reason == null || reason.trim().isEmpty()) {
+            setFeedback("Extension reason is required");
+            return;
+        }
+        executionExtensionPending = true;
+        updateActionState();
+        executionClientController.extendExecutionTime(new ExtendExecutionTimePayload(
+                selected.getExecutionId(), minutes, reason.trim()
+        )).whenComplete((updated, error) -> Platform.runLater(() -> {
+            executionExtensionPending = false;
+            if (closed) return;
+            if (error != null) {
+                setFeedback(cleanError(error));
+                updateActionState();
+            } else {
+                executionMinutesField.clear();
+                executionReasonField.clear();
+                loadExecutions(updated.getExecutionId(),
+                        "Entire execution received additional time.");
+            }
+        }));
     }
 
     private void loadApprovedExams() {
@@ -340,6 +524,7 @@ public class ExamSchedulingPage {
         examRequestGeneration++;
         executionRequestGeneration++;
         scheduleRequestGeneration++;
+        submissionRequestGeneration++;
         backHandler = null;
         examClientController = null;
         executionClientController = null;
@@ -412,9 +597,27 @@ public class ExamSchedulingPage {
             refreshButton.setDisable(!configured || examsLoading || executionsLoading);
         }
         if (busyIndicator != null) {
-            boolean busy = examsLoading || executionsLoading || scheduling;
+            boolean busy = examsLoading || executionsLoading || scheduling
+                    || submissionsLoading || individualExtensionPending
+                    || executionExtensionPending;
             busyIndicator.setVisible(busy);
             busyIndicator.setManaged(busy);
+        }
+        ExamExecutionSummaryDTO selectedExecution = executionTable == null
+                ? null : executionTable.getSelectionModel().getSelectedItem();
+        ExecutionSubmissionSummaryDTO selectedSubmission = submissionTable == null
+                ? null : submissionTable.getSelectionModel().getSelectedItem();
+        if (extendStudentButton != null) {
+            extendStudentButton.setDisable(!configured || submissionsLoading
+                    || individualExtensionPending || executionExtensionPending
+                    || !isExtensionEligible(selectedExecution)
+                    || selectedSubmission == null
+                    || selectedSubmission.getStatus() != SubmissionStatus.IN_PROGRESS);
+        }
+        if (extendExecutionButton != null) {
+            extendExecutionButton.setDisable(!configured || submissionsLoading
+                    || individualExtensionPending || executionExtensionPending
+                    || !isExtensionEligible(selectedExecution));
         }
     }
 
@@ -469,8 +672,22 @@ public class ExamSchedulingPage {
         return !closed && !scheduling && selectedExam != null;
     }
 
+    static Integer parsePositiveMinutes(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            int minutes = Integer.parseInt(value.trim());
+            return minutes > 0 ? minutes : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
     static boolean isSchedulingRole(UserRole role) {
         return role == UserRole.TEACHER || role == UserRole.COORDINATOR;
+    }
+
+    static boolean isExtensionEligible(ExamExecutionSummaryDTO execution) {
+        return execution != null && execution.getStatus() == ExecutionStatus.OPEN;
     }
 
     private static LocalDateTime dateTime(LocalDate date, int hour, int minute) {

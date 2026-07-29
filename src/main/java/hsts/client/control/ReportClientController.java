@@ -3,6 +3,8 @@ package hsts.client.control;
 import hsts.client.net.Client;
 import hsts.common.ReportSummaryDTO;
 import hsts.common.ReportTargetPayload;
+import hsts.common.ReportExportPayload;
+import hsts.common.ReportExportResult;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
@@ -66,6 +68,32 @@ public class ReportClientController {
                 RequestType.GET_EXAM_EXECUTION_REPORT,
                 executionId
         );
+    }
+
+    public CompletableFuture<ReportExportResult> exportReport(
+            ReportExportPayload payload
+    ) {
+        if (payload == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("Report export data is required")
+            );
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            Response response = requestSender.apply(
+                    new Request(RequestType.EXPORT_REPORT, payload)
+            );
+            if (response == null) throw new IllegalStateException(NULL_RESPONSE);
+            if (!response.isSuccess()) {
+                String message = response.getMessage();
+                throw new IllegalStateException(
+                        message == null || message.isBlank() ? REQUEST_FAILED : message
+                );
+            }
+            if (!(response.getPayload() instanceof ReportExportResult result)) {
+                throw new IllegalStateException("Invalid report export response from server");
+            }
+            return result;
+        });
     }
 
     private CompletableFuture<ReportSummaryDTO> sendTargetRequest(

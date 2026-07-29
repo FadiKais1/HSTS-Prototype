@@ -34,6 +34,8 @@ public class MainServerWiringTest {
         assertEquals(1, occurrences(source, "new StudentProfileRepository()"));
         assertEquals(1, occurrences(source, "new GradingService()"));
         assertEquals(1, occurrences(source, "new ReportRepository()"));
+        assertEquals(1, occurrences(source, "new NotificationRepository()"));
+        assertEquals(1, occurrences(source, "new NotificationService("));
         assertEquals(1, occurrences(source, "new ReportService("));
         assertEquals(1, occurrences(source, "new ExamExecutionService("));
         assertEquals(1, occurrences(source, "new CourseBotRepository()"));
@@ -68,7 +70,7 @@ public class MainServerWiringTest {
         assertTrue(normalized.contains(
                 "new Server( port, examManagementService, authService, "
                         + "examExecutionService, reportService, courseBotService, "
-                        + "principalOversightService )"
+                        + "principalOversightService, notificationService )"
         ));
     }
 

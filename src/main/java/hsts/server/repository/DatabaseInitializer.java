@@ -459,6 +459,9 @@ public class DatabaseInitializer {
             createExamSubmissionsTable(connection);
             createStudentAnswersTable(connection);
             createSubmissionTimeExtensionsTable(connection);
+            createExecutionTimeExtensionsTable(connection);
+            createNotificationsTable(connection);
+            ensureNotificationTypeConstraint(connection);
             createExamExecutionDecilesTable(connection);
             migrateExecutionSchemaColumns(connection);
             backfillExecutionUpdatedAt(connection);
@@ -525,6 +528,7 @@ public class DatabaseInitializer {
                     opening_time DATETIME NOT NULL,
                     closing_time DATETIME NOT NULL,
                     duration_minutes INT NOT NULL,
+                    cumulative_extension_minutes INT NOT NULL DEFAULT 0,
                     status VARCHAR(32) NOT NULL,
                     created_by_user_id INT NOT NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -553,6 +557,9 @@ public class DatabaseInitializer {
                         CHECK (opening_time < closing_time),
                     CONSTRAINT chk_exam_executions_duration
                         CHECK (duration_minutes > 0),
+                    CONSTRAINT chk_exam_executions_extension
+                        CHECK (cumulative_extension_minutes >= 0
+                            AND cumulative_extension_minutes < duration_minutes),
                     CONSTRAINT chk_exam_executions_status
                         CHECK (status IN ('SCHEDULED', 'OPEN', 'CLOSED')),
                     CONSTRAINT chk_exam_executions_counts
@@ -713,6 +720,107 @@ public class DatabaseInitializer {
                 """);
     }
 
+    private void createExecutionTimeExtensionsTable(Connection connection)
+            throws SQLException {
+        if (tableExists(connection, "execution_time_extensions")) {
+            return;
+        }
+        executeSchemaStatement(connection, """
+                CREATE TABLE execution_time_extensions (
+                    extension_id INT NOT NULL AUTO_INCREMENT,
+                    execution_id INT NOT NULL,
+                    added_minutes INT NOT NULL,
+                    reason TEXT NOT NULL,
+                    extended_by_user_id INT NOT NULL,
+                    created_at DATETIME(6) NOT NULL,
+                    PRIMARY KEY (extension_id),
+                    KEY idx_execution_time_extensions_execution_created
+                        (execution_id, created_at),
+                    CONSTRAINT fk_execution_time_extensions_execution
+                        FOREIGN KEY (execution_id)
+                        REFERENCES exam_executions (execution_id) ON DELETE CASCADE,
+                    CONSTRAINT fk_execution_time_extensions_user
+                        FOREIGN KEY (extended_by_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_execution_time_extensions_minutes
+                        CHECK (added_minutes > 0)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void createNotificationsTable(Connection connection) throws SQLException {
+        if (tableExists(connection, "notifications")) {
+            return;
+        }
+        executeSchemaStatement(connection, """
+                CREATE TABLE notifications (
+                    notification_id INT NOT NULL AUTO_INCREMENT,
+                    recipient_user_id INT NOT NULL,
+                    notification_type VARCHAR(32) NOT NULL,
+                    title VARCHAR(160) NOT NULL,
+                    message TEXT NOT NULL,
+                    related_exam_id INT NULL,
+                    related_execution_id INT NULL,
+                    related_submission_id INT NULL,
+                    deduplication_key VARCHAR(160)
+                        CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                    created_at DATETIME(6) NOT NULL,
+                    read_at DATETIME(6) NULL,
+                    PRIMARY KEY (notification_id),
+                    CONSTRAINT uq_notifications_deduplication
+                        UNIQUE (deduplication_key),
+                    KEY idx_notifications_recipient_created
+                        (recipient_user_id, created_at),
+                    KEY idx_notifications_recipient_read
+                        (recipient_user_id, read_at),
+                    CONSTRAINT fk_notifications_recipient
+                        FOREIGN KEY (recipient_user_id) REFERENCES users (user_id),
+                    CONSTRAINT chk_notifications_type CHECK (notification_type IN
+                        ('EXAM_APPROVED', 'EXAM_REJECTED', 'EXAM_SCHEDULED',
+                         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED')),
+                    CONSTRAINT chk_notifications_read_time
+                        CHECK (read_at IS NULL OR read_at >= created_at)
+                ) ENGINE=InnoDB
+                """);
+    }
+
+    private void ensureNotificationTypeConstraint(Connection connection)
+            throws SQLException {
+        String checkClause = null;
+        String lookupSql = """
+                SELECT checks.CHECK_CLAUSE
+                FROM information_schema.TABLE_CONSTRAINTS table_constraints
+                JOIN information_schema.CHECK_CONSTRAINTS checks
+                  ON checks.CONSTRAINT_SCHEMA = table_constraints.CONSTRAINT_SCHEMA
+                 AND checks.CONSTRAINT_NAME = table_constraints.CONSTRAINT_NAME
+                WHERE table_constraints.CONSTRAINT_SCHEMA = DATABASE()
+                  AND table_constraints.TABLE_NAME = 'notifications'
+                  AND table_constraints.CONSTRAINT_NAME = 'chk_notifications_type'
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(lookupSql);
+             ResultSet resultSet = statement.executeQuery()) {
+            if (resultSet.next()) {
+                checkClause = resultSet.getString("CHECK_CLAUSE");
+            }
+        }
+        if (checkClause != null && checkClause.contains("EXAM_SCHEDULED")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            if (checkClause != null) {
+                statement.execute("""
+                        ALTER TABLE notifications
+                        DROP CHECK chk_notifications_type
+                        """);
+            }
+            statement.execute("""
+                    ALTER TABLE notifications
+                    ADD CONSTRAINT chk_notifications_type CHECK (notification_type IN
+                        ('EXAM_APPROVED', 'EXAM_REJECTED', 'EXAM_SCHEDULED',
+                         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED'))
+                    """);
+        }
+    }
+
     private void migrateExecutionSchemaColumns(Connection connection) throws SQLException {
         addColumnIfMissing(connection, "student_profiles", "user_id", "INT NOT NULL");
         addColumnIfMissing(connection, "student_profiles", "identity_number_hash",
@@ -737,6 +845,8 @@ public class DatabaseInitializer {
         addColumnIfMissing(connection, "exam_executions", "opening_time", "DATETIME NOT NULL");
         addColumnIfMissing(connection, "exam_executions", "closing_time", "DATETIME NOT NULL");
         addColumnIfMissing(connection, "exam_executions", "duration_minutes", "INT NOT NULL");
+        addColumnIfMissing(connection, "exam_executions",
+                "cumulative_extension_minutes", "INT NOT NULL DEFAULT 0");
         addColumnIfMissing(connection, "exam_executions", "status", "VARCHAR(32) NOT NULL");
         addColumnIfMissing(connection, "exam_executions", "created_by_user_id", "INT NOT NULL");
         addColumnIfMissing(connection, "exam_executions", "created_at",
@@ -1077,6 +1187,12 @@ public class DatabaseInitializer {
         ensureConstraint(connection, "exam_executions", "chk_exam_executions_duration", """
                 ALTER TABLE exam_executions
                 ADD CONSTRAINT chk_exam_executions_duration CHECK (duration_minutes > 0)
+                """);
+        ensureConstraint(connection, "exam_executions", "chk_exam_executions_extension", """
+                ALTER TABLE exam_executions
+                ADD CONSTRAINT chk_exam_executions_extension
+                CHECK (cumulative_extension_minutes >= 0
+                    AND cumulative_extension_minutes < duration_minutes)
                 """);
         ensureConstraint(connection, "exam_executions", "chk_exam_executions_status", """
                 ALTER TABLE exam_executions

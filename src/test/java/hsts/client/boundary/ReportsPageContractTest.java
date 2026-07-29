@@ -4,6 +4,7 @@ import hsts.common.ExamStatisticsDTO;
 import hsts.common.ReportSummaryDTO;
 import hsts.common.ScoreBandDTO;
 import hsts.common.type.ReportType;
+import hsts.common.type.ReportExportFormat;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -29,6 +30,7 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -145,6 +147,85 @@ public class ReportsPageContractTest {
     }
 
     @Test
+    public void exportFiltersFilenamesAndPermissionMessageAreFormatSafe() {
+        javafx.stage.FileChooser.ExtensionFilter pdf =
+                ReportsPage.extensionFilter(ReportExportFormat.PDF);
+        javafx.stage.FileChooser.ExtensionFilter excel =
+                ReportsPage.extensionFilter(ReportExportFormat.XLSX);
+        assertEquals("PDF files (*.pdf)", pdf.getDescription());
+        assertEquals(List.of("*.pdf"), pdf.getExtensions());
+        assertEquals("Excel workbooks (*.xlsx)", excel.getDescription());
+        assertEquals(List.of("*.xlsx"), excel.getExtensions());
+        assertEquals("report.pdf", ReportsPage.normalizeFilename(
+                "report.xlsx", ReportExportFormat.PDF
+        ));
+        assertEquals("report.xlsx", ReportsPage.normalizeFilename(
+                "report.pdf.xlsx", ReportExportFormat.XLSX
+        ));
+        assertEquals("report.pdf", ReportsPage.normalizeFilename(
+                "report", ReportExportFormat.PDF
+        ));
+        assertEquals(
+                "The selected folder does not allow this application to save files. "
+                        + "Choose another folder or allow Java through Windows "
+                        + "Controlled Folder Access.",
+                ReportsPage.saveFailureMessage(
+                        new java.util.concurrent.CompletionException(
+                                new AccessDeniedException("Desktop")
+                        )
+                )
+        );
+    }
+
+    @Test
+    public void exportWritesAtomicallyAndCleansTemporaryFileOnFailure()
+            throws Exception {
+        Path directory = Files.createTempDirectory("hsts-report-save-");
+        try {
+            Path destination = directory.resolve("report.pdf");
+            Files.writeString(destination, "old");
+            byte[] expected = "%PDF-safe".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+
+            ReportsPage.writeAtomically(destination, expected);
+
+            assertTrue(java.util.Arrays.equals(expected, Files.readAllBytes(destination)));
+            Path occupied = Files.createDirectory(directory.resolve("occupied.pdf"));
+            Files.writeString(occupied.resolve("keep.txt"), "keep");
+            assertThrows(Exception.class, () ->
+                    ReportsPage.writeAtomically(occupied, expected));
+            try (java.util.stream.Stream<Path> files = Files.list(directory)) {
+                assertFalse(files.anyMatch(path -> path.getFileName().toString()
+                        .endsWith(".tmp")));
+            }
+        } finally {
+            try (java.util.stream.Stream<Path> paths = Files.walk(directory)) {
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (java.io.IOException ignored) {
+                        // Best-effort cleanup of test-only temporary files.
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    public void exportRetryReusesGeneratedBytesAndCancelWritesNothing() throws Exception {
+        String source = Files.readString(SOURCE);
+        String exportMethod = methodSource(source, "private void exportCurrentReport(");
+        String chooserMethod = methodSource(source, "private void chooseExportDestination(");
+        assertTrue(exportMethod.indexOf("pendingExport != null")
+                < exportMethod.indexOf("exportReport(payload)"));
+        assertTrue(chooserMethod.contains("if (selected == null)"));
+        assertTrue(chooserMethod.indexOf("if (selected == null)")
+                < chooserMethod.indexOf("writeAtomically("));
+        assertTrue(chooserMethod.contains("CompletableFuture.runAsync("));
+        assertFalse(chooserMethod.contains(".join("));
+        assertFalse(chooserMethod.contains(".get("));
+    }
+
+    @Test
     public void boundaryUsesOnlyApprovedControllerAndReportContracts() throws Exception {
         Method configure = ReportsPage.class.getMethod(
                 "configure",
@@ -166,7 +247,7 @@ public class ReportsPageContractTest {
                 "client.connect(", "client.disconnect(", "hsts.common.Request",
                 "hsts.common.Response", "hsts.server.", "studentId",
                 "teacherFeedback", "adjustmentReason", "correctOption",
-                "selectedOption", "password", "identityHash", "java.io.File"
+                "selectedOption", "password", "identityHash", "server.entity"
         )) {
             assertFalse("Forbidden ReportsPage token: " + forbidden,
                     source.contains(forbidden));
@@ -231,7 +312,8 @@ public class ReportsPageContractTest {
                 "detailPublishedCaption", "detailAverageCaption", "detailMedianCaption",
                 "detailStartedCaption", "detailSubmittedCaption",
                 "detailAutoSubmittedCaption",
-                "scoreBandAxis", "submissionCountAxis"
+                "scoreBandAxis", "submissionCountAxis", "exportPdfButton",
+                "exportExcelButton"
         )) {
             assertTrue("Missing fx:id " + required, ids.containsKey(required));
         }
@@ -246,7 +328,10 @@ public class ReportsPageContractTest {
 
         Set<String> actions = new HashSet<>();
         collectActions(document.getDocumentElement(), actions);
-        assertEquals(Set.of("handleLoadReport", "handleRefresh", "handleBack"), actions);
+        assertEquals(Set.of(
+                "handleLoadReport", "handleRefresh", "handleBack",
+                "handleExportPdf", "handleExportExcel"
+        ), actions);
         for (String action : actions) {
             Method method = ReportsPage.class.getDeclaredMethod(action);
             assertTrue(method.isAnnotationPresent(FXML.class));
@@ -274,7 +359,7 @@ public class ReportsPageContractTest {
         for (String forbidden : List.of(
                 "new Client", "sendRequest", "RequestType", "repository",
                 "correct option", "selected option", "password", "hash",
-                "feedback", "adjustment", "export"
+                "feedback", "adjustment", "client.sendrequest", "java.io.file"
         )) {
             assertFalse("Forbidden FXML token: " + forbidden,
                     fxml.toLowerCase().contains(forbidden.toLowerCase()));
@@ -341,6 +426,21 @@ public class ReportsPageContractTest {
             case "NumberAxis" -> javafx.scene.chart.NumberAxis.class;
             default -> throw new AssertionError("Unexpected fx:id element " + tagName);
         };
+    }
+
+    private static String methodSource(String source, String methodStart) {
+        int start = source.indexOf(methodStart);
+        if (start < 0) throw new AssertionError("Method not found: " + methodStart);
+        int openingBrace = source.indexOf('{', start);
+        int depth = 0;
+        for (int index = openingBrace; index < source.length(); index++) {
+            char character = source.charAt(index);
+            if (character == '{') depth++;
+            else if (character == '}' && --depth == 0) {
+                return source.substring(start, index + 1);
+            }
+        }
+        throw new AssertionError("Method not closed: " + methodStart);
     }
 
     public static final class RenderingHarness {
