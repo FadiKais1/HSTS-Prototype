@@ -95,7 +95,8 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.GET_EXAM_VERSION_FOR_PRINCIPAL,
                         RequestType.LIST_ALL_EXECUTIONS,
                         RequestType.LIST_EXECUTION_RESULTS_FOR_PRINCIPAL,
-                        RequestType.GET_SUBMISSION_RESULT_FOR_PRINCIPAL
+                        RequestType.GET_SUBMISSION_RESULT_FOR_PRINCIPAL,
+                        RequestType.GET_MY_PUBLISHED_EXAM_REVIEW
                 },
                 RequestType.values()
         );

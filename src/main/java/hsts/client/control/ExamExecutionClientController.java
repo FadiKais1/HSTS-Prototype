@@ -9,6 +9,7 @@ import hsts.common.ExecutionIdPayload;
 import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.PublishedGradeDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishedGradeSummaryDTO;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.Request;
@@ -233,6 +234,27 @@ public class ExamExecutionClientController {
                         responsePayload,
                         PublishedGradeDTO.class,
                         "Invalid published-grade response from server"
+                )
+        );
+    }
+
+    public CompletableFuture<PublishedExamReviewDTO> getMyPublishedExamReview(
+            int submissionId
+    ) {
+        if (submissionId <= 0) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("Submission ID must be positive")
+            );
+        }
+        return sendRequest(
+                new Request(
+                        RequestType.GET_MY_PUBLISHED_EXAM_REVIEW,
+                        new SubmissionIdPayload(submissionId)
+                ),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        PublishedExamReviewDTO.class,
+                        "Invalid published exam-review response from server"
                 )
         );
     }

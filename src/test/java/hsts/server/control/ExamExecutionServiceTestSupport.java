@@ -6,6 +6,7 @@ import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.StudentAnswerDTO;
 import hsts.common.StudentExamQuestionDTO;
 import hsts.common.SubmissionReviewDTO;
@@ -483,6 +484,7 @@ final class ExamExecutionServiceTestSupport {
         int managerReviewCalls;
         int publishedSummaryCalls;
         int publishedGradeCalls;
+        int publishedReviewCalls;
         int persistReviewCalls;
         int persistPublicationCalls;
         int lastStudentId;
@@ -499,6 +501,7 @@ final class ExamExecutionServiceTestSupport {
         SubmissionReviewDTO managerReview;
         List<PublishedGradeSummaryDTO> publishedSummaries = new ArrayList<>();
         PublishedGradeDTO publishedGrade;
+        PublishedExamReviewDTO publishedReview;
         StudentAnswer lastAnswerEntity;
         int lastAddedMinutes;
         String lastReason;
@@ -633,6 +636,18 @@ final class ExamExecutionServiceTestSupport {
         }
 
         @Override
+        public Optional<PublishedExamReviewDTO> findPublishedExamReviewForStudent(
+                int authenticatedStudentUserId,
+                int submissionId
+        ) {
+            publishedReviewCalls++;
+            failIfConfigured();
+            lastStudentId = authenticatedStudentUserId;
+            lastSubmissionId = submissionId;
+            return Optional.ofNullable(publishedReview);
+        }
+
+        @Override
         public ExamSubmission persistAnswer(
                 int authenticatedStudentUserId,
                 ExamSubmission submission,
@@ -741,7 +756,7 @@ final class ExamExecutionServiceTestSupport {
                     + expiredEntityCalls + persistStudentCalls
                     + persistAutomaticCalls + persistExtensionCalls
                     + managerSummaryCalls + managerReviewCalls
-                    + publishedSummaryCalls + publishedGradeCalls
+                    + publishedSummaryCalls + publishedGradeCalls + publishedReviewCalls
                     + persistReviewCalls + persistPublicationCalls;
         }
 

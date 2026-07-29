@@ -2,6 +2,8 @@ package hsts.server.repository;
 
 import hsts.common.ExamAttemptDTO;
 import hsts.common.ExecutionSubmissionSummaryDTO;
+import hsts.common.PublishedExamQuestionReviewDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
 import hsts.common.StudentAnswerDTO;
@@ -9,6 +11,7 @@ import hsts.common.StudentExamQuestionDTO;
 import hsts.common.SubmissionAnswerReviewDTO;
 import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.ExecutionStatus;
+import hsts.common.type.PublishedAnswerOutcome;
 import hsts.common.type.SubmissionStatus;
 import hsts.server.entity.ExamExecution;
 import hsts.server.entity.ExamSubmission;
@@ -759,6 +762,100 @@ public class ExamSubmissionRepository {
               AND submission.published_at IS NOT NULL
             """;
 
+    private static final String STUDENT_PUBLISHED_REVIEW_HEADER_SQL = """
+            SELECT submission.submission_id, submission.execution_id,
+                   execution.execution_code, execution.exam_id,
+                   execution.exam_version_no, version.title AS exam_title,
+                   exam.course_id, course.name AS course_name,
+                   submission.status, submission.final_score,
+                   submission.teacher_feedback, submission.submitted_at,
+                   submission.reviewed_at, submission.published_at,
+                   (SELECT COUNT(*)
+                      FROM exam_version_questions selection
+                     WHERE selection.exam_id = execution.exam_id
+                       AND selection.exam_version_no = execution.exam_version_no)
+                       AS expected_question_count,
+                   (SELECT COUNT(*)
+                      FROM student_answers answer
+                      LEFT JOIN exam_version_questions selection
+                        ON selection.exam_id = execution.exam_id
+                       AND selection.exam_version_no = execution.exam_version_no
+                       AND selection.question_id = answer.question_id
+                       AND selection.question_version_no = answer.question_version_no
+                     WHERE answer.submission_id = submission.submission_id
+                       AND selection.question_id IS NULL)
+                       AS invalid_answer_count
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users student
+              ON student.user_id = ?
+             AND student.role = 'STUDENT'
+             AND student.status = 'ACTIVE'
+            WHERE submission.submission_id = ?
+              AND submission.student_user_id = student.user_id
+              AND submission.status = 'PUBLISHED'
+              AND submission.final_score IS NOT NULL
+              AND submission.submitted_at IS NOT NULL
+              AND submission.published_at IS NOT NULL
+            """;
+
+    private static final String STUDENT_PUBLISHED_REVIEW_QUESTIONS_SQL = """
+            SELECT selection.order_number, selection.question_id,
+                   selection.question_version_no, selection.score AS maximum_score,
+                   question_version.content, question_version.topic,
+                   question_version.difficulty,
+                   question_version.question_type,
+                   question_version.illustration_path,
+                   question_version.correct_option_number,
+                   (SELECT COUNT(*)
+                      FROM answer_options counted_option
+                     WHERE counted_option.question_id = selection.question_id
+                       AND counted_option.version_no = selection.question_version_no)
+                       AS option_count,
+                   option_1.option_text AS answer_option_1,
+                   option_2.option_text AS answer_option_2,
+                   option_3.option_text AS answer_option_3,
+                   option_4.option_text AS answer_option_4,
+                   answer.answer_id,
+                   answer.question_version_no AS answered_question_version_no,
+                   answer.selected_option_number,
+                   answer.is_correct,
+                   answer.score_received AS awarded_score
+            FROM exam_version_questions selection
+            JOIN question_versions question_version
+              ON question_version.question_id = selection.question_id
+             AND question_version.version_no = selection.question_version_no
+            JOIN answer_options option_1
+              ON option_1.question_id = selection.question_id
+             AND option_1.version_no = selection.question_version_no
+             AND option_1.option_number = 1
+            JOIN answer_options option_2
+              ON option_2.question_id = selection.question_id
+             AND option_2.version_no = selection.question_version_no
+             AND option_2.option_number = 2
+            JOIN answer_options option_3
+              ON option_3.question_id = selection.question_id
+             AND option_3.version_no = selection.question_version_no
+             AND option_3.option_number = 3
+            JOIN answer_options option_4
+              ON option_4.question_id = selection.question_id
+             AND option_4.version_no = selection.question_version_no
+             AND option_4.option_number = 4
+            LEFT JOIN student_answers answer
+              ON answer.submission_id = ?
+             AND answer.question_id = selection.question_id
+             AND answer.question_version_no = selection.question_version_no
+            WHERE selection.exam_id = ?
+              AND selection.exam_version_no = ?
+            ORDER BY selection.order_number ASC
+            """;
+
     private final DatabaseController databaseController;
     private final ReportRepository reportRepository;
 
@@ -1081,6 +1178,41 @@ public class ExamSubmissionRepository {
             }
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to load published grade", exception);
+        }
+    }
+
+    public Optional<PublishedExamReviewDTO> findPublishedExamReviewForStudent(
+            int authenticatedStudentUserId, int submissionId
+    ) {
+        requirePositivePublishedReviewId(
+                authenticatedStudentUserId, "Student user ID must be positive"
+        );
+        requirePositivePublishedReviewId(
+                submissionId, "Submission ID must be positive"
+        );
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     STUDENT_PUBLISHED_REVIEW_HEADER_SQL
+             )) {
+            statement.setInt(1, authenticatedStudentUserId);
+            statement.setInt(2, submissionId);
+            PublishedReviewHeader header;
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) return Optional.empty();
+                header = mapPublishedReviewHeader(resultSet);
+                if (resultSet.next()) {
+                    throw new IllegalArgumentException(
+                            "Duplicate published exam review: " + submissionId
+                    );
+                }
+            }
+            return Optional.of(header.toDto(loadPublishedReviewQuestions(
+                    connection, header
+            )));
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load published exam review", exception
+            );
         }
     }
 
@@ -2043,6 +2175,183 @@ public class ExamSubmissionRepository {
         );
     }
 
+    private PublishedReviewHeader mapPublishedReviewHeader(ResultSet resultSet)
+            throws SQLException {
+        int submissionId = resultSet.getInt("submission_id");
+        if (parseSubmissionStatus(resultSet.getString("status"), submissionId)
+                != SubmissionStatus.PUBLISHED) {
+            throw new IllegalArgumentException(
+                    "Published exam review status is invalid: " + submissionId
+            );
+        }
+        int expectedQuestionCount = resultSet.getInt("expected_question_count");
+        if (expectedQuestionCount <= 0) {
+            throw new IllegalArgumentException(
+                    "Published exam review questions are missing: " + submissionId
+            );
+        }
+        if (resultSet.getInt("invalid_answer_count") != 0) {
+            throw new IllegalArgumentException(
+                    "Published exam review answer identity is invalid: " + submissionId
+            );
+        }
+        LocalDateTime submittedAt = resultSet.getObject(
+                "submitted_at", LocalDateTime.class
+        );
+        if (submittedAt == null) {
+            throw new IllegalArgumentException(
+                    "Published exam submission timestamp is missing: " + submissionId
+            );
+        }
+        return new PublishedReviewHeader(
+                submissionId,
+                resultSet.getInt("execution_id"),
+                resultSet.getString("execution_code"),
+                resultSet.getInt("exam_id"),
+                resultSet.getInt("exam_version_no"),
+                resultSet.getString("exam_title"),
+                resultSet.getInt("course_id"),
+                resultSet.getString("course_name"),
+                readStoredScore(resultSet, "final_score", true,
+                        "Published final score", submissionId),
+                resultSet.getString("teacher_feedback"),
+                submittedAt,
+                resultSet.getObject("reviewed_at", LocalDateTime.class),
+                requirePublishedAt(resultSet, submissionId),
+                expectedQuestionCount
+        );
+    }
+
+    private List<PublishedExamQuestionReviewDTO> loadPublishedReviewQuestions(
+            Connection connection, PublishedReviewHeader header
+    ) throws SQLException {
+        List<PublishedExamQuestionReviewDTO> questions = new ArrayList<>();
+        Set<Integer> orders = new HashSet<>();
+        Set<String> identities = new HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                STUDENT_PUBLISHED_REVIEW_QUESTIONS_SQL
+        )) {
+            statement.setInt(1, header.submissionId());
+            statement.setInt(2, header.examId());
+            statement.setInt(3, header.examVersionNo());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    int order = resultSet.getInt("order_number");
+                    int questionId = resultSet.getInt("question_id");
+                    int versionNo = resultSet.getInt("question_version_no");
+                    String identity = questionId + ":" + versionNo;
+                    if (order <= 0 || !orders.add(order)) {
+                        throw new IllegalArgumentException(
+                                "Published exam question order is invalid: "
+                                        + header.submissionId()
+                        );
+                    }
+                    if (!identities.add(identity)) {
+                        throw new IllegalArgumentException(
+                                "Published exam question identity is duplicated: "
+                                        + header.submissionId()
+                        );
+                    }
+                    if (resultSet.getInt("option_count") != 4) {
+                        throw new IllegalArgumentException(
+                                "Published exam answer options are invalid: " + questionId
+                        );
+                    }
+                    questions.add(mapPublishedReviewQuestion(
+                            resultSet, header.submissionId()
+                    ));
+                }
+            }
+        }
+        if (questions.size() != header.expectedQuestionCount()) {
+            throw new IllegalArgumentException(
+                    "Published exam review question snapshot is incomplete: "
+                            + header.submissionId()
+            );
+        }
+        for (int index = 0; index < questions.size(); index++) {
+            if (questions.get(index).getOrderNumber() != index + 1) {
+                throw new IllegalArgumentException(
+                        "Published exam question order is not contiguous: "
+                                + header.submissionId()
+                );
+            }
+        }
+        return List.copyOf(questions);
+    }
+
+    private PublishedExamQuestionReviewDTO mapPublishedReviewQuestion(
+            ResultSet resultSet, int submissionId
+    ) throws SQLException {
+        int questionId = resultSet.getInt("question_id");
+        int questionVersionNo = resultSet.getInt("question_version_no");
+        int correctOption = resultSet.getInt("correct_option_number");
+        BigDecimal maximumScore = readMaximumScore(resultSet, submissionId);
+        Integer answerId = resultSet.getObject("answer_id", Integer.class);
+        Integer selectedOption = null;
+        BigDecimal awardedScore;
+        PublishedAnswerOutcome outcome;
+        if (answerId == null) {
+            awardedScore = BigDecimal.ZERO.setScale(maximumScore.scale());
+            outcome = PublishedAnswerOutcome.UNANSWERED;
+        } else {
+            Integer answeredVersion = resultSet.getObject(
+                    "answered_question_version_no", Integer.class
+            );
+            selectedOption = resultSet.getObject(
+                    "selected_option_number", Integer.class
+            );
+            Boolean persistedCorrect = resultSet.getObject("is_correct", Boolean.class);
+            awardedScore = readStoredScore(
+                    resultSet, "awarded_score", true,
+                    "Published answer score", submissionId
+            );
+            if (answeredVersion == null || answeredVersion != questionVersionNo
+                    || selectedOption == null || persistedCorrect == null) {
+                throw new IllegalArgumentException(
+                        "Published answer state is incomplete: " + questionId
+                );
+            }
+            boolean selectionIsCorrect = selectedOption == correctOption;
+            if (persistedCorrect != selectionIsCorrect) {
+                throw new IllegalArgumentException(
+                        "Published answer correctness is inconsistent: " + questionId
+                );
+            }
+            if (selectionIsCorrect
+                    && awardedScore.compareTo(maximumScore) != 0) {
+                throw new IllegalArgumentException(
+                        "Published correct-answer score is inconsistent: " + questionId
+                );
+            }
+            if (!selectionIsCorrect
+                    && awardedScore.compareTo(BigDecimal.ZERO) != 0) {
+                throw new IllegalArgumentException(
+                        "Published incorrect-answer score is inconsistent: " + questionId
+                );
+            }
+            outcome = selectionIsCorrect
+                    ? PublishedAnswerOutcome.CORRECT
+                    : PublishedAnswerOutcome.INCORRECT;
+        }
+        return new PublishedExamQuestionReviewDTO(
+                resultSet.getInt("order_number"), questionId, questionVersionNo,
+                resultSet.getString("content"), resultSet.getString("topic"),
+                resultSet.getString("difficulty"),
+                resultSet.getString("question_type"),
+                resultSet.getString("illustration_path"),
+                List.of(resultSet.getString("answer_option_1"),
+                        resultSet.getString("answer_option_2"),
+                        resultSet.getString("answer_option_3"),
+                        resultSet.getString("answer_option_4")),
+                selectedOption, correctOption, outcome, awardedScore, maximumScore
+        );
+    }
+
+    private static void requirePositivePublishedReviewId(int value, String message) {
+        if (value <= 0) throw new IllegalArgumentException(message);
+    }
+
     private SubmissionStatus parseSubmissionStatus(String value, int submissionId) {
         try {
             return SubmissionStatus.valueOf(value);
@@ -2806,6 +3115,34 @@ public class ExamSubmissionRepository {
                     publisherUserId,
                     publishedAt,
                     answers
+            );
+        }
+    }
+
+    private record PublishedReviewHeader(
+            int submissionId,
+            int executionId,
+            String executionCode,
+            int examId,
+            int examVersionNo,
+            String examTitle,
+            int courseId,
+            String courseName,
+            BigDecimal finalScore,
+            String teacherFeedback,
+            LocalDateTime submittedAt,
+            LocalDateTime reviewedAt,
+            LocalDateTime publishedAt,
+            int expectedQuestionCount
+    ) {
+        private PublishedExamReviewDTO toDto(
+                List<PublishedExamQuestionReviewDTO> questions
+        ) {
+            return new PublishedExamReviewDTO(
+                    submissionId, executionId, executionCode,
+                    examId, examVersionNo, examTitle, courseId, courseName,
+                    finalScore, teacherFeedback, submittedAt, reviewedAt,
+                    publishedAt, questions
             );
         }
     }

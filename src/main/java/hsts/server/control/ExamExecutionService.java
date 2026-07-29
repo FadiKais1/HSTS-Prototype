@@ -7,6 +7,7 @@ import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.ExecutionCodePayload;
 import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.PublishSubmissionPayload;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
 import hsts.common.ReviewSubmissionPayload;
@@ -41,6 +42,8 @@ public class ExamExecutionService {
             "Submission not found or access denied";
     private static final String SUBMISSION_CONFLICT =
             "Submission was modified by another user; reload and try again";
+    private static final String PUBLISHED_REVIEW_NOT_FOUND =
+            "Published exam review not found or access denied";
 
     private DatabaseService databaseService;
 
@@ -330,6 +333,19 @@ public class ExamExecutionService {
                 authenticatedStudentUserId,
                 submissionId
         ).orElseThrow(() -> new IllegalArgumentException(SUBMISSION_NOT_FOUND));
+    }
+
+    public PublishedExamReviewDTO getMyPublishedExamReview(
+            int authenticatedStudentUserId, int submissionId
+    ) {
+        authorizeStudent(authenticatedStudentUserId);
+        requirePositiveId(submissionId, "Submission ID must be positive");
+        requireResultReadDependencies();
+        return examSubmissionRepository.findPublishedExamReviewForStudent(
+                authenticatedStudentUserId, submissionId
+        ).orElseThrow(() -> new IllegalArgumentException(
+                PUBLISHED_REVIEW_NOT_FOUND
+        ));
     }
 
     public ExamExecutionPreviewDTO validateExecutionCode(

@@ -4,9 +4,12 @@ import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
+import hsts.common.PublishedExamQuestionReviewDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.SubmissionStatus;
+import hsts.common.type.PublishedAnswerOutcome;
 import hsts.common.type.UserRole;
 import hsts.common.type.UserStatus;
 import hsts.server.entity.ExamSubmission;
@@ -149,6 +152,72 @@ public class ExamExecutionServiceGradeReviewTest {
         assertEquals(SUBMISSION_ID, submissions.lastSubmissionId);
         assertEquals(1, submissions.publishedSummaryCalls);
         assertEquals(1, submissions.publishedGradeCalls);
+    }
+
+    @Test
+    public void activeStudentLoadsOnlyTheirPublishedImmutableExamReview() {
+        ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions =
+                new ExamExecutionServiceTestSupport.RecordingSubmissionRepository();
+        PublishedExamReviewDTO expected = publishedExamReview();
+        submissions.publishedReview = expected;
+        ExamExecutionService service = service(
+                submissions,
+                users(user(STUDENT_ID, UserRole.STUDENT, UserStatus.ACTIVE)),
+                new ExamExecutionServiceTestSupport.RecordingGradingService()
+        );
+
+        PublishedExamReviewDTO actual = service.getMyPublishedExamReview(
+                STUDENT_ID, SUBMISSION_ID
+        );
+
+        assertSame(expected, actual);
+        assertEquals(1, submissions.publishedReviewCalls);
+        assertEquals(STUDENT_ID, submissions.lastStudentId);
+        assertEquals(SUBMISSION_ID, submissions.lastSubmissionId);
+    }
+
+    @Test
+    public void publishedExamReviewRejectsMissingInvalidAndNonStudentAccess() {
+        ExamExecutionServiceTestSupport.RecordingSubmissionRepository submissions =
+                new ExamExecutionServiceTestSupport.RecordingSubmissionRepository();
+        ExamExecutionService studentService = service(
+                submissions,
+                users(user(STUDENT_ID, UserRole.STUDENT, UserStatus.ACTIVE)),
+                new ExamExecutionServiceTestSupport.RecordingGradingService()
+        );
+        assertEquals(
+                "Submission ID must be positive",
+                assertThrows(IllegalArgumentException.class,
+                        () -> studentService.getMyPublishedExamReview(STUDENT_ID, 0))
+                        .getMessage()
+        );
+        assertEquals(
+                "Published exam review not found or access denied",
+                assertThrows(IllegalArgumentException.class,
+                        () -> studentService.getMyPublishedExamReview(
+                                STUDENT_ID, SUBMISSION_ID
+                        )).getMessage()
+        );
+
+        for (UserRole role : List.of(
+                UserRole.TEACHER, UserRole.COORDINATOR, UserRole.PRINCIPAL
+        )) {
+            ExamExecutionServiceTestSupport.RecordingSubmissionRepository deniedRepo =
+                    new ExamExecutionServiceTestSupport.RecordingSubmissionRepository();
+            ExamExecutionService denied = service(
+                    deniedRepo,
+                    users(user(TEACHER_ID, role, UserStatus.ACTIVE)),
+                    new ExamExecutionServiceTestSupport.RecordingGradingService()
+            );
+            assertEquals(
+                    "Only students can take exams",
+                    assertThrows(IllegalStateException.class,
+                            () -> denied.getMyPublishedExamReview(
+                                    TEACHER_ID, SUBMISSION_ID
+                            )).getMessage()
+            );
+            assertEquals(0, deniedRepo.totalCalls());
+        }
     }
 
     @Test
@@ -911,6 +980,21 @@ public class ExamExecutionServiceGradeReviewTest {
                 NOW.minusHours(1),
                 EXPECTED_UPDATED_AT,
                 NOW
+        );
+    }
+
+    private static PublishedExamReviewDTO publishedExamReview() {
+        PublishedExamQuestionReviewDTO question = new PublishedExamQuestionReviewDTO(
+                1, 17, 4, "Historical question", "Algebra", "HARD",
+                "MULTIPLE_CHOICE", "", List.of("One", "Two", "Three", "Four"),
+                3, 3, PublishedAnswerOutcome.CORRECT,
+                new BigDecimal("100.00"), new BigDecimal("100.00")
+        );
+        return new PublishedExamReviewDTO(
+                SUBMISSION_ID, EXECUTION_ID, "RLYQ", 40, 3,
+                "Historical Final", 7, "Mathematics", new BigDecimal("65.00"),
+                "Good work", NOW.minusHours(1), EXPECTED_UPDATED_AT, NOW,
+                List.of(question)
         );
     }
 }

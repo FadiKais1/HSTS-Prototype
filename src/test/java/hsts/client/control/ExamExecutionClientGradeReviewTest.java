@@ -4,6 +4,8 @@ import hsts.common.ExecutionIdPayload;
 import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
+import hsts.common.PublishedExamQuestionReviewDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
@@ -13,6 +15,7 @@ import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SubmissionIdPayload;
 import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.SubmissionStatus;
+import hsts.common.type.PublishedAnswerOutcome;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
@@ -87,9 +90,16 @@ public class ExamExecutionClientGradeReviewTest {
                 sender.lastRequest(), RequestType.GET_MY_PUBLISHED_GRADE, 501
         );
 
+        PublishedExamReviewDTO publishedReview = publishedExamReview(501);
+        sender.setResponse(Response.success("Loaded", publishedReview));
+        assertSame(publishedReview, controller.getMyPublishedExamReview(501).join());
+        assertSubmissionRequest(
+                sender.lastRequest(), RequestType.GET_MY_PUBLISHED_EXAM_REVIEW, 501
+        );
+
         Field requestUserId = Request.class.getDeclaredField("userId");
         requestUserId.setAccessible(true);
-        assertEquals(6, sender.requests().size());
+        assertEquals(7, sender.requests().size());
         for (Request request : sender.requests()) {
             assertEquals(0, requestUserId.getInt(request));
         }
@@ -216,6 +226,25 @@ public class ExamExecutionClientGradeReviewTest {
                 IllegalStateException.class,
                 "Invalid published-grades response from server"
         );
+        assertFutureError(
+                () -> controller.getMyPublishedExamReview(501),
+                IllegalStateException.class,
+                "Invalid published exam-review response from server"
+        );
+    }
+
+    @Test
+    public void publishedReviewRejectsInvalidIdBeforeSending() {
+        RecordingSender sender = new RecordingSender();
+        ExamExecutionClientController controller =
+                new ExamExecutionClientController(sender::send);
+
+        assertFutureError(
+                () -> controller.getMyPublishedExamReview(0),
+                IllegalArgumentException.class,
+                "Submission ID must be positive"
+        );
+        assertEquals(0, sender.requests().size());
     }
 
     @Test
@@ -358,6 +387,21 @@ public class ExamExecutionClientGradeReviewTest {
                 submissionId, 81, 40, 3, "Midterm", "Mathematics",
                 SubmissionStatus.PUBLISHED, new BigDecimal("94.50"),
                 "Good work", NOW, NOW.plusMinutes(1), NOW.plusMinutes(2)
+        );
+    }
+
+    private static PublishedExamReviewDTO publishedExamReview(int submissionId) {
+        PublishedExamQuestionReviewDTO question = new PublishedExamQuestionReviewDTO(
+                1, 17, 4, "Historical question", "Algebra", "HARD",
+                "MULTIPLE_CHOICE", "", List.of("One", "Two", "Three", "Four"),
+                3, 3, PublishedAnswerOutcome.CORRECT,
+                new BigDecimal("100.00"), new BigDecimal("100.00")
+        );
+        return new PublishedExamReviewDTO(
+                submissionId, 81, "RLYQ", 40, 3, "Midterm", 7,
+                "Mathematics", new BigDecimal("94.50"), "Good work",
+                NOW.minusHours(1), NOW.plusMinutes(1), NOW.plusMinutes(2),
+                List.of(question)
         );
     }
 

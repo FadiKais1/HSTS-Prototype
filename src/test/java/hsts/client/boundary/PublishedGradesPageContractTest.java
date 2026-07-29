@@ -1,8 +1,11 @@
 package hsts.client.boundary;
 
 import hsts.common.PublishedGradeSummaryDTO;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -47,6 +51,22 @@ public class PublishedGradesPageContractTest {
     private static final Path MAIN_CLIENT = Path.of(
             "src/main/java/hsts/client/MainClient.java"
     );
+
+    @Test
+    public void realFxmlLoadsAndLaysOutInFreshJavaFxProcess() throws Exception {
+        String javaExecutable = Path.of(
+                System.getProperty("java.home"), "bin", "java.exe"
+        ).toString();
+        Process process = new ProcessBuilder(
+                javaExecutable, "-cp", System.getProperty("java.class.path"),
+                LoadingHarness.class.getName()
+        ).redirectErrorStream(true).start();
+
+        assertTrue("JavaFX loading harness timed out",
+                process.waitFor(30, TimeUnit.SECONDS));
+        String output = new String(process.getInputStream().readAllBytes());
+        assertEquals(output, 0, process.exitValue());
+    }
 
     @Test
     public void configureUsesSharedClientControllerWithoutNetworkingLifecycle()
@@ -76,6 +96,7 @@ public class PublishedGradesPageContractTest {
         String source = Files.readString(SOURCE);
         assertTrue(source.contains("getMyPublishedGrades()"));
         assertTrue(source.contains("getMyPublishedGrade(submissionId)"));
+        assertTrue(source.contains("getMyPublishedExamReview(submissionId)"));
         assertTrue(source.contains(".whenComplete("));
         assertTrue(source.contains("Platform.runLater("));
         assertFalse(source.contains(".join("));
@@ -83,6 +104,7 @@ public class PublishedGradesPageContractTest {
         assertFalse(source.contains("getUserId()"));
         assertTrue(source.contains("listRequestGeneration++"));
         assertTrue(source.contains("detailRequestGeneration++"));
+        assertTrue(source.contains("reviewRequestGeneration++"));
     }
 
     @Test
@@ -141,17 +163,18 @@ public class PublishedGradesPageContractTest {
     }
 
     @Test
-    public void pageUsesOnlyStudentPublishedGradeContractsAndNoPrivateReviewData()
+    public void pageUsesOnlyStudentPublishedContractsAndNoPrivateManagerData()
             throws Exception {
         String content = (Files.readString(SOURCE) + Files.readString(FXML))
                 .toLowerCase();
         assertTrue(content.contains("publishedgradesummarydto"));
         assertTrue(content.contains("publishedgradedto"));
+        assertTrue(content.contains("publishedexamreviewdto"));
+        assertTrue(content.contains("publishedexamquestionreviewdto"));
         for (String forbidden : List.of(
                 "executionsubmissionsummarydto", "submissionreviewdto",
                 "submissionanswerreviewdto", "automaticscore",
                 "adjustmentreason", "revieweruserid", "publisheruserid",
-                "awardedscore", "correct option", "answer options",
                 "studentanswer", "examsubmission", "hsts.server.entity",
                 "hsts.server.repository", "hsts.server.control"
         )) {
@@ -177,6 +200,14 @@ public class PublishedGradesPageContractTest {
                 "detailFinalScoreValue", "feedbackArea", "submittedValue",
                 "reviewedValue", "publishedValue", "refreshButton",
                 "backButton", "statusLabel", "busyIndicator"
+                , "reviewStatusLabel", "reviewExamValue", "reviewCourseValue",
+                "reviewExecutionValue", "reviewVersionValue",
+                "reviewFinalScoreValue", "reviewSubmittedValue",
+                "reviewReviewedValue", "reviewPublishedValue",
+                "reviewFeedbackArea", "questionPositionLabel",
+                "questionOutcomeLabel", "questionMetadataLabel",
+                "questionScoreLabel", "reviewQuestionContentArea",
+                "answerOptionsBox", "previousQuestionButton", "nextQuestionButton"
         )) {
             assertTrue("Missing fx:id " + required, ids.containsKey(required));
         }
@@ -193,7 +224,10 @@ public class PublishedGradesPageContractTest {
 
         Set<String> actions = new HashSet<>();
         collectActions(document.getDocumentElement(), actions);
-        assertEquals(Set.of("handleRefresh", "handleBack"), actions);
+        assertEquals(Set.of(
+                "handleRefresh", "handleBack", "handlePreviousQuestion",
+                "handleNextQuestion"
+        ), actions);
         for (String action : actions) {
             Method method = PublishedGradesPage.class.getDeclaredMethod(action);
             assertTrue(method.isAnnotationPresent(FXML.class));
@@ -309,6 +343,7 @@ public class PublishedGradesPageContractTest {
             case "TableColumn" -> javafx.scene.control.TableColumn.class;
             case "TextArea" -> javafx.scene.control.TextArea.class;
             case "ProgressIndicator" -> javafx.scene.control.ProgressIndicator.class;
+            case "VBox" -> javafx.scene.layout.VBox.class;
             default -> throw new AssertionError(
                     "Unexpected fx:id element " + tagName
             );
@@ -358,5 +393,33 @@ public class PublishedGradesPageContractTest {
             }
         }
         throw new AssertionError("Method not found: " + methodStart);
+    }
+
+    public static final class LoadingHarness {
+        private LoadingHarness() {
+        }
+
+        public static void main(String[] args) {
+            Platform.startup(() -> {
+                try {
+                    FXMLLoader loader = new FXMLLoader(
+                            PublishedGradesPageContractTest.class.getResource(
+                                    "/hsts/client/boundary/published-grades-page.fxml"
+                            )
+                    );
+                    Parent root = loader.load();
+                    new Scene(root, 1180, 760);
+                    root.applyCss();
+                    root.layout();
+                    if (!(loader.getController() instanceof PublishedGradesPage)) {
+                        throw new AssertionError("Unexpected FXML controller");
+                    }
+                    System.exit(0);
+                } catch (Throwable failure) {
+                    failure.printStackTrace(System.err);
+                    System.exit(1);
+                }
+            });
+        }
     }
 }

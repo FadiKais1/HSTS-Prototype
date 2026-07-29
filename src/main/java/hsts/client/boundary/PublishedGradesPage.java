@@ -3,6 +3,8 @@ package hsts.client.boundary;
 import hsts.client.control.ExamExecutionClientController;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
+import hsts.common.PublishedExamQuestionReviewDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
 import hsts.common.type.UserRole;
@@ -17,6 +19,7 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import java.math.BigDecimal;
@@ -31,6 +34,7 @@ public class PublishedGradesPage {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String LIST_ERROR = "Unable to load published grades";
     private static final String DETAIL_ERROR = "Unable to load published grade";
+    private static final String REVIEW_ERROR = "Unable to load reviewed exam";
 
     private final ObservableList<PublishedGradeSummaryDTO> grades =
             FXCollections.observableArrayList();
@@ -41,12 +45,16 @@ public class PublishedGradesPage {
     private Runnable backHandler;
     private ExamExecutionClientController executionController;
     private PublishedGradeDTO currentGrade;
+    private PublishedExamReviewDTO currentReview;
+    private int currentQuestionIndex;
     private boolean disposed = true;
     private boolean listBusy;
     private boolean detailBusy;
+    private boolean reviewBusy;
     private boolean suppressSelection;
     private long listRequestGeneration;
     private long detailRequestGeneration;
+    private long reviewRequestGeneration;
 
     @FXML private Label userLabel;
     @FXML private Label roleLabel;
@@ -67,11 +75,30 @@ public class PublishedGradesPage {
     @FXML private Button backButton;
     @FXML private Label statusLabel;
     @FXML private ProgressIndicator busyIndicator;
+    @FXML private Label reviewStatusLabel;
+    @FXML private Label reviewExamValue;
+    @FXML private Label reviewCourseValue;
+    @FXML private Label reviewExecutionValue;
+    @FXML private Label reviewVersionValue;
+    @FXML private Label reviewFinalScoreValue;
+    @FXML private Label reviewSubmittedValue;
+    @FXML private Label reviewReviewedValue;
+    @FXML private Label reviewPublishedValue;
+    @FXML private TextArea reviewFeedbackArea;
+    @FXML private Label questionPositionLabel;
+    @FXML private Label questionOutcomeLabel;
+    @FXML private Label questionMetadataLabel;
+    @FXML private Label questionScoreLabel;
+    @FXML private TextArea reviewQuestionContentArea;
+    @FXML private VBox answerOptionsBox;
+    @FXML private Button previousQuestionButton;
+    @FXML private Button nextQuestionButton;
 
     @FXML
     private void initialize() {
         configureGradeTable();
         clearDetail();
+        clearReview();
         setStatus("Published grades will appear here.");
         updateControlState();
     }
@@ -96,14 +123,18 @@ public class PublishedGradesPage {
         this.disposed = false;
         this.listBusy = false;
         this.detailBusy = false;
+        this.reviewBusy = false;
         this.currentGrade = null;
+        this.currentReview = null;
         this.listRequestGeneration++;
         this.detailRequestGeneration++;
+        this.reviewRequestGeneration++;
 
         userLabel.setText(safe(loginResult.getFullName()));
         roleLabel.setText(loginResult.getRole().name());
         grades.clear();
         clearDetail();
+        clearReview();
         loadPublishedGrades(null);
     }
 
@@ -122,7 +153,7 @@ public class PublishedGradesPage {
         gradeTable.getSelectionModel().selectedItemProperty().addListener(
                 (observable, oldValue, selected) -> {
                     if (!suppressSelection && selected != null) {
-                        loadPublishedGrade(selected.getSubmissionId());
+                        loadPublishedResult(selected.getSubmissionId());
                     }
                 }
         );
@@ -135,9 +166,12 @@ public class PublishedGradesPage {
 
         long generation = ++listRequestGeneration;
         detailRequestGeneration++;
+        reviewRequestGeneration++;
         listBusy = true;
         detailBusy = false;
+        reviewBusy = false;
         clearDetail();
+        clearReview();
         setStatus("Loading published grades...");
         updateControlState();
 
@@ -151,6 +185,7 @@ public class PublishedGradesPage {
                         grades.clear();
                         clearSelection();
                         clearDetail();
+                        clearReview();
                         setStatus(cleanError(error, LIST_ERROR));
                         updateControlState();
                         return;
@@ -161,9 +196,11 @@ public class PublishedGradesPage {
                             selectGrade(preferredSubmissionId);
                     if (grades.isEmpty()) {
                         clearDetail();
+                        clearReview();
                         setStatus("No published grades are available.");
                     } else if (selected == null) {
                         clearDetail();
+                        clearReview();
                         setStatus("Select a published grade to view details.");
                     }
                     updateControlState();
@@ -203,6 +240,40 @@ public class PublishedGradesPage {
                 }));
     }
 
+    private void loadPublishedResult(int submissionId) {
+        reviewRequestGeneration++;
+        clearReview();
+        loadPublishedGrade(submissionId);
+        loadPublishedExamReview(submissionId);
+    }
+
+    private void loadPublishedExamReview(int submissionId) {
+        if (!isConfigured()) return;
+        long generation = ++reviewRequestGeneration;
+        reviewBusy = true;
+        reviewStatusLabel.setText("Loading reviewed exam...");
+        updateControlState();
+        executionController.getMyPublishedExamReview(submissionId)
+                .whenComplete((loaded, error) -> Platform.runLater(() -> {
+                    if (isStale(disposed, generation, reviewRequestGeneration)
+                            || selectedSubmissionId() != submissionId) {
+                        return;
+                    }
+                    reviewBusy = false;
+                    if (error != null || loaded == null) {
+                        clearReviewValues();
+                        reviewStatusLabel.setText(error == null
+                                ? REVIEW_ERROR : cleanError(error, REVIEW_ERROR));
+                    } else {
+                        showReview(loaded);
+                        reviewStatusLabel.setText(
+                                "Published reviewed exam loaded."
+                        );
+                    }
+                    updateControlState();
+                }));
+    }
+
     @FXML
     private void handleRefresh() {
         if (!isConfigured() || listBusy) {
@@ -214,6 +285,7 @@ public class PublishedGradesPage {
                 ? null : selected.getSubmissionId();
         listRequestGeneration++;
         detailRequestGeneration++;
+        reviewRequestGeneration++;
         loadPublishedGrades(preferredSubmissionId);
     }
 
@@ -228,8 +300,10 @@ public class PublishedGradesPage {
         disposed = true;
         listRequestGeneration++;
         detailRequestGeneration++;
+        reviewRequestGeneration++;
         listBusy = false;
         detailBusy = false;
+        reviewBusy = false;
         try {
             navigation.run();
         } catch (RuntimeException exception) {
@@ -250,6 +324,109 @@ public class PublishedGradesPage {
         feedbackArea.setText(friendlyFeedback(grade.getTeacherFeedback()));
     }
 
+    private void showReview(PublishedExamReviewDTO review) {
+        currentReview = Objects.requireNonNull(review, "review");
+        currentQuestionIndex = 0;
+        reviewExamValue.setText(safe(review.getExamTitle()));
+        reviewCourseValue.setText(safe(review.getCourseName()));
+        reviewExecutionValue.setText(safe(review.getExecutionCode()));
+        reviewVersionValue.setText(Integer.toString(review.getExamVersionNo()));
+        reviewFinalScoreValue.setText(formatDecimal(review.getFinalScore()));
+        reviewSubmittedValue.setText(formatDateTime(review.getSubmittedAt()));
+        reviewReviewedValue.setText(formatDateTime(review.getReviewedAt()));
+        reviewPublishedValue.setText(formatDateTime(review.getPublishedAt()));
+        reviewFeedbackArea.setText(friendlyFeedback(review.getTeacherFeedback()));
+        showCurrentReviewQuestion();
+    }
+
+    @FXML
+    private void handlePreviousQuestion() {
+        if (currentReview == null || currentQuestionIndex <= 0) return;
+        currentQuestionIndex--;
+        showCurrentReviewQuestion();
+    }
+
+    @FXML
+    private void handleNextQuestion() {
+        if (currentReview == null
+                || currentQuestionIndex >= currentReview.getQuestions().size() - 1) {
+            return;
+        }
+        currentQuestionIndex++;
+        showCurrentReviewQuestion();
+    }
+
+    private void showCurrentReviewQuestion() {
+        if (currentReview == null || currentReview.getQuestions().isEmpty()) {
+            clearQuestionReview();
+            return;
+        }
+        PublishedExamQuestionReviewDTO question =
+                currentReview.getQuestions().get(currentQuestionIndex);
+        questionPositionLabel.setText("Question " + (currentQuestionIndex + 1)
+                + " of " + currentReview.getQuestions().size());
+        questionMetadataLabel.setText(
+                "Topic: " + displayMetadata(question.getTopic())
+                        + "  |  Type: " + displayMetadata(question.getType())
+                        + "  |  Difficulty: "
+                        + displayMetadata(question.getDifficulty())
+        );
+        questionScoreLabel.setText("Awarded "
+                + formatDecimal(question.getAwardedScore()) + " / "
+                + formatDecimal(question.getMaximumScore()));
+        reviewQuestionContentArea.setText(question.getContent());
+        showOutcome(question);
+        answerOptionsBox.getChildren().clear();
+        for (int index = 0; index < question.getAnswerOptions().size(); index++) {
+            answerOptionsBox.getChildren().add(optionLabel(question, index + 1));
+        }
+        previousQuestionButton.setDisable(currentQuestionIndex == 0);
+        nextQuestionButton.setDisable(
+                currentQuestionIndex == currentReview.getQuestions().size() - 1
+        );
+    }
+
+    private void showOutcome(PublishedExamQuestionReviewDTO question) {
+        switch (question.getOutcome()) {
+            case CORRECT -> {
+                questionOutcomeLabel.setText("Correct");
+                questionOutcomeLabel.setStyle(outcomeStyle("#166534", "#dcfce7"));
+            }
+            case INCORRECT -> {
+                questionOutcomeLabel.setText("Incorrect");
+                questionOutcomeLabel.setStyle(outcomeStyle("#991b1b", "#fee2e2"));
+            }
+            case UNANSWERED -> {
+                questionOutcomeLabel.setText("Unanswered");
+                questionOutcomeLabel.setStyle(outcomeStyle("#92400e", "#fef3c7"));
+            }
+        }
+    }
+
+    private Label optionLabel(PublishedExamQuestionReviewDTO question,
+                              int optionNumber) {
+        boolean selected = Objects.equals(
+                question.getSelectedOptionNumber(), optionNumber
+        );
+        boolean correct = question.getCorrectOptionNumber() == optionNumber;
+        StringBuilder text = new StringBuilder("Option ")
+                .append(optionNumber).append(": ")
+                .append(question.getAnswerOptions().get(optionNumber - 1));
+        if (selected) text.append("  · Your answer");
+        if (correct) text.append("  · Correct answer");
+        if (selected && !correct) text.append("  · Incorrect");
+        Label label = new Label(text.toString());
+        label.setWrapText(true);
+        label.setMaxWidth(Double.MAX_VALUE);
+        String border = correct ? "#16a34a" : selected ? "#dc2626" : "#cbd5e1";
+        String background = correct ? "#f0fdf4" : selected ? "#fef2f2" : "#f8fafc";
+        label.setStyle("-fx-text-fill: #111827; -fx-opacity: 1; "
+                + "-fx-background-color: " + background + "; "
+                + "-fx-border-color: " + border + "; -fx-border-radius: 7; "
+                + "-fx-background-radius: 7; -fx-padding: 10;");
+        return label;
+    }
+
     private PublishedGradeSummaryDTO selectGrade(Integer submissionId) {
         clearSelection();
         if (submissionId == null) {
@@ -260,7 +437,7 @@ public class PublishedGradesPage {
             if (grade.getSubmissionId() == submissionId) {
                 gradeTable.getSelectionModel().select(index);
                 gradeTable.scrollTo(index);
-                loadPublishedGrade(submissionId);
+                loadPublishedResult(submissionId);
                 return grade;
             }
         }
@@ -297,9 +474,48 @@ public class PublishedGradesPage {
         if (feedbackArea != null) feedbackArea.setText("");
     }
 
+    private void clearReview() {
+        currentReview = null;
+        currentQuestionIndex = 0;
+        clearReviewValues();
+        if (reviewStatusLabel != null) {
+            reviewStatusLabel.setText(
+                    "Select a published grade to review the exam."
+            );
+        }
+    }
+
+    private void clearReviewValues() {
+        if (reviewExamValue != null) reviewExamValue.setText("-");
+        if (reviewCourseValue != null) reviewCourseValue.setText("-");
+        if (reviewExecutionValue != null) reviewExecutionValue.setText("-");
+        if (reviewVersionValue != null) reviewVersionValue.setText("-");
+        if (reviewFinalScoreValue != null) reviewFinalScoreValue.setText("-");
+        if (reviewSubmittedValue != null) reviewSubmittedValue.setText("");
+        if (reviewReviewedValue != null) reviewReviewedValue.setText("");
+        if (reviewPublishedValue != null) reviewPublishedValue.setText("");
+        if (reviewFeedbackArea != null) reviewFeedbackArea.setText("");
+        clearQuestionReview();
+    }
+
+    private void clearQuestionReview() {
+        if (questionPositionLabel != null) {
+            questionPositionLabel.setText("No question selected");
+        }
+        if (questionOutcomeLabel != null) questionOutcomeLabel.setText("");
+        if (questionMetadataLabel != null) questionMetadataLabel.setText("");
+        if (questionScoreLabel != null) questionScoreLabel.setText("");
+        if (reviewQuestionContentArea != null) {
+            reviewQuestionContentArea.setText("");
+        }
+        if (answerOptionsBox != null) answerOptionsBox.getChildren().clear();
+        if (previousQuestionButton != null) previousQuestionButton.setDisable(true);
+        if (nextQuestionButton != null) nextQuestionButton.setDisable(true);
+    }
+
     private void updateControlState() {
         boolean configured = isConfigured();
-        boolean busy = listBusy || detailBusy;
+        boolean busy = listBusy || detailBusy || reviewBusy;
         if (refreshButton != null) {
             refreshButton.setDisable(!configured || listBusy);
         }
@@ -352,6 +568,17 @@ public class PublishedGradesPage {
 
     static String formatDecimal(BigDecimal value) {
         return value == null ? "" : value.toPlainString();
+    }
+
+    private static String displayMetadata(String value) {
+        return value == null || value.isBlank() ? "N/A" : value;
+    }
+
+    private static String outcomeStyle(String textColor, String background) {
+        return "-fx-font-weight: bold; -fx-text-fill: " + textColor
+                + "; -fx-background-color: " + background
+                + "; -fx-background-radius: 7; -fx-padding: 6 10; "
+                + "-fx-opacity: 1;";
     }
 
     private static String safe(String value) {

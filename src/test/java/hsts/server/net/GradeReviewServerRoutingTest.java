@@ -5,6 +5,8 @@ import hsts.common.ExecutionSubmissionSummaryDTO;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.PublishedGradeDTO;
 import hsts.common.PublishedGradeSummaryDTO;
+import hsts.common.PublishedExamQuestionReviewDTO;
+import hsts.common.PublishedExamReviewDTO;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.Response;
@@ -13,6 +15,7 @@ import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SubmissionIdPayload;
 import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.SubmissionStatus;
+import hsts.common.type.PublishedAnswerOutcome;
 import hsts.server.control.AuthService;
 import hsts.server.control.ExamExecutionService;
 import hsts.server.control.ExamManagementService;
@@ -95,6 +98,13 @@ public class GradeReviewServerRoutingTest {
                 ),
                 STUDENT_ID
         );
+        Response publishedReview = server.handleAuthenticatedRequest(
+                new Request(
+                        RequestType.GET_MY_PUBLISHED_EXAM_REVIEW,
+                        new SubmissionIdPayload(SUBMISSION_ID)
+                ),
+                STUDENT_ID
+        );
 
         assertSuccess(
                 teacherList,
@@ -131,6 +141,11 @@ public class GradeReviewServerRoutingTest {
                 "Published grade loaded successfully",
                 service.publishedGrade
         );
+        assertSuccess(
+                publishedReview,
+                "Published exam review loaded successfully",
+                service.publishedExamReview
+        );
 
         assertSame(reviewPayload, service.reviewPayload);
         assertSame(publicationPayload, service.publicationPayload);
@@ -139,7 +154,7 @@ public class GradeReviewServerRoutingTest {
         assertEquals(SUBMISSION_ID, service.studentSubmissionId);
         assertEquals(SUBMISSION_ID, service.lastSubmissionId);
         assertEquals(STUDENT_ID, service.lastAuthenticatedUserId);
-        assertEquals(7, service.routeCalls);
+        assertEquals(8, service.routeCalls);
     }
 
     @Test
@@ -208,6 +223,11 @@ public class GradeReviewServerRoutingTest {
                 RequestType.GET_MY_PUBLISHED_GRADE,
                 "Submission request data is invalid"
         );
+        assertInvalidRequired(
+                server,
+                RequestType.GET_MY_PUBLISHED_EXAM_REVIEW,
+                "Submission payload is required"
+        );
 
         assertEquals(0, service.routeCalls);
     }
@@ -226,7 +246,7 @@ public class GradeReviewServerRoutingTest {
                     "Submission was modified by another user; reload and try again"
             );
         }
-        assertEquals(6, service.routeCalls);
+        assertEquals(7, service.routeCalls);
 
         service.failure = new IllegalStateException();
         assertError(
@@ -321,6 +341,10 @@ public class GradeReviewServerRoutingTest {
                 new Request(
                         RequestType.GET_MY_PUBLISHED_GRADE,
                         new SubmissionIdPayload(SUBMISSION_ID)
+                ),
+                new Request(
+                        RequestType.GET_MY_PUBLISHED_EXAM_REVIEW,
+                        new SubmissionIdPayload(SUBMISSION_ID)
                 )
         );
     }
@@ -357,6 +381,7 @@ public class GradeReviewServerRoutingTest {
         private final List<PublishedGradeSummaryDTO> publishedGrades =
                 List.of(publishedSummary());
         private final PublishedGradeDTO publishedGrade = publishedGrade();
+        private final PublishedExamReviewDTO publishedExamReview = publishedExamReview();
         private RuntimeException failure;
         private int routeCalls;
         private int lastAuthenticatedUserId;
@@ -427,6 +452,17 @@ public class GradeReviewServerRoutingTest {
             studentSubmissionId = submissionId;
             lastSubmissionId = submissionId;
             return publishedGrade;
+        }
+
+        @Override
+        public PublishedExamReviewDTO getMyPublishedExamReview(
+                int authenticatedStudentUserId,
+                int submissionId
+        ) {
+            record(authenticatedStudentUserId);
+            studentSubmissionId = submissionId;
+            lastSubmissionId = submissionId;
+            return publishedExamReview;
         }
 
         private void record(int authenticatedUserId) {
@@ -510,6 +546,21 @@ public class GradeReviewServerRoutingTest {
                 UPDATED_AT.minusHours(1),
                 UPDATED_AT.minusMinutes(1),
                 UPDATED_AT
+        );
+    }
+
+    private static PublishedExamReviewDTO publishedExamReview() {
+        PublishedExamQuestionReviewDTO question = new PublishedExamQuestionReviewDTO(
+                1, 17, 4, "Historical question", "Algebra", "HARD",
+                "MULTIPLE_CHOICE", "", List.of("One", "Two", "Three", "Four"),
+                3, 3, PublishedAnswerOutcome.CORRECT,
+                new BigDecimal("100.00"), new BigDecimal("100.00")
+        );
+        return new PublishedExamReviewDTO(
+                SUBMISSION_ID, EXECUTION_ID, "RLYQ", 40, 3,
+                "Historical Final", 7, "Mathematics", new BigDecimal("65.00"),
+                "Good work", UPDATED_AT.minusHours(1), UPDATED_AT, UPDATED_AT,
+                List.of(question)
         );
     }
 }

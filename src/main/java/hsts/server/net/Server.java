@@ -173,6 +173,7 @@ public class Server extends AbstractServer {
                      LIST_EXECUTION_SUBMISSIONS, GET_SUBMISSION_FOR_REVIEW,
                      REVIEW_SUBMISSION_GRADE, PUBLISH_SUBMISSION_GRADE,
                      LIST_MY_PUBLISHED_GRADES, GET_MY_PUBLISHED_GRADE,
+                     GET_MY_PUBLISHED_EXAM_REVIEW,
                      GET_MY_AUTHORED_EXAMS_REPORT, GET_TEACHER_EXAMS_REPORT,
                      GET_COURSE_EXAMS_REPORT, GET_STUDENT_EXAMS_REPORT,
                      GET_EXAM_EXECUTION_REPORT, LIST_MY_COURSE_BOTS,
@@ -577,6 +578,21 @@ public class Server extends AbstractServer {
                     yield Response.success(
                             "Published grade loaded successfully",
                             requireExamExecutionService().getMyPublishedGrade(
+                                    authenticatedUserId,
+                                    payload.getSubmissionId()
+                            )
+                    );
+                }
+
+                case GET_MY_PUBLISHED_EXAM_REVIEW -> {
+                    if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Submission payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Published exam review loaded successfully",
+                            requireExamExecutionService().getMyPublishedExamReview(
                                     authenticatedUserId,
                                     payload.getSubmissionId()
                             )
