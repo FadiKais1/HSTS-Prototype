@@ -12,6 +12,7 @@
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
@@ -111,6 +112,18 @@
                                     </columns>
                                     <placeholder><Label text="Select a submission to inspect its answers."/></placeholder>
                                 </TableView>
+                                <VBox fx:id="questionIllustrationContainer" spacing="6"
+                                      visible="false" managed="false">
+                                    <Label text="Selected submitted question illustration"
+                                           style="-fx-font-weight: bold;"/>
+                                    <ImageView fx:id="questionIllustrationView" fitWidth="520"
+                                               fitHeight="320" preserveRatio="true"
+                                               visible="false" managed="false"/>
+                                    <Label fx:id="questionIllustrationErrorLabel"
+                                           text="Question illustration is unavailable"
+                                           style="-fx-text-fill: #6b7280;"
+                                           visible="false" managed="false"/>
+                                </VBox>
                                 <Label text="Final score" style="-fx-font-weight: bold;"/>
                                 <TextField fx:id="finalScoreField" promptText="0.00 to 100.00"/>
                                 <Label text="Teacher feedback" style="-fx-font-weight: bold;"/>

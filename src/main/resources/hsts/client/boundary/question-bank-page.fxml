@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 
 <BorderPane xmlns:fx="http://javafx.com/fxml"
@@ -146,9 +147,32 @@
                         <TextField fx:id="topicField" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
                         <Label text="Difficulty *" GridPane.columnIndex="2" GridPane.rowIndex="2"/>
                         <ComboBox fx:id="difficultyComboBox" GridPane.columnIndex="3" GridPane.rowIndex="2"/>
-                        <Label text="Illustration path" GridPane.columnIndex="4" GridPane.rowIndex="2"/>
-                        <TextField fx:id="illustrationPathField" GridPane.columnIndex="5" GridPane.rowIndex="2"/>
+                        <Label text="Illustration" GridPane.columnIndex="4" GridPane.rowIndex="2"/>
+                        <VBox spacing="5" GridPane.columnIndex="5" GridPane.rowIndex="2">
+                            <HBox spacing="6">
+                                <Button fx:id="chooseIllustrationButton" text="Choose PNG/JPEG"
+                                        onAction="#handleChooseIllustration"/>
+                                <Button fx:id="removeIllustrationButton" text="Remove illustration"
+                                        onAction="#handleRemoveIllustration"/>
+                                <Button fx:id="clearIllustrationButton" text="Clear selected file"
+                                        onAction="#handleClearIllustrationUpload"/>
+                            </HBox>
+                            <Label fx:id="illustrationSelectionLabel" text="No illustration selected"
+                                   wrapText="true"/>
+                        </VBox>
                     </GridPane>
+
+                    <VBox fx:id="questionIllustrationContainer" spacing="6"
+                          visible="false" managed="false">
+                        <Label text="Question illustration" style="-fx-font-weight: bold;"/>
+                        <ImageView fx:id="questionIllustrationView" fitWidth="520"
+                                   fitHeight="320" preserveRatio="true"
+                                   visible="false" managed="false"/>
+                        <Label fx:id="questionIllustrationErrorLabel"
+                               text="Question illustration is unavailable"
+                               style="-fx-text-fill: #6b7280;"
+                               visible="false" managed="false"/>
+                    </VBox>
 
                     <Label text="Content *" style="-fx-font-weight: bold;"/>
                     <TextArea fx:id="contentArea" prefRowCount="4" wrapText="true"/>

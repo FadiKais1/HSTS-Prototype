@@ -25,6 +25,8 @@ import javafx.scene.control.TabPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import java.math.BigDecimal;
@@ -61,6 +63,11 @@ public class PrincipalOversightPage {
     private long examGeneration;
     private long executionGeneration;
     private long submissionGeneration;
+    private List<ExamQuestionDTO> currentExamQuestions = List.of();
+    private List<SubmissionAnswerReviewDTO> currentSubmissionAnswers = List.of();
+    private QuestionIllustrationRenderer questionIllustrationRenderer;
+    private QuestionIllustrationRenderer examIllustrationRenderer;
+    private QuestionIllustrationRenderer submissionIllustrationRenderer;
 
     @FXML private Label identityLabel;
     @FXML private Label errorLabel;
@@ -100,6 +107,15 @@ public class PrincipalOversightPage {
     @FXML private TableColumn<ExecutionSubmissionSummaryDTO, String> finalScoreColumn;
     @FXML private TextArea submissionDetailArea;
     @FXML private ListView<String> submissionAnswersList;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
+    @FXML private VBox examIllustrationContainer;
+    @FXML private ImageView examIllustrationView;
+    @FXML private Label examIllustrationErrorLabel;
+    @FXML private VBox submissionIllustrationContainer;
+    @FXML private ImageView submissionIllustrationView;
+    @FXML private Label submissionIllustrationErrorLabel;
 
     @FXML
     private void initialize() {
@@ -108,6 +124,18 @@ public class PrincipalOversightPage {
         examTable.setItems(exams);
         executionTable.setItems(executions);
         submissionTable.setItems(submissions);
+        questionIllustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
+        examIllustrationRenderer = new QuestionIllustrationRenderer(
+                examIllustrationView, examIllustrationErrorLabel,
+                examIllustrationContainer
+        );
+        submissionIllustrationRenderer = new QuestionIllustrationRenderer(
+                submissionIllustrationView, submissionIllustrationErrorLabel,
+                submissionIllustrationContainer
+        );
         questionTable.getSelectionModel().selectedItemProperty().addListener(
                 (observable, oldValue, selected) -> selectQuestion(selected));
         examTable.getSelectionModel().selectedItemProperty().addListener(
@@ -120,6 +148,18 @@ public class PrincipalOversightPage {
                 (observable, oldValue, version) -> loadQuestionVersion(version));
         examVersionCombo.valueProperty().addListener(
                 (observable, oldValue, version) -> loadExamVersion(version));
+        examQuestionsList.getSelectionModel().selectedIndexProperty().addListener(
+                (observable, oldValue, index) -> examIllustrationRenderer.render(
+                        index.intValue() < 0 || index.intValue() >= currentExamQuestions.size()
+                                ? null : currentExamQuestions.get(index.intValue()).getIllustration()
+                )
+        );
+        submissionAnswersList.getSelectionModel().selectedIndexProperty().addListener(
+                (observable, oldValue, index) -> submissionIllustrationRenderer.render(
+                        index.intValue() < 0 || index.intValue() >= currentSubmissionAnswers.size()
+                                ? null : currentSubmissionAnswers.get(index.intValue()).getIllustration()
+                )
+        );
         clearQuestionDetail();
         clearExamDetail();
         clearSubmissionDetail();
@@ -166,6 +206,9 @@ public class PrincipalOversightPage {
         executionGeneration++;
         submissionGeneration++;
         backHandler.run();
+        questionIllustrationRenderer.dispose();
+        examIllustrationRenderer.dispose();
+        submissionIllustrationRenderer.dispose();
     }
 
     private void refreshAll() {
@@ -253,9 +296,9 @@ public class PrincipalOversightPage {
                         + question.getDifficulty() + "\nStatus: " + question.getStatus()
                         + "\nCreated: " + time(question.getVersionCreatedAt())
                         + "\nUpdated: " + time(question.getQuestionUpdatedAt())
-                        + "\nIllustration: " + text(question.getIllustrationPath())
                         + "\n\n" + question.getContent()
         );
+        questionIllustrationRenderer.render(question.getIllustration());
         questionOptionsList.setItems(FXCollections.observableArrayList(
                 java.util.stream.IntStream.range(0, question.getAnswerOptions().size())
                         .mapToObj(index -> (index + 1) + ". "
@@ -307,6 +350,10 @@ public class PrincipalOversightPage {
         examQuestionsList.setItems(FXCollections.observableArrayList(
                 exam.getQuestions().stream().map(this::examQuestionText).toList()
         ));
+        currentExamQuestions = List.copyOf(exam.getQuestions());
+        if (!currentExamQuestions.isEmpty()) {
+            examQuestionsList.getSelectionModel().selectFirst();
+        }
     }
 
     private String examQuestionText(ExamQuestionDTO question) {
@@ -355,6 +402,10 @@ public class PrincipalOversightPage {
         submissionAnswersList.setItems(FXCollections.observableArrayList(
                 submission.getAnswers().stream().map(this::answerText).toList()
         ));
+        currentSubmissionAnswers = List.copyOf(submission.getAnswers());
+        if (!currentSubmissionAnswers.isEmpty()) {
+            submissionAnswersList.getSelectionModel().selectFirst();
+        }
     }
 
     private String answerText(SubmissionAnswerReviewDTO answer) {
@@ -405,16 +456,23 @@ public class PrincipalOversightPage {
     private void clearQuestionDetail() {
         questionDetailArea.setText("Select a question to inspect its exact version history.");
         questionOptionsList.getItems().clear();
+        if (questionIllustrationRenderer != null) questionIllustrationRenderer.render(null);
     }
 
     private void clearExamDetail() {
         examDetailArea.setText("Select an exam to inspect its exact version history.");
         examQuestionsList.getItems().clear();
+        currentExamQuestions = List.of();
+        if (examIllustrationRenderer != null) examIllustrationRenderer.render(null);
     }
 
     private void clearSubmissionDetail() {
         submissionDetailArea.setText("Select an execution and submission to inspect its result.");
         submissionAnswersList.getItems().clear();
+        currentSubmissionAnswers = List.of();
+        if (submissionIllustrationRenderer != null) {
+            submissionIllustrationRenderer.render(null);
+        }
     }
 
     private void showError(String message) {

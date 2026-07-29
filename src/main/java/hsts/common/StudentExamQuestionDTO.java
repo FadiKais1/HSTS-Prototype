@@ -17,6 +17,7 @@ public class StudentExamQuestionDTO implements Serializable {
     private final String answerOption2;
     private final String answerOption3;
     private final String answerOption4;
+    private final QuestionIllustrationDTO illustration;
 
     public StudentExamQuestionDTO(int questionId, int questionVersionNo,
                                   int orderNumber, double score, String content,
@@ -24,6 +25,18 @@ public class StudentExamQuestionDTO implements Serializable {
                                   String illustrationPath, String answerOption1,
                                   String answerOption2, String answerOption3,
                                   String answerOption4) {
+        this(questionId, questionVersionNo, orderNumber, score, content, topic,
+                difficulty, illustrationPath, answerOption1, answerOption2,
+                answerOption3, answerOption4, null);
+    }
+
+    public StudentExamQuestionDTO(int questionId, int questionVersionNo,
+                                  int orderNumber, double score, String content,
+                                  String topic, String difficulty,
+                                  String illustrationPath, String answerOption1,
+                                  String answerOption2, String answerOption3,
+                                  String answerOption4,
+                                  QuestionIllustrationDTO illustration) {
         this.questionId = questionId;
         this.questionVersionNo = questionVersionNo;
         this.orderNumber = orderNumber;
@@ -36,6 +49,7 @@ public class StudentExamQuestionDTO implements Serializable {
         this.answerOption2 = answerOption2;
         this.answerOption3 = answerOption3;
         this.answerOption4 = answerOption4;
+        this.illustration = illustration;
     }
 
     public int getQuestionId() { return questionId; }
@@ -50,4 +64,5 @@ public class StudentExamQuestionDTO implements Serializable {
     public String getAnswerOption2() { return answerOption2; }
     public String getAnswerOption3() { return answerOption3; }
     public String getAnswerOption4() { return answerOption4; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 }

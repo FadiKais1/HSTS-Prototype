@@ -24,6 +24,7 @@ public final class PublishedExamQuestionReviewDTO implements Serializable {
     private final PublishedAnswerOutcome outcome;
     private final BigDecimal awardedScore;
     private final BigDecimal maximumScore;
+    private final QuestionIllustrationDTO illustration;
 
     public PublishedExamQuestionReviewDTO(
             int orderNumber, int questionId, int questionVersionNo,
@@ -32,6 +33,20 @@ public final class PublishedExamQuestionReviewDTO implements Serializable {
             Integer selectedOptionNumber, int correctOptionNumber,
             PublishedAnswerOutcome outcome, BigDecimal awardedScore,
             BigDecimal maximumScore
+    ) {
+        this(orderNumber, questionId, questionVersionNo, content, topic,
+                difficulty, type, illustrationPath, answerOptions,
+                selectedOptionNumber, correctOptionNumber, outcome,
+                awardedScore, maximumScore, null);
+    }
+
+    public PublishedExamQuestionReviewDTO(
+            int orderNumber, int questionId, int questionVersionNo,
+            String content, String topic, String difficulty, String type,
+            String illustrationPath, List<String> answerOptions,
+            Integer selectedOptionNumber, int correctOptionNumber,
+            PublishedAnswerOutcome outcome, BigDecimal awardedScore,
+            BigDecimal maximumScore, QuestionIllustrationDTO illustration
     ) {
         requirePositive(orderNumber, "Question order must be positive");
         requirePositive(questionId, "Question ID must be positive");
@@ -86,6 +101,7 @@ public final class PublishedExamQuestionReviewDTO implements Serializable {
         this.outcome = safeOutcome;
         this.awardedScore = safeAwarded;
         this.maximumScore = safeMaximum;
+        this.illustration = illustration;
     }
 
     public int getOrderNumber() { return orderNumber; }
@@ -102,6 +118,7 @@ public final class PublishedExamQuestionReviewDTO implements Serializable {
     public PublishedAnswerOutcome getOutcome() { return outcome; }
     public BigDecimal getAwardedScore() { return awardedScore; }
     public BigDecimal getMaximumScore() { return maximumScore; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 
     private static void validateOutcome(PublishedAnswerOutcome outcome,
                                         Integer selected, int correct) {

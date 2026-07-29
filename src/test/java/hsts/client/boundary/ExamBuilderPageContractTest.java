@@ -24,6 +24,7 @@ import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class ExamBuilderPageContractTest {
@@ -150,7 +151,7 @@ public class ExamBuilderPageContractTest {
         assertEquals("Second snapshot", second.getContent());
         assertEquals("Topic", second.getTopic());
         assertEquals("HARD", second.getDifficulty());
-        assertEquals("", second.getIllustrationPath());
+        assertNull(second.getIllustration());
         assertEquals("A", second.getAnswerOption1());
         assertEquals("B", second.getAnswerOption2());
         assertEquals("C", second.getAnswerOption3());

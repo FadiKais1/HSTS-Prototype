@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 
 <BorderPane xmlns:fx="http://javafx.com/fxml"
@@ -57,6 +58,16 @@
                                           style="-fx-control-inner-background: white; -fx-text-fill: #111827; -fx-opacity: 1;"/>
                                 <Label text="Ordered answer options" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
                                 <ListView fx:id="questionOptionsList" prefHeight="150"/>
+                                <VBox fx:id="questionIllustrationContainer" spacing="6"
+                                      visible="false" managed="false">
+                                    <ImageView fx:id="questionIllustrationView" fitWidth="480"
+                                               fitHeight="260" preserveRatio="true"
+                                               visible="false" managed="false"/>
+                                    <Label fx:id="questionIllustrationErrorLabel"
+                                           text="Question illustration is unavailable"
+                                           style="-fx-text-fill: #6b7280;"
+                                           visible="false" managed="false"/>
+                                </VBox>
                             </VBox>
                         </items>
                     </SplitPane>
@@ -86,6 +97,16 @@
                                           style="-fx-control-inner-background: white; -fx-text-fill: #111827; -fx-opacity: 1;"/>
                                 <Label text="Ordered question snapshots" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
                                 <ListView fx:id="examQuestionsList" prefHeight="170"/>
+                                <VBox fx:id="examIllustrationContainer" spacing="6"
+                                      visible="false" managed="false">
+                                    <ImageView fx:id="examIllustrationView" fitWidth="480"
+                                               fitHeight="260" preserveRatio="true"
+                                               visible="false" managed="false"/>
+                                    <Label fx:id="examIllustrationErrorLabel"
+                                           text="Question illustration is unavailable"
+                                           style="-fx-text-fill: #6b7280;"
+                                           visible="false" managed="false"/>
+                                </VBox>
                             </VBox>
                         </items>
                     </SplitPane>
@@ -123,6 +144,16 @@
                                               style="-fx-control-inner-background: white; -fx-text-fill: #111827; -fx-opacity: 1;"/>
                                     <Label text="Ordered answer review" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
                                     <ListView fx:id="submissionAnswersList" prefHeight="150"/>
+                                    <VBox fx:id="submissionIllustrationContainer" spacing="6"
+                                          visible="false" managed="false">
+                                        <ImageView fx:id="submissionIllustrationView" fitWidth="480"
+                                                   fitHeight="260" preserveRatio="true"
+                                                   visible="false" managed="false"/>
+                                        <Label fx:id="submissionIllustrationErrorLabel"
+                                               text="Question illustration is unavailable"
+                                               style="-fx-text-fill: #6b7280;"
+                                               visible="false" managed="false"/>
+                                    </VBox>
                                 </VBox>
                             </items>
                         </SplitPane>

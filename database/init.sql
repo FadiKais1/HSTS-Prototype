@@ -108,6 +108,33 @@ CREATE TABLE IF NOT EXISTS answer_options (
         CHECK (option_number BETWEEN 1 AND 4)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS question_version_illustrations (
+    question_id INT NOT NULL,
+    version_no INT NOT NULL,
+    media_type VARCHAR(30) NOT NULL,
+    content_bytes MEDIUMBLOB NOT NULL,
+    byte_length INT NOT NULL,
+    width_pixels INT NOT NULL,
+    height_pixels INT NOT NULL,
+    content_sha256 CHAR(64) NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (question_id, version_no),
+    CONSTRAINT fk_question_version_illustrations_version
+        FOREIGN KEY (question_id, version_no)
+        REFERENCES question_versions (question_id, version_no) ON DELETE RESTRICT,
+    CONSTRAINT chk_question_version_illustrations_media_type
+        CHECK (media_type IN ('image/png', 'image/jpeg')),
+    CONSTRAINT chk_question_version_illustrations_byte_length
+        CHECK (byte_length BETWEEN 1 AND 2097152
+               AND byte_length = OCTET_LENGTH(content_bytes)),
+    CONSTRAINT chk_question_version_illustrations_width
+        CHECK (width_pixels BETWEEN 1 AND 4096),
+    CONSTRAINT chk_question_version_illustrations_height
+        CHECK (height_pixels BETWEEN 1 AND 4096),
+    CONSTRAINT chk_question_version_illustrations_sha256
+        CHECK (content_sha256 REGEXP '^[0-9a-f]{64}$')
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS course_bots (
     bot_id INT NOT NULL AUTO_INCREMENT,
     course_id INT NOT NULL,

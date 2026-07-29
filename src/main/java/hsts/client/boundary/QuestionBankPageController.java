@@ -6,10 +6,12 @@ import hsts.common.CourseSummaryDTO;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionIllustrationUploadPayload;
 import hsts.common.QuestionVersionDTO;
 import hsts.common.UpdateQuestionPayload;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
+import hsts.common.type.QuestionIllustrationChange;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -34,17 +36,24 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 public class QuestionBankPageController {
     private static final String ALL = "All";
@@ -65,6 +74,11 @@ public class QuestionBankPageController {
     private boolean updatePending;
     private boolean statusPending;
     private boolean historyPending;
+    private boolean illustrationReadPending;
+    private QuestionIllustrationUploadPayload illustrationUpload;
+    private QuestionIllustrationChange illustrationChange =
+            QuestionIllustrationChange.KEEP;
+    private QuestionIllustrationRenderer illustrationRenderer;
 
     @FXML private ComboBox<CourseSummaryDTO> courseFilterComboBox;
     @FXML private ComboBox<CourseSummaryDTO> subjectFilterComboBox;
@@ -87,7 +101,13 @@ public class QuestionBankPageController {
 
     @FXML private TextArea contentArea;
     @FXML private TextField topicField;
-    @FXML private TextField illustrationPathField;
+    @FXML private Button chooseIllustrationButton;
+    @FXML private Button removeIllustrationButton;
+    @FXML private Button clearIllustrationButton;
+    @FXML private Label illustrationSelectionLabel;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
     @FXML private TextField option1Field;
     @FXML private TextField option2Field;
     @FXML private TextField option3Field;
@@ -122,6 +142,10 @@ public class QuestionBankPageController {
         setupFilterControls();
         setupEditorControls();
         setupTable();
+        illustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
         setConfiguredState(false);
         setStatus("Waiting for authenticated client.");
         setCurrentAction("Waiting for configuration");
@@ -434,7 +458,18 @@ public class QuestionBankPageController {
                 FXCollections.observableArrayList(DifficultyLevel.values())
         );
         difficulty.setValue(DifficultyLevel.EASY);
-        TextField illustration = new TextField();
+        Button chooseIllustration = new Button("Choose PNG/JPEG");
+        Button clearIllustration = new Button("Clear selected file");
+        Label illustration = new Label("No illustration selected");
+        ImageView createPreviewView = new ImageView();
+        Label createPreviewError = new Label();
+        VBox createPreviewBox = new VBox(4, createPreviewView, createPreviewError);
+        QuestionIllustrationRenderer createPreviewRenderer =
+                new QuestionIllustrationRenderer(
+                        createPreviewView, createPreviewError, createPreviewBox
+                );
+        AtomicReference<QuestionIllustrationUploadPayload> upload =
+                new AtomicReference<>();
         TextField option1 = new TextField();
         TextField option2 = new TextField();
         TextField option3 = new TextField();
@@ -454,7 +489,11 @@ public class QuestionBankPageController {
         addFormRow(form, 1, "Content *", content);
         addFormRow(form, 2, "Topic *", topic);
         addFormRow(form, 3, "Difficulty *", difficulty);
-        addFormRow(form, 4, "Illustration path", illustration);
+        VBox illustrationControls = new VBox(
+                6, new javafx.scene.layout.HBox(8, chooseIllustration, clearIllustration),
+                illustration, createPreviewBox
+        );
+        addFormRow(form, 4, "Illustration", illustrationControls);
         addFormRow(form, 5, "Option 1 *", option1);
         addFormRow(form, 6, "Option 2 *", option2);
         addFormRow(form, 7, "Option 3 *", option3);
@@ -466,6 +505,24 @@ public class QuestionBankPageController {
         dialog.getDialogPane().getButtonTypes().addAll(createType, ButtonType.CANCEL);
         dialog.getDialogPane().setContent(new ScrollPane(form));
         Node createNode = dialog.getDialogPane().lookupButton(createType);
+        chooseIllustration.setOnAction(event -> {
+            createNode.setDisable(true);
+            chooseIllustration(loaded -> {
+                upload.set(loaded);
+                illustration.setText(loaded == null
+                        ? "No illustration selected" : loaded.getFileName());
+                createPreviewRenderer.renderUpload(loaded);
+                createNode.setDisable(false);
+            }, message -> {
+                validation.setText(message);
+                createNode.setDisable(false);
+            });
+        });
+        clearIllustration.setOnAction(event -> {
+            upload.set(null);
+            illustration.setText("No illustration selected");
+            createPreviewRenderer.render(null);
+        });
         createNode.addEventFilter(ActionEvent.ACTION, event -> {
             String message = validateQuestionForm(
                     courseBox.getValue(), content.getText(), topic.getText(), difficulty.getValue(),
@@ -483,9 +540,10 @@ public class QuestionBankPageController {
                         content.getText(),
                         topic.getText(),
                         difficulty.getValue(),
-                        illustration.getText(),
+                        "",
                         option1.getText(), option2.getText(), option3.getText(), option4.getText(),
-                        correctOption.getValue()
+                        correctOption.getValue(),
+                        upload.get()
                 )
                 : null);
         return dialog.showAndWait();
@@ -494,6 +552,89 @@ public class QuestionBankPageController {
     private void addFormRow(GridPane form, int row, String label, Node control) {
         form.add(new Label(label), 0, row);
         form.add(control, 1, row);
+    }
+
+    @FXML
+    private void handleChooseIllustration() {
+        if (illustrationReadPending) return;
+        illustrationReadPending = true;
+        updateActionState();
+        chooseIllustration(upload -> {
+            illustrationReadPending = false;
+            if (upload == null) {
+                updateActionState();
+                return;
+            }
+            illustrationUpload = upload;
+            illustrationChange = QuestionIllustrationChange.REPLACE;
+            illustrationSelectionLabel.setText(upload.getFileName());
+            illustrationRenderer.renderUpload(upload);
+            updateActionState();
+        }, message -> {
+            illustrationReadPending = false;
+            setStatus(message);
+            updateActionState();
+        });
+    }
+
+    @FXML
+    private void handleRemoveIllustration() {
+        illustrationUpload = null;
+        illustrationChange = QuestionIllustrationChange.REMOVE;
+        illustrationSelectionLabel.setText("Illustration will be removed");
+        illustrationRenderer.render(null);
+    }
+
+    @FXML
+    private void handleClearIllustrationUpload() {
+        QuestionDTO selected = tableView.getSelectionModel().getSelectedItem();
+        illustrationUpload = null;
+        illustrationChange = QuestionIllustrationChange.KEEP;
+        illustrationSelectionLabel.setText(selected != null
+                && selected.getIllustration() != null
+                ? "Keeping current illustration" : "No illustration selected");
+        illustrationRenderer.render(selected == null ? null : selected.getIllustration());
+    }
+
+    private void chooseIllustration(Consumer<QuestionIllustrationUploadPayload> success,
+                                    Consumer<String> failure) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Choose Question Illustration");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(
+                "PNG or JPEG images", "*.png", "*.jpg", "*.jpeg"
+        ));
+        var selected = chooser.showOpenDialog(tableView.getScene().getWindow());
+        if (selected == null) {
+            success.accept(null);
+            return;
+        }
+        Path path = selected.toPath();
+        String safeName = selected.getName();
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                byte[] bytes = Files.readAllBytes(path);
+                if (bytes.length == 0) {
+                    throw new IllegalArgumentException(
+                            "Question illustration content is required"
+                    );
+                }
+                if (bytes.length > 2 * 1024 * 1024) {
+                    throw new IllegalArgumentException(
+                            "Question illustration exceeds 2 MiB"
+                    );
+                }
+                return new QuestionIllustrationUploadPayload(safeName, bytes);
+            } catch (IllegalArgumentException exception) {
+                throw exception;
+            } catch (Exception exception) {
+                throw new IllegalArgumentException(
+                        "Unable to read question illustration"
+                );
+            }
+        }).whenComplete((upload, error) -> Platform.runLater(() -> {
+            if (error == null) success.accept(upload);
+            else failure.accept(getCleanError(error));
+        }));
     }
 
     private String validateQuestionForm(CourseSummaryDTO course, String content, String topic,
@@ -541,10 +682,12 @@ public class QuestionBankPageController {
                 topicField.getText(),
                 difficultyComboBox.getValue(),
                 statusComboBox.getValue(),
-                illustrationPathField.getText(),
+                "",
                 option1Field.getText(), option2Field.getText(), option3Field.getText(),
                 option4Field.getText(), getSelectedCorrectOptionNumber(),
-                selectedQuestion.getVersionNo()
+                selectedQuestion.getVersionNo(),
+                illustrationChange,
+                illustrationUpload
         );
 
         updatePending = true;
@@ -652,6 +795,7 @@ public class QuestionBankPageController {
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
 
         VBox versions = new VBox(10);
+        List<QuestionIllustrationRenderer> renderers = new ArrayList<>();
         versions.setPadding(new Insets(10));
         if (history.isEmpty()) {
             versions.getChildren().add(new Label("No versions are available."));
@@ -661,7 +805,16 @@ public class QuestionBankPageController {
                 details.setEditable(false);
                 details.setWrapText(true);
                 details.setPrefRowCount(13);
-                versions.getChildren().add(details);
+                ImageView preview = new ImageView();
+                Label previewError = new Label();
+                VBox previewBox = new VBox(4, preview, previewError);
+                QuestionIllustrationRenderer renderer =
+                        new QuestionIllustrationRenderer(
+                                preview, previewError, previewBox
+                        );
+                renderer.render(version.getIllustration());
+                renderers.add(renderer);
+                versions.getChildren().add(new VBox(6, details, previewBox));
             }
         }
         ScrollPane scrollPane = new ScrollPane(versions);
@@ -670,6 +823,7 @@ public class QuestionBankPageController {
         scrollPane.setPrefViewportHeight(560);
         dialog.getDialogPane().setContent(scrollPane);
         dialog.showAndWait();
+        renderers.forEach(QuestionIllustrationRenderer::dispose);
     }
 
     private String formatVersion(QuestionVersionDTO version) {
@@ -682,7 +836,8 @@ public class QuestionBankPageController {
                 + "\nDifficulty: " + version.getDifficulty()
                 + "\nTopic: " + safe(version.getTopic())
                 + "\nContent: " + safe(version.getContent())
-                + "\nIllustration: " + safe(version.getIllustrationPath())
+                + "\nIllustration: "
+                + (version.getIllustration() == null ? "Unavailable" : "Available")
                 + "\nOption 1: " + safe(version.getAnswerOption1())
                 + "\nOption 2: " + safe(version.getAnswerOption2())
                 + "\nOption 3: " + safe(version.getAnswerOption3())
@@ -708,6 +863,7 @@ public class QuestionBankPageController {
         questionRequestGeneration++;
         try {
             backHandler.run();
+            illustrationRenderer.dispose();
         } catch (RuntimeException exception) {
             closed = false;
             setStatus("Unable to return to dashboard.");
@@ -736,7 +892,11 @@ public class QuestionBankPageController {
         statusComboBox.setValue(defaultIfBlank(
                 question.getStatus(), QuestionStatus.ACTIVE.name()
         ));
-        illustrationPathField.setText(safe(question.getIllustrationPath()));
+        illustrationUpload = null;
+        illustrationChange = QuestionIllustrationChange.KEEP;
+        illustrationSelectionLabel.setText(question.getIllustration() == null
+                ? "No server-managed illustration" : "Keeping current illustration");
+        illustrationRenderer.render(question.getIllustration());
         option1Field.setText(safe(question.getAnswerOption1()));
         option2Field.setText(safe(question.getAnswerOption2()));
         option3Field.setText(safe(question.getAnswerOption3()));
@@ -755,7 +915,10 @@ public class QuestionBankPageController {
         topicField.clear();
         difficultyComboBox.setValue(DifficultyLevel.EASY.name());
         statusComboBox.setValue(QuestionStatus.ACTIVE.name());
-        illustrationPathField.clear();
+        illustrationUpload = null;
+        illustrationChange = QuestionIllustrationChange.KEEP;
+        illustrationSelectionLabel.setText("No illustration selected");
+        illustrationRenderer.render(null);
         option1Field.clear();
         option2Field.clear();
         option3Field.clear();
@@ -779,6 +942,9 @@ public class QuestionBankPageController {
         statusActionButton.setDisable(!configured || !selected || statusPending || loadingQuestions);
         historyButton.setDisable(!configured || !selected || historyPending);
         clearSelectionButton.setDisable(!selected);
+        chooseIllustrationButton.setDisable(!selected || illustrationReadPending);
+        removeIllustrationButton.setDisable(!selected || illustrationReadPending);
+        clearIllustrationButton.setDisable(!selected || illustrationReadPending);
     }
 
     private void setConfiguredState(boolean configured) {
@@ -914,6 +1080,7 @@ public class QuestionBankPageController {
 
     public void close() {
         closed = true;
+        if (illustrationRenderer != null) illustrationRenderer.dispose();
         questionRequestGeneration++;
         questionClientController = null;
         client = null;

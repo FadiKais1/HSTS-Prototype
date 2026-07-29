@@ -113,6 +113,7 @@ public class ExamQuestion {
                 source.getUpdatedAt(),
                 source.getTopic(),
                 source.getIllustrationPath(),
+                source.getIllustration(),
                 source.getAnswerOptions()
         );
     }

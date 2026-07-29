@@ -118,6 +118,9 @@ public class ExamSchemaMigrationTest {
     @Test
     public void examQuestionsReferenceImmutableQuestionVersionsWithoutDeletingThem() {
         for (String source : new String[]{INIT_SQL, INITIALIZER}) {
+            String examQuestionDefinition = tableDefinition(
+                    source, "exam_version_questions"
+            );
             assertContainsAll(source,
                     "PRIMARY KEY (exam_id, exam_version_no, order_number)",
                     "UNIQUE (exam_id, exam_version_no, question_id)",
@@ -131,13 +134,27 @@ public class ExamSchemaMigrationTest {
                     "REFERENCES question_versions (question_id, version_no)",
                     "idx_exam_version_questions_question_version"
             );
-            assertFalse(normalize(source).contains(
+            assertFalse(normalize(examQuestionDefinition).contains(
                     "REFERENCES QUESTION_VERSIONS (QUESTION_ID, VERSION_NO) ON DELETE"
             ));
-            assertFalse(normalize(source).contains(
+            assertFalse(normalize(examQuestionDefinition).contains(
                     "REFERENCES QUESTIONS (QUESTION_ID) ON DELETE"
             ));
         }
+    }
+
+    private static String tableDefinition(String source, String tableName) {
+        String marker = "CREATE TABLE IF NOT EXISTS " + tableName;
+        int start = source.lastIndexOf(marker);
+        if (start < 0) {
+            marker = "CREATE TABLE " + tableName;
+            start = source.lastIndexOf(marker);
+        }
+        int end = source.indexOf("ENGINE=InnoDB", start);
+        if (start < 0 || end < 0) {
+            throw new AssertionError("Missing table definition: " + tableName);
+        }
+        return source.substring(start, end + "ENGINE=InnoDB".length());
     }
 
     @Test

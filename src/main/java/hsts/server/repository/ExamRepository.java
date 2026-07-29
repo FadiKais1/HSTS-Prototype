@@ -228,6 +228,13 @@ public class ExamRepository {
                    qv.question_type,
                    qv.difficulty,
                    qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    qv.correct_option_number,
                    qv.created_at AS question_version_created_at,
                    q.status AS question_status,
@@ -239,6 +246,9 @@ public class ExamRepository {
              AND qv.version_no = evq.question_version_no
             LEFT JOIN questions q
               ON q.question_id = evq.question_id
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             LEFT JOIN answer_options ao
               ON ao.question_id = evq.question_id
              AND ao.version_no = evq.question_version_no
@@ -256,6 +266,13 @@ public class ExamRepository {
                    qv.topic,
                    qv.difficulty,
                    qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    option_1.option_text AS answer_option_1,
                    option_2.option_text AS answer_option_2,
                    option_3.option_text AS answer_option_3,
@@ -265,6 +282,9 @@ public class ExamRepository {
             JOIN question_versions qv
               ON qv.question_id = evq.question_id
              AND qv.version_no = evq.question_version_no
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             JOIN answer_options option_1
               ON option_1.question_id = qv.question_id
              AND option_1.version_no = qv.version_no
@@ -919,6 +939,7 @@ public class ExamRepository {
                         questionId
                 ),
                 resultSet.getString("illustration_path"),
+                QuestionIllustrationJdbcSupport.readEntity(resultSet),
                 correctOptionNumber,
                 requireTimestamp(
                         resultSet.getObject(
@@ -1031,7 +1052,8 @@ public class ExamRepository {
                 resultSet.getString("answer_option_2"),
                 resultSet.getString("answer_option_3"),
                 resultSet.getString("answer_option_4"),
-                resultSet.getInt("correct_option_number")
+                resultSet.getInt("correct_option_number"),
+                QuestionIllustrationJdbcSupport.readDto(resultSet)
         );
     }
 
@@ -1788,6 +1810,7 @@ public class ExamRepository {
         private final DifficultyLevel difficulty;
         private final QuestionStatus status;
         private final String illustrationPath;
+        private final hsts.server.entity.QuestionIllustration illustration;
         private final int correctOptionNumber;
         private final LocalDateTime versionCreatedAt;
         private final List<AnswerOption> options = new ArrayList<>(4);
@@ -1800,6 +1823,7 @@ public class ExamRepository {
                                             DifficultyLevel difficulty,
                                             QuestionStatus status,
                                             String illustrationPath,
+                                            hsts.server.entity.QuestionIllustration illustration,
                                             int correctOptionNumber,
                                             LocalDateTime versionCreatedAt) {
             this.questionId = questionId;
@@ -1812,6 +1836,7 @@ public class ExamRepository {
             this.difficulty = difficulty;
             this.status = status;
             this.illustrationPath = illustrationPath;
+            this.illustration = illustration;
             this.correctOptionNumber = correctOptionNumber;
             this.versionCreatedAt = versionCreatedAt;
         }
@@ -1857,6 +1882,7 @@ public class ExamRepository {
                     versionCreatedAt,
                     topic,
                     illustrationPath,
+                    illustration,
                     options
             );
             return new ExamQuestion(

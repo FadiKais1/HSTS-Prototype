@@ -17,10 +17,22 @@ public class CreateQuestionPayload implements Serializable {
     private final String answerOption3;
     private final String answerOption4;
     private final int correctOptionNumber;
+    private final QuestionIllustrationUploadPayload illustrationUpload;
 
     public CreateQuestionPayload(int courseId, String content, String topic, DifficultyLevel difficulty,
                                  String illustrationPath, String answerOption1, String answerOption2,
                                  String answerOption3, String answerOption4, int correctOptionNumber) {
+        this(courseId, content, topic, difficulty, illustrationPath,
+                answerOption1, answerOption2, answerOption3, answerOption4,
+                correctOptionNumber, null);
+    }
+
+    public CreateQuestionPayload(int courseId, String content, String topic,
+                                 DifficultyLevel difficulty, String illustrationPath,
+                                 String answerOption1, String answerOption2,
+                                 String answerOption3, String answerOption4,
+                                 int correctOptionNumber,
+                                 QuestionIllustrationUploadPayload illustrationUpload) {
         this.courseId = courseId;
         this.content = content;
         this.topic = topic;
@@ -31,6 +43,7 @@ public class CreateQuestionPayload implements Serializable {
         this.answerOption3 = answerOption3;
         this.answerOption4 = answerOption4;
         this.correctOptionNumber = correctOptionNumber;
+        this.illustrationUpload = illustrationUpload;
     }
 
     public int getCourseId() { return courseId; }
@@ -43,4 +56,7 @@ public class CreateQuestionPayload implements Serializable {
     public String getAnswerOption3() { return answerOption3; }
     public String getAnswerOption4() { return answerOption4; }
     public int getCorrectOptionNumber() { return correctOptionNumber; }
+    public QuestionIllustrationUploadPayload getIllustrationUpload() {
+        return illustrationUpload;
+    }
 }

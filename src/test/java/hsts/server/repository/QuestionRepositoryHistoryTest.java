@@ -264,8 +264,13 @@ public class QuestionRepositoryHistoryTest {
                         }
                         if ("getObject".equals(method.getName())) {
                             Object value = currentRow(index[0]).get((String) arguments[0]);
-                            assertEquals(LocalDateTime.class, arguments[1]);
+                            if (arguments.length == 2) {
+                                assertEquals(LocalDateTime.class, arguments[1]);
+                            }
                             return value;
+                        }
+                        if ("getBytes".equals(method.getName())) {
+                            return (byte[]) currentRow(index[0]).get((String) arguments[0]);
                         }
                         return defaultValue(method.getReturnType());
                     }

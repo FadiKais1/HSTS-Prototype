@@ -30,6 +30,7 @@ import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -88,6 +89,7 @@ public class ExamExecutionPage {
     private long submissionGeneration;
     private long attemptGeneration;
     private long stateRevision;
+    private QuestionIllustrationRenderer illustrationRenderer;
 
     @FXML private Label userLabel;
     @FXML private Label roleLabel;
@@ -125,12 +127,19 @@ public class ExamExecutionPage {
     @FXML private Button refreshButton;
     @FXML private Button submitButton;
     @FXML private Label saveStatusLabel;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
 
     private final ToggleGroup answerGroup = new ToggleGroup();
 
     @FXML
     private void initialize() {
         configureAnswerOptions();
+        illustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
         questionListView.getSelectionModel().selectedIndexProperty().addListener(
                 (observable, oldIndex, newIndex) -> {
                     if (newIndex != null && newIndex.intValue() >= 0) {
@@ -379,6 +388,7 @@ public class ExamExecutionPage {
         client = null;
         loginResult = null;
         stage = null;
+        illustrationRenderer.dispose();
         navigation.run();
     }
 
@@ -606,6 +616,7 @@ public class ExamExecutionPage {
         questionDetailsLabel.setText(
                 safe(question.getTopic()) + "  |  " + safe(question.getDifficulty())
         );
+        illustrationRenderer.render(question.getIllustration());
         List<RadioButton> buttons = answerButtons();
         List<String> options;
         try {
@@ -675,6 +686,7 @@ public class ExamExecutionPage {
         questionPositionLabel.setText("No questions available");
         questionTextLabel.setText("");
         questionDetailsLabel.setText("");
+        illustrationRenderer.render(null);
         renderingSelection = true;
         try {
             answerGroup.selectToggle(null);

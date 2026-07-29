@@ -13,6 +13,7 @@
 <?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.ToggleGroup?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
@@ -202,6 +203,18 @@
                                     </VBox>
                                 </items>
                             </SplitPane>
+                            <VBox fx:id="questionIllustrationContainer" spacing="6"
+                                  visible="false" managed="false">
+                                <Label text="Selected question illustration"
+                                       style="-fx-font-weight: bold;"/>
+                                <ImageView fx:id="questionIllustrationView" fitWidth="520"
+                                           fitHeight="320" preserveRatio="true"
+                                           visible="false" managed="false"/>
+                                <Label fx:id="questionIllustrationErrorLabel"
+                                       text="Question illustration is unavailable"
+                                       style="-fx-text-fill: #6b7280;"
+                                       visible="false" managed="false"/>
+                            </VBox>
                         </VBox>
                     </content>
                 </ScrollPane>

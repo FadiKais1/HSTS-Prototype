@@ -10,6 +10,7 @@
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
@@ -118,6 +119,16 @@
                                 <Label fx:id="questionTextLabel" wrapText="true"
                                        style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
                                 <Label fx:id="questionDetailsLabel" style="-fx-text-fill: #6b7280;"/>
+                                <VBox fx:id="questionIllustrationContainer" spacing="6"
+                                      visible="false" managed="false">
+                                    <ImageView fx:id="questionIllustrationView" fitWidth="520"
+                                               fitHeight="320" preserveRatio="true"
+                                               visible="false" managed="false"/>
+                                    <Label fx:id="questionIllustrationErrorLabel"
+                                           text="Question illustration is unavailable"
+                                           style="-fx-text-fill: #6b7280;"
+                                           visible="false" managed="false"/>
+                                </VBox>
                                 <Separator/>
                                 <RadioButton fx:id="option1Radio" wrapText="true"
                                              contentDisplay="LEFT" minWidth="240" maxWidth="Infinity"

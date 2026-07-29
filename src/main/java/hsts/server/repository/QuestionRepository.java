@@ -1,6 +1,7 @@
 package hsts.server.repository;
 
 import hsts.common.QuestionDTO;
+import hsts.common.QuestionIllustrationDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.PrincipalQuestionDTO;
 import hsts.common.QuestionVersionDTO;
@@ -9,6 +10,7 @@ import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
 import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Question;
+import hsts.server.entity.QuestionIllustration;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -40,6 +42,13 @@ public class QuestionRepository {
                    qv.difficulty,
                    q.status,
                    qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    option_1.option_text AS answer_option_1,
                    option_2.option_text AS answer_option_2,
                    option_3.option_text AS answer_option_3,
@@ -51,6 +60,9 @@ public class QuestionRepository {
              AND qv.version_no = q.current_version_no
             JOIN courses c ON c.course_id = q.course_id
             JOIN subjects s ON s.subject_id = c.subject_id
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             JOIN teacher_courses tc
               ON tc.course_id = q.course_id
              AND tc.teacher_user_id = ?
@@ -84,6 +96,13 @@ public class QuestionRepository {
                    qv.question_type,
                    qv.difficulty,
                    qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    qv.correct_option_number,
                    option_row.option_number,
                    option_row.option_text
@@ -97,6 +116,9 @@ public class QuestionRepository {
             LEFT JOIN answer_options option_row
               ON option_row.question_id = qv.question_id
              AND option_row.version_no = qv.version_no
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             WHERE q.question_id = ?
             ORDER BY option_row.option_number
             """;
@@ -112,6 +134,13 @@ public class QuestionRepository {
                    qv.question_type,
                    qv.difficulty,
                    qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    qv.correct_option_number,
                    option_row.option_number,
                    option_row.option_text
@@ -125,6 +154,9 @@ public class QuestionRepository {
             LEFT JOIN answer_options option_row
               ON option_row.question_id = qv.question_id
              AND option_row.version_no = qv.version_no
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             WHERE q.question_id = ?
             ORDER BY option_row.option_number
             """;
@@ -175,6 +207,14 @@ public class QuestionRepository {
                 option_text
             )
             VALUES (?, ?, ?, ?)
+            """;
+
+    private static final String CREATE_ILLUSTRATION_SQL = """
+            INSERT INTO question_version_illustrations (
+                question_id, version_no, media_type, content_bytes,
+                byte_length, width_pixels, height_pixels, content_sha256,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String LOCK_QUESTION_VERSION_SQL = """
@@ -229,6 +269,13 @@ public class QuestionRepository {
                    qv.question_type,
                    qv.difficulty,
                    qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    option_1.option_text AS answer_option_1,
                    option_2.option_text AS answer_option_2,
                    option_3.option_text AS answer_option_3,
@@ -238,6 +285,9 @@ public class QuestionRepository {
                    qv.created_at
             FROM question_versions qv
             JOIN questions q ON q.question_id = qv.question_id
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             JOIN teacher_courses tc
               ON tc.course_id = q.course_id
              AND tc.teacher_user_id = ?
@@ -268,6 +318,13 @@ public class QuestionRepository {
                    q.updated_at AS question_updated_at,
                    qv.version_no, qv.content, qv.topic, qv.question_type,
                    qv.difficulty, qv.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    qv.correct_option_number, qv.created_at AS version_created_at,
                    option_1.option_text AS answer_option_1,
                    option_2.option_text AS answer_option_2,
@@ -275,6 +332,9 @@ public class QuestionRepository {
                    option_4.option_text AS answer_option_4
             FROM questions q
             JOIN question_versions qv ON qv.question_id = q.question_id
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = qv.question_id
+             AND qvi.version_no = qv.version_no
             JOIN courses c ON c.course_id = q.course_id
             JOIN users creator ON creator.user_id = q.created_by_user_id
             JOIN answer_options option_1
@@ -354,6 +414,9 @@ public class QuestionRepository {
                         createdAt
                 );
                 insertAnswerOptions(connection, questionId, 1, data);
+                insertIllustration(
+                        connection, questionId, 1, data.illustration(), createdAt
+                );
                 connection.commit();
                 return questionId;
 
@@ -414,6 +477,10 @@ public class QuestionRepository {
                         updatedAt
                 );
                 insertAnswerOptions(connection, questionId, newVersionNo, data);
+                insertIllustration(
+                        connection, questionId, newVersionNo, data.illustration(),
+                        updatedAt
+                );
                 updateCurrentQuestion(
                         connection,
                         questionId,
@@ -602,7 +669,8 @@ public class QuestionRepository {
                         resultSet.getString("answer_option_4")),
                 correctOption,
                 resultSet.getObject("version_created_at", LocalDateTime.class),
-                resultSet.getObject("question_updated_at", LocalDateTime.class)
+                resultSet.getObject("question_updated_at", LocalDateTime.class),
+                QuestionIllustrationJdbcSupport.readDto(resultSet)
         );
     }
 
@@ -845,7 +913,8 @@ public class QuestionRepository {
                 resultSet.getInt("correct_option_number"),
                 resultSet.getInt("course_id"),
                 resultSet.getInt("subject_id"),
-                resultSet.getInt("version_no")
+                resultSet.getInt("version_no"),
+                QuestionIllustrationJdbcSupport.readDto(resultSet)
         );
     }
 
@@ -880,6 +949,8 @@ public class QuestionRepository {
                 questionId
         );
         String illustrationPath = resultSet.getString("illustration_path");
+        QuestionIllustration illustration =
+                QuestionIllustrationJdbcSupport.readEntity(resultSet);
         LocalDateTime createdAt = resultSet.getObject(
                 "created_at",
                 LocalDateTime.class
@@ -925,6 +996,7 @@ public class QuestionRepository {
                 updatedAt,
                 topic,
                 illustrationPath,
+                illustration,
                 options
         );
     }
@@ -1001,7 +1073,8 @@ public class QuestionRepository {
                 optionTexts[1],
                 optionTexts[2],
                 optionTexts[3],
-                correctOptionNumber
+                correctOptionNumber,
+                question.getIllustration()
         );
     }
 
@@ -1089,6 +1162,34 @@ public class QuestionRepository {
                 if (statement.executeUpdate() != 1) {
                     throw new SQLException("Answer option insert did not affect exactly one row");
                 }
+            }
+        }
+    }
+
+    private void insertIllustration(Connection connection, int questionId,
+                                    int versionNo,
+                                    QuestionIllustration illustration,
+                                    LocalDateTime createdAt)
+            throws SQLException {
+        if (illustration == null) {
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                CREATE_ILLUSTRATION_SQL
+        )) {
+            statement.setInt(1, questionId);
+            statement.setInt(2, versionNo);
+            statement.setString(3, illustration.getMediaType());
+            statement.setBytes(4, illustration.getContent());
+            statement.setInt(5, illustration.getContent().length);
+            statement.setInt(6, illustration.getWidth());
+            statement.setInt(7, illustration.getHeight());
+            statement.setString(8, illustration.getSha256());
+            statement.setObject(9, createdAt);
+            if (statement.executeUpdate() != 1) {
+                throw new SQLException(
+                        "Question illustration insert did not affect exactly one row"
+                );
             }
         }
     }
@@ -1205,7 +1306,8 @@ public class QuestionRepository {
                 resultSet.getString("answer_option_4"),
                 resultSet.getInt("correct_option_number"),
                 resultSet.getInt("created_by_user_id"),
-                resultSet.getObject("created_at", LocalDateTime.class)
+                resultSet.getObject("created_at", LocalDateTime.class),
+                QuestionIllustrationJdbcSupport.readDto(resultSet)
         );
     }
 
@@ -1241,7 +1343,8 @@ public class QuestionRepository {
             String answerOption2,
             String answerOption3,
             String answerOption4,
-            int correctOptionNumber
+            int correctOptionNumber,
+            QuestionIllustration illustration
     ) {
     }
 }

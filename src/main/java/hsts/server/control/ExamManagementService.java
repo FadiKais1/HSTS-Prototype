@@ -10,6 +10,7 @@ import hsts.common.ExamVersionPayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionIllustrationUploadPayload;
 import hsts.common.QuestionVersionDTO;
 import hsts.common.RejectExamPayload;
 import hsts.common.UpdateExamPayload;
@@ -18,11 +19,13 @@ import hsts.common.type.DifficultyLevel;
 import hsts.common.type.ExamStatus;
 import hsts.common.type.QuestionStatus;
 import hsts.common.type.QuestionType;
+import hsts.common.type.QuestionIllustrationChange;
 import hsts.common.type.UserRole;
 import hsts.server.entity.AnswerOption;
 import hsts.server.entity.Exam;
 import hsts.server.entity.ExamQuestion;
 import hsts.server.entity.Question;
+import hsts.server.entity.QuestionIllustration;
 import hsts.server.entity.User;
 import hsts.server.repository.CourseRepository;
 import hsts.server.repository.ExamRepository;
@@ -37,6 +40,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.time.LocalDateTime;
 
 public class ExamManagementService {
     private static final String MULTIPLE_CHOICE = "MULTIPLE_CHOICE";
@@ -118,6 +122,10 @@ public class ExamManagementService {
         authorizeQuestionManager(authenticatedUserId);
         requireCourseAssignment(authenticatedUserId, payload.getCourseId());
 
+        QuestionIllustration illustration = createIllustration(
+                payload.getIllustrationUpload()
+        );
+
         Question question = Question.rehydrate(
                 0,
                 payload.getContent().trim(),
@@ -127,7 +135,8 @@ public class ExamManagementService {
                 null,
                 null,
                 normalizeText(payload.getTopic(), "General"),
-                normalizeText(payload.getIllustrationPath(), ""),
+                "",
+                illustration,
                 answerOptions(
                         payload.getAnswerOption1().trim(),
                         payload.getAnswerOption2().trim(),
@@ -161,6 +170,7 @@ public class ExamManagementService {
         requireQuestionBankDependencies();
         authorizeQuestionManager(authenticatedUserId);
         validateQuestionPayload(payload);
+        validateIllustrationChange(payload);
 
         int questionId = payload.getQuestionId();
         Question question = requireCurrentQuestionEntity(
@@ -170,9 +180,8 @@ public class ExamManagementService {
         question.updateContent(payload.getContent().trim());
         question.setTopic(normalizeText(payload.getTopic(), "General"));
         question.setDifficulty(normalizeText(payload.getDifficulty(), "EASY"));
-        question.setIllustrationPath(
-                normalizeText(payload.getIllustrationPath(), "")
-        );
+        question.setIllustrationPath("");
+        applyIllustrationChange(question, payload);
         question.setAnswerOption1(payload.getAnswerOption1().trim());
         question.setAnswerOption2(payload.getAnswerOption2().trim());
         question.setAnswerOption3(payload.getAnswerOption3().trim());
@@ -935,8 +944,55 @@ public class ExamManagementService {
                 question.getAnswerOption2(),
                 question.getAnswerOption3(),
                 question.getAnswerOption4(),
-                question.getCorrectOptionNumber()
+                question.getCorrectOptionNumber(),
+                0,
+                0,
+                1,
+                question.getIllustration() == null
+                        ? null : question.getIllustration().toDto()
         );
+    }
+
+    private QuestionIllustration createIllustration(
+            QuestionIllustrationUploadPayload upload
+    ) {
+        return upload == null
+                ? null
+                : QuestionIllustration.create(upload, LocalDateTime.now());
+    }
+
+    private void validateIllustrationChange(UpdateQuestionPayload payload) {
+        QuestionIllustrationChange change = payload.getIllustrationChange();
+        if (change == null) {
+            throw new IllegalArgumentException(
+                    "Question illustration change is required"
+            );
+        }
+        if (change == QuestionIllustrationChange.REPLACE
+                && payload.getIllustrationUpload() == null) {
+            throw new IllegalArgumentException(
+                    "Question illustration content is required"
+            );
+        }
+        if (change != QuestionIllustrationChange.REPLACE
+                && payload.getIllustrationUpload() != null) {
+            throw new IllegalArgumentException(
+                    "Question illustration upload is invalid"
+            );
+        }
+    }
+
+    private void applyIllustrationChange(Question question,
+                                         UpdateQuestionPayload payload) {
+        switch (payload.getIllustrationChange()) {
+            case KEEP -> {
+                // The hydrated exact current-version value remains attached.
+            }
+            case REPLACE -> question.setIllustration(
+                    createIllustration(payload.getIllustrationUpload())
+            );
+            case REMOVE -> question.setIllustration(null);
+        }
     }
 
     private boolean isBlank(String value) {

@@ -344,6 +344,7 @@ public class PublishedGradesPageContractTest {
             case "TextArea" -> javafx.scene.control.TextArea.class;
             case "ProgressIndicator" -> javafx.scene.control.ProgressIndicator.class;
             case "VBox" -> javafx.scene.layout.VBox.class;
+            case "ImageView" -> javafx.scene.image.ImageView.class;
             default -> throw new AssertionError(
                     "Unexpected fx:id element " + tagName
             );

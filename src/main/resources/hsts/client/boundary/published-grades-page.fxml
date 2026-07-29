@@ -9,6 +9,7 @@
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextArea?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Region?>
@@ -148,6 +149,16 @@
                         <TextArea fx:id="reviewQuestionContentArea" editable="false"
                                   wrapText="true" prefRowCount="3"
                                   style="-fx-text-fill: #111827; -fx-font-size: 15px; -fx-opacity: 1;"/>
+                        <VBox fx:id="questionIllustrationContainer" spacing="6"
+                              visible="false" managed="false">
+                            <ImageView fx:id="questionIllustrationView" fitWidth="520"
+                                       fitHeight="320" preserveRatio="true"
+                                       visible="false" managed="false"/>
+                            <Label fx:id="questionIllustrationErrorLabel"
+                                   text="Question illustration is unavailable"
+                                   style="-fx-text-fill: #6b7280;"
+                                   visible="false" managed="false"/>
+                        </VBox>
                         <Label text="Answer options"
                                style="-fx-font-weight: bold; -fx-text-fill: #111827; -fx-opacity: 1;"/>
                         <VBox fx:id="answerOptionsBox" spacing="8"/>

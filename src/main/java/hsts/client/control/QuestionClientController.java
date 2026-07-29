@@ -68,7 +68,7 @@ public class QuestionClientController {
                     question.getTopic(),
                     question.getDifficulty(),
                     question.getStatus(),
-                    question.getIllustrationPath(),
+                    "",
                     question.getAnswerOption1(),
                     question.getAnswerOption2(),
                     question.getAnswerOption3(),

@@ -14,11 +14,22 @@ public class SubmissionAnswerReviewDTO implements Serializable {
     private final Boolean correct;
     private final BigDecimal awardedScore;
     private final BigDecimal maximumScore;
+    private final QuestionIllustrationDTO illustration;
 
     public SubmissionAnswerReviewDTO(
             int questionId, int questionVersionNo, int orderNumber,
             String questionContent, String selectedOptionText, Boolean correct,
             BigDecimal awardedScore, BigDecimal maximumScore
+    ) {
+        this(questionId, questionVersionNo, orderNumber, questionContent,
+                selectedOptionText, correct, awardedScore, maximumScore, null);
+    }
+
+    public SubmissionAnswerReviewDTO(
+            int questionId, int questionVersionNo, int orderNumber,
+            String questionContent, String selectedOptionText, Boolean correct,
+            BigDecimal awardedScore, BigDecimal maximumScore,
+            QuestionIllustrationDTO illustration
     ) {
         this.questionId = questionId;
         this.questionVersionNo = questionVersionNo;
@@ -28,6 +39,7 @@ public class SubmissionAnswerReviewDTO implements Serializable {
         this.correct = correct;
         this.awardedScore = awardedScore;
         this.maximumScore = maximumScore;
+        this.illustration = illustration;
     }
 
     public int getQuestionId() { return questionId; }
@@ -38,4 +50,5 @@ public class SubmissionAnswerReviewDTO implements Serializable {
     public Boolean getCorrect() { return correct; }
     public BigDecimal getAwardedScore() { return awardedScore; }
     public BigDecimal getMaximumScore() { return maximumScore; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 }

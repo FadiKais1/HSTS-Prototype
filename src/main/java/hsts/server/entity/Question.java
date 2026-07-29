@@ -30,6 +30,7 @@ public class Question {
     // COMPATIBILITY-ONLY: Retained for the working prototype until repository
     // hydration moves to the typed entity path.
     private String illustrationPath;
+    private QuestionIllustration illustration;
 
     public Question(int questionId, String content, String topic, String type,
                     String difficulty, String status, String illustrationPath,
@@ -73,6 +74,7 @@ public class Question {
         this.updatedAt = updatedAt;
         this.topic = requireText(topic, "Question topic is required");
         this.illustrationPath = illustrationPath;
+        this.illustration = null;
         this.answerOptions = copyAndValidateOptions(answerOptions);
         this.studentAnswers = new ArrayList<>();
     }
@@ -101,6 +103,21 @@ public class Question {
                 illustrationPath,
                 answerOptions
         );
+    }
+
+    public static Question rehydrate(
+            int questionId, String content, QuestionType type,
+            DifficultyLevel difficulty, QuestionStatus status,
+            LocalDateTime createdAt, LocalDateTime updatedAt, String topic,
+            String illustrationPath, QuestionIllustration illustration,
+            List<AnswerOption> answerOptions
+    ) {
+        Question question = rehydrate(
+                questionId, content, type, difficulty, status, createdAt,
+                updatedAt, topic, illustrationPath, answerOptions
+        );
+        question.illustration = illustration == null ? null : illustration.copy();
+        return question;
     }
 
     public int getQuestionId() {
@@ -214,6 +231,15 @@ public class Question {
             this.illustrationPath = illustrationPath;
             touch();
         }
+    }
+
+    public QuestionIllustration getIllustration() {
+        return illustration == null ? null : illustration.copy();
+    }
+
+    public void setIllustration(QuestionIllustration illustration) {
+        this.illustration = illustration == null ? null : illustration.copy();
+        touch();
     }
 
     // COMPATIBILITY-ONLY: Flattened views delegate to the authoritative collection.

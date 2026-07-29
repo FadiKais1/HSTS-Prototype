@@ -23,6 +23,8 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextInputDialog;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 import java.time.LocalDateTime;
@@ -52,6 +54,7 @@ public class ApprovalRequestsPage {
     private boolean decisionPending;
     private long listRequestGeneration;
     private long detailRequestGeneration;
+    private QuestionIllustrationRenderer illustrationRenderer;
 
     @FXML private TableView<ExamSummaryDTO> pendingExamTable;
     @FXML private TableColumn<ExamSummaryDTO, String> examCodeColumn;
@@ -98,11 +101,23 @@ public class ApprovalRequestsPage {
     @FXML private Button approveButton;
     @FXML private Button rejectButton;
     @FXML private Button backButton;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
 
     @FXML
     private void initialize() {
         configurePendingTable();
         configureQuestionTable();
+        illustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
+        questionTable.getSelectionModel().selectedItemProperty().addListener(
+                (observable, oldQuestion, question) -> illustrationRenderer.render(
+                        question == null ? null : question.getIllustration()
+                )
+        );
         pendingExamTable.getSelectionModel().selectedItemProperty().addListener(
                 (observable, oldExam, newExam) -> updateActionState()
         );
@@ -365,6 +380,7 @@ public class ApprovalRequestsPage {
         detailRequestGeneration++;
         try {
             backHandler.run();
+            illustrationRenderer.dispose();
         } catch (RuntimeException exception) {
             closed = false;
             setFeedback("Unable to return to dashboard.");
@@ -403,6 +419,7 @@ public class ApprovalRequestsPage {
         teacherNotesArea.clear();
         studentInstructionsArea.clear();
         examQuestions.clear();
+        illustrationRenderer.render(null);
         updateActionState();
     }
 

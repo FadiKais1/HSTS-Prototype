@@ -27,6 +27,7 @@ public final class PrincipalQuestionDTO implements Serializable {
     private final int correctOptionNumber;
     private final LocalDateTime versionCreatedAt;
     private final LocalDateTime questionUpdatedAt;
+    private final QuestionIllustrationDTO illustration;
 
     public PrincipalQuestionDTO(
             int questionId, int versionNo, int courseId, String courseName,
@@ -35,6 +36,20 @@ public final class PrincipalQuestionDTO implements Serializable {
             String illustrationPath, List<String> answerOptions,
             int correctOptionNumber, LocalDateTime versionCreatedAt,
             LocalDateTime questionUpdatedAt
+    ) {
+        this(questionId, versionNo, courseId, courseName, createdByUserId,
+                creatorName, content, topic, type, difficulty, status,
+                illustrationPath, answerOptions, correctOptionNumber,
+                versionCreatedAt, questionUpdatedAt, null);
+    }
+
+    public PrincipalQuestionDTO(
+            int questionId, int versionNo, int courseId, String courseName,
+            int createdByUserId, String creatorName, String content, String topic,
+            QuestionType type, DifficultyLevel difficulty, QuestionStatus status,
+            String illustrationPath, List<String> answerOptions,
+            int correctOptionNumber, LocalDateTime versionCreatedAt,
+            LocalDateTime questionUpdatedAt, QuestionIllustrationDTO illustration
     ) {
         this.questionId = questionId;
         this.versionNo = versionNo;
@@ -52,6 +67,7 @@ public final class PrincipalQuestionDTO implements Serializable {
         this.correctOptionNumber = correctOptionNumber;
         this.versionCreatedAt = versionCreatedAt;
         this.questionUpdatedAt = questionUpdatedAt;
+        this.illustration = illustration;
     }
 
     public int getQuestionId() { return questionId; }
@@ -70,4 +86,5 @@ public final class PrincipalQuestionDTO implements Serializable {
     public int getCorrectOptionNumber() { return correctOptionNumber; }
     public LocalDateTime getVersionCreatedAt() { return versionCreatedAt; }
     public LocalDateTime getQuestionUpdatedAt() { return questionUpdatedAt; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 }

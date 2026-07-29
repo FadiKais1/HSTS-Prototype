@@ -24,12 +24,27 @@ public class QuestionVersionDTO implements Serializable {
     private final int correctOptionNumber;
     private final int createdByUserId;
     private final LocalDateTime createdAt;
+    private final QuestionIllustrationDTO illustration;
 
     public QuestionVersionDTO(int questionId, int versionNo, int courseId, String content, String topic,
                               QuestionType type, DifficultyLevel difficulty, String illustrationPath,
                               String answerOption1, String answerOption2, String answerOption3,
                               String answerOption4, int correctOptionNumber, int createdByUserId,
                               LocalDateTime createdAt) {
+        this(questionId, versionNo, courseId, content, topic, type, difficulty,
+                illustrationPath, answerOption1, answerOption2, answerOption3,
+                answerOption4, correctOptionNumber, createdByUserId, createdAt,
+                null);
+    }
+
+    public QuestionVersionDTO(int questionId, int versionNo, int courseId,
+                              String content, String topic, QuestionType type,
+                              DifficultyLevel difficulty, String illustrationPath,
+                              String answerOption1, String answerOption2,
+                              String answerOption3, String answerOption4,
+                              int correctOptionNumber, int createdByUserId,
+                              LocalDateTime createdAt,
+                              QuestionIllustrationDTO illustration) {
         this.questionId = questionId;
         this.versionNo = versionNo;
         this.courseId = courseId;
@@ -45,6 +60,7 @@ public class QuestionVersionDTO implements Serializable {
         this.correctOptionNumber = correctOptionNumber;
         this.createdByUserId = createdByUserId;
         this.createdAt = createdAt;
+        this.illustration = illustration;
     }
 
     public int getQuestionId() { return questionId; }
@@ -62,4 +78,5 @@ public class QuestionVersionDTO implements Serializable {
     public int getCorrectOptionNumber() { return correctOptionNumber; }
     public int getCreatedByUserId() { return createdByUserId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 }

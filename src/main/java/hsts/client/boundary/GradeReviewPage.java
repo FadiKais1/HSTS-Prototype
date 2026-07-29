@@ -25,6 +25,8 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 
@@ -63,6 +65,7 @@ public class GradeReviewPage {
     private long submissionRequestGeneration;
     private long detailRequestGeneration;
     private long mutationRequestGeneration;
+    private QuestionIllustrationRenderer illustrationRenderer;
 
     @FXML private Label userLabel;
     @FXML private Label roleLabel;
@@ -98,12 +101,19 @@ public class GradeReviewPage {
     @FXML private Button backButton;
     @FXML private Label statusLabel;
     @FXML private ProgressIndicator busyIndicator;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
 
     @FXML
     private void initialize() {
         configureExecutionSelector();
         configureSubmissionTable();
         configureAnswerTable();
+        illustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
         clearSubmissionState();
         updateControlState();
     }
@@ -194,6 +204,11 @@ public class GradeReviewPage {
                 new SimpleStringProperty(formatDecimal(cell.getValue().getAwardedScore())));
         maximumColumn.setCellValueFactory(cell ->
                 new SimpleStringProperty(formatDecimal(cell.getValue().getMaximumScore())));
+        answerTable.getSelectionModel().selectedItemProperty().addListener(
+                (observable, oldAnswer, answer) -> illustrationRenderer.render(
+                        answer == null ? null : answer.getIllustration()
+                )
+        );
     }
 
     private void loadExecutions(Integer preferredExecutionId) {
@@ -291,6 +306,7 @@ public class GradeReviewPage {
         detailLoading = true;
         currentReview = null;
         answers.clear();
+        illustrationRenderer.render(null);
         setStatus("Loading submission details...");
         updateControlState();
         executionClientController.getSubmissionForReview(submissionId)
@@ -451,6 +467,7 @@ public class GradeReviewPage {
         mutationRequestGeneration++;
         try {
             backHandler.run();
+            illustrationRenderer.dispose();
         } catch (RuntimeException exception) {
             disposed = false;
             setStatus("Unable to return to dashboard.");

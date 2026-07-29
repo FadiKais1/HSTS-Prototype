@@ -12,6 +12,7 @@ import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.QuestionDTO;
+import hsts.common.QuestionIllustrationDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.UpdateExamPayload;
 import hsts.common.type.DifficultyLevel;
@@ -42,6 +43,7 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.stage.Stage;
 import javafx.scene.layout.VBox;
+import javafx.scene.image.ImageView;
 import javafx.util.StringConverter;
 import javafx.util.converter.DoubleStringConverter;
 
@@ -77,6 +79,7 @@ public class ExamBuilderPage {
     private long detailRequestGeneration;
     private long questionRequestGeneration;
     private long automaticRequestGeneration;
+    private QuestionIllustrationRenderer illustrationRenderer;
 
     private final ObservableList<CourseSummaryDTO> assignedCourses =
             FXCollections.observableArrayList();
@@ -135,12 +138,19 @@ public class ExamBuilderPage {
     @FXML private Button removeButton;
     @FXML private Button moveUpButton;
     @FXML private Button moveDownButton;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
 
     @FXML
     private void initialize() {
         configureCourseDisplay();
         configureExamTable();
         configureQuestionTables();
+        illustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
         difficultyComboBox.setItems(FXCollections.observableArrayList(
                 automaticDifficulties()
         ));
@@ -158,10 +168,18 @@ public class ExamBuilderPage {
                 (observable, oldExam, newExam) -> updateActionState()
         );
         availableQuestionsTable.getSelectionModel().selectedItemProperty().addListener(
-                (observable, oldQuestion, newQuestion) -> updateActionState()
+                (observable, oldQuestion, newQuestion) -> {
+                    illustrationRenderer.render(newQuestion == null
+                            ? null : newQuestion.getIllustration());
+                    updateActionState();
+                }
         );
         selectedQuestionsTable.getSelectionModel().selectedItemProperty().addListener(
-                (observable, oldQuestion, newQuestion) -> updateActionState()
+                (observable, oldQuestion, newQuestion) -> {
+                    illustrationRenderer.render(newQuestion == null
+                            ? null : newQuestion.getIllustration());
+                    updateActionState();
+                }
         );
         setStatus("Waiting for authenticated client.");
         updateTotal();
@@ -746,6 +764,7 @@ public class ExamBuilderPage {
         automaticRequestGeneration++;
         try {
             backHandler.run();
+            illustrationRenderer.dispose();
         } catch (RuntimeException exception) {
             closed = false;
             setStatus("Unable to return to dashboard.");
@@ -1041,7 +1060,7 @@ public class ExamBuilderPage {
         private final String content;
         private final String topic;
         private final String difficulty;
-        private final String illustrationPath;
+        private final QuestionIllustrationDTO illustration;
         private final String answerOption1;
         private final String answerOption2;
         private final String answerOption3;
@@ -1052,7 +1071,8 @@ public class ExamBuilderPage {
 
         private SelectedQuestionItem(int questionId, int questionVersionNo,
                                      String content, String topic, String difficulty,
-                                     String illustrationPath, String answerOption1,
+                                     QuestionIllustrationDTO illustration,
+                                     String answerOption1,
                                      String answerOption2, String answerOption3,
                                      String answerOption4, int correctOptionNumber,
                                      int orderNumber, double score) {
@@ -1061,7 +1081,7 @@ public class ExamBuilderPage {
             this.content = content;
             this.topic = topic;
             this.difficulty = difficulty;
-            this.illustrationPath = illustrationPath;
+            this.illustration = illustration;
             this.answerOption1 = answerOption1;
             this.answerOption2 = answerOption2;
             this.answerOption3 = answerOption3;
@@ -1074,7 +1094,7 @@ public class ExamBuilderPage {
         static SelectedQuestionItem fromQuestion(QuestionDTO question) {
             return new SelectedQuestionItem(
                     question.getQuestionId(), question.getVersionNo(), question.getContent(),
-                    question.getTopic(), question.getDifficulty(), question.getIllustrationPath(),
+                    question.getTopic(), question.getDifficulty(), question.getIllustration(),
                     question.getAnswerOption1(), question.getAnswerOption2(),
                     question.getAnswerOption3(), question.getAnswerOption4(),
                     question.getCorrectOptionNumber(), 0, 0
@@ -1085,7 +1105,8 @@ public class ExamBuilderPage {
             return new SelectedQuestionItem(
                     question.getQuestionId(), question.getQuestionVersionNo(),
                     question.getContent(), question.getTopic(), question.getDifficulty(),
-                    question.getIllustrationPath(), question.getAnswerOption1(),
+                    question.getIllustration(),
+                    question.getAnswerOption1(),
                     question.getAnswerOption2(), question.getAnswerOption3(),
                     question.getAnswerOption4(), question.getCorrectOptionNumber(),
                     question.getOrderNumber(), question.getScore()
@@ -1097,7 +1118,7 @@ public class ExamBuilderPage {
         String getContent() { return content; }
         String getTopic() { return topic; }
         String getDifficulty() { return difficulty; }
-        String getIllustrationPath() { return illustrationPath; }
+        QuestionIllustrationDTO getIllustration() { return illustration; }
         String getAnswerOption1() { return answerOption1; }
         String getAnswerOption2() { return answerOption2; }
         String getAnswerOption3() { return answerOption3; }

@@ -19,6 +19,7 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -55,6 +56,7 @@ public class PublishedGradesPage {
     private long listRequestGeneration;
     private long detailRequestGeneration;
     private long reviewRequestGeneration;
+    private QuestionIllustrationRenderer illustrationRenderer;
 
     @FXML private Label userLabel;
     @FXML private Label roleLabel;
@@ -93,10 +95,17 @@ public class PublishedGradesPage {
     @FXML private VBox answerOptionsBox;
     @FXML private Button previousQuestionButton;
     @FXML private Button nextQuestionButton;
+    @FXML private VBox questionIllustrationContainer;
+    @FXML private ImageView questionIllustrationView;
+    @FXML private Label questionIllustrationErrorLabel;
 
     @FXML
     private void initialize() {
         configureGradeTable();
+        illustrationRenderer = new QuestionIllustrationRenderer(
+                questionIllustrationView, questionIllustrationErrorLabel,
+                questionIllustrationContainer
+        );
         clearDetail();
         clearReview();
         setStatus("Published grades will appear here.");
@@ -306,6 +315,7 @@ public class PublishedGradesPage {
         reviewBusy = false;
         try {
             navigation.run();
+            illustrationRenderer.dispose();
         } catch (RuntimeException exception) {
             disposed = false;
             setStatus("Unable to return to dashboard.");
@@ -375,6 +385,7 @@ public class PublishedGradesPage {
                 + formatDecimal(question.getAwardedScore()) + " / "
                 + formatDecimal(question.getMaximumScore()));
         reviewQuestionContentArea.setText(question.getContent());
+        illustrationRenderer.render(question.getIllustration());
         showOutcome(question);
         answerOptionsBox.getChildren().clear();
         for (int index = 0; index < question.getAnswerOptions().size(); index++) {
@@ -508,6 +519,7 @@ public class PublishedGradesPage {
         if (reviewQuestionContentArea != null) {
             reviewQuestionContentArea.setText("");
         }
+        if (illustrationRenderer != null) illustrationRenderer.render(null);
         if (answerOptionsBox != null) answerOptionsBox.getChildren().clear();
         if (previousQuestionButton != null) previousQuestionButton.setDisable(true);
         if (nextQuestionButton != null) nextQuestionButton.setDisable(true);

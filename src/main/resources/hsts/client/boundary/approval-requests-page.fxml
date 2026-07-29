@@ -9,6 +9,7 @@
 <?import javafx.scene.control.TableColumn?>
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextArea?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
@@ -137,6 +138,18 @@
                                         <TableColumn fx:id="correctOptionColumn" text="Correct" prefWidth="65"/>
                                     </columns>
                                 </TableView>
+                                <VBox fx:id="questionIllustrationContainer" spacing="6"
+                                      visible="false" managed="false">
+                                    <Label text="Selected question illustration"
+                                           style="-fx-font-weight: bold;"/>
+                                    <ImageView fx:id="questionIllustrationView" fitWidth="520"
+                                               fitHeight="320" preserveRatio="true"
+                                               visible="false" managed="false"/>
+                                    <Label fx:id="questionIllustrationErrorLabel"
+                                           text="Question illustration is unavailable"
+                                           style="-fx-text-fill: #6b7280;"
+                                           visible="false" managed="false"/>
+                                </VBox>
                             </VBox>
                         </VBox>
                     </content>

@@ -18,12 +18,25 @@ public class ExamQuestionDTO implements Serializable {
     private final String answerOption3;
     private final String answerOption4;
     private final int correctOptionNumber;
+    private final QuestionIllustrationDTO illustration;
 
     public ExamQuestionDTO(int questionId, int questionVersionNo, int orderNumber,
                            double score, String content, String topic, String difficulty,
                            String illustrationPath, String answerOption1,
                            String answerOption2, String answerOption3,
                            String answerOption4, int correctOptionNumber) {
+        this(questionId, questionVersionNo, orderNumber, score, content, topic,
+                difficulty, illustrationPath, answerOption1, answerOption2,
+                answerOption3, answerOption4, correctOptionNumber, null);
+    }
+
+    public ExamQuestionDTO(int questionId, int questionVersionNo, int orderNumber,
+                           double score, String content, String topic,
+                           String difficulty, String illustrationPath,
+                           String answerOption1, String answerOption2,
+                           String answerOption3, String answerOption4,
+                           int correctOptionNumber,
+                           QuestionIllustrationDTO illustration) {
         this.questionId = questionId;
         this.questionVersionNo = questionVersionNo;
         this.orderNumber = orderNumber;
@@ -37,6 +50,7 @@ public class ExamQuestionDTO implements Serializable {
         this.answerOption3 = answerOption3;
         this.answerOption4 = answerOption4;
         this.correctOptionNumber = correctOptionNumber;
+        this.illustration = illustration;
     }
 
     public int getQuestionId() { return questionId; }
@@ -52,4 +66,5 @@ public class ExamQuestionDTO implements Serializable {
     public String getAnswerOption3() { return answerOption3; }
     public String getAnswerOption4() { return answerOption4; }
     public int getCorrectOptionNumber() { return correctOptionNumber; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 }

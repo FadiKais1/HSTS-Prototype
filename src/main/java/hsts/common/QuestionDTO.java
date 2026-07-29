@@ -20,6 +20,7 @@ public class QuestionDTO implements Serializable {
     private String answerOption3;
     private String answerOption4;
     private int correctOptionNumber;
+    private QuestionIllustrationDTO illustration;
 
     public QuestionDTO(int questionId, String content, String topic, String type, String difficulty, String status) {
         this(questionId, content, topic, type, difficulty, status, "", "", "", "", "", 1);
@@ -36,6 +37,18 @@ public class QuestionDTO implements Serializable {
     public QuestionDTO(int questionId, String content, String topic, String type, String difficulty, String status,
                        String illustrationPath, String answerOption1, String answerOption2, String answerOption3,
                        String answerOption4, int correctOptionNumber, int courseId, int subjectId, int versionNo) {
+        this(questionId, content, topic, type, difficulty, status,
+                illustrationPath, answerOption1, answerOption2, answerOption3,
+                answerOption4, correctOptionNumber, courseId, subjectId,
+                versionNo, null);
+    }
+
+    public QuestionDTO(int questionId, String content, String topic, String type,
+                       String difficulty, String status, String illustrationPath,
+                       String answerOption1, String answerOption2,
+                       String answerOption3, String answerOption4,
+                       int correctOptionNumber, int courseId, int subjectId,
+                       int versionNo, QuestionIllustrationDTO illustration) {
         this.questionId = questionId;
         this.courseId = courseId;
         this.subjectId = subjectId;
@@ -51,6 +64,7 @@ public class QuestionDTO implements Serializable {
         this.answerOption3 = answerOption3;
         this.answerOption4 = answerOption4;
         this.correctOptionNumber = correctOptionNumber;
+        this.illustration = illustration;
     }
 
     public int getQuestionId() { return questionId; }
@@ -80,4 +94,5 @@ public class QuestionDTO implements Serializable {
     public void setAnswerOption4(String answerOption4) { this.answerOption4 = answerOption4; }
     public int getCorrectOptionNumber() { return correctOptionNumber; }
     public void setCorrectOptionNumber(int correctOptionNumber) { this.correctOptionNumber = correctOptionNumber; }
+    public QuestionIllustrationDTO getIllustration() { return illustration; }
 }

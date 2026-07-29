@@ -219,6 +219,13 @@ public class ExamSubmissionRepository {
                    version.topic,
                    version.difficulty,
                    version.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    option_1.option_text AS answer_option_1,
                    option_2.option_text AS answer_option_2,
                    option_3.option_text AS answer_option_3,
@@ -227,6 +234,9 @@ public class ExamSubmissionRepository {
             JOIN question_versions version
               ON version.question_id = selection.question_id
              AND version.version_no = selection.question_version_no
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = version.question_id
+             AND qvi.version_no = version.version_no
             JOIN answer_options option_1
               ON option_1.question_id = version.question_id
              AND option_1.version_no = version.version_no
@@ -678,6 +688,13 @@ public class ExamSubmissionRepository {
                    selection.question_version_no,
                    selection.order_number,
                    question_version.content AS question_content,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    answer.answer_id,
                    answer.question_version_no AS answered_question_version_no,
                    selected_option.option_text AS selected_option_text,
@@ -688,6 +705,9 @@ public class ExamSubmissionRepository {
             JOIN question_versions question_version
               ON question_version.question_id = selection.question_id
              AND question_version.version_no = selection.question_version_no
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = question_version.question_id
+             AND qvi.version_no = question_version.version_no
             LEFT JOIN student_answers answer
               ON answer.submission_id = ?
              AND answer.question_id = selection.question_id
@@ -812,6 +832,13 @@ public class ExamSubmissionRepository {
                    question_version.difficulty,
                    question_version.question_type,
                    question_version.illustration_path,
+                   qvi.media_type AS illustration_media_type,
+                   qvi.content_bytes AS illustration_content_bytes,
+                   qvi.byte_length AS illustration_byte_length,
+                   qvi.width_pixels AS illustration_width_pixels,
+                   qvi.height_pixels AS illustration_height_pixels,
+                   qvi.content_sha256 AS illustration_content_sha256,
+                   qvi.created_at AS illustration_created_at,
                    question_version.correct_option_number,
                    (SELECT COUNT(*)
                       FROM answer_options counted_option
@@ -831,6 +858,9 @@ public class ExamSubmissionRepository {
             JOIN question_versions question_version
               ON question_version.question_id = selection.question_id
              AND question_version.version_no = selection.question_version_no
+            LEFT JOIN question_version_illustrations qvi
+              ON qvi.question_id = question_version.question_id
+             AND qvi.version_no = question_version.version_no
             JOIN answer_options option_1
               ON option_1.question_id = selection.question_id
              AND option_1.version_no = selection.question_version_no
@@ -1833,7 +1863,8 @@ public class ExamSubmissionRepository {
                             resultSet.getString("answer_option_1"),
                             resultSet.getString("answer_option_2"),
                             resultSet.getString("answer_option_3"),
-                            resultSet.getString("answer_option_4")
+                            resultSet.getString("answer_option_4"),
+                            QuestionIllustrationJdbcSupport.readDto(resultSet)
                     ));
                 }
             }
@@ -2121,7 +2152,8 @@ public class ExamSubmissionRepository {
                             selectedOptionText,
                             correct,
                             awardedScore,
-                            readMaximumScore(resultSet, submissionId)
+                            readMaximumScore(resultSet, submissionId),
+                            QuestionIllustrationJdbcSupport.readDto(resultSet)
                     ));
                 }
             }
@@ -2344,7 +2376,8 @@ public class ExamSubmissionRepository {
                         resultSet.getString("answer_option_2"),
                         resultSet.getString("answer_option_3"),
                         resultSet.getString("answer_option_4")),
-                selectedOption, correctOption, outcome, awardedScore, maximumScore
+                selectedOption, correctOption, outcome, awardedScore, maximumScore,
+                QuestionIllustrationJdbcSupport.readDto(resultSet)
         );
     }
 

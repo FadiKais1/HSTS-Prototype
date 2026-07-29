@@ -318,6 +318,8 @@ public class GradeReviewPageContractTest {
             case "TextField" -> javafx.scene.control.TextField.class;
             case "TextArea" -> javafx.scene.control.TextArea.class;
             case "ProgressIndicator" -> javafx.scene.control.ProgressIndicator.class;
+            case "ImageView" -> javafx.scene.image.ImageView.class;
+            case "VBox" -> javafx.scene.layout.VBox.class;
             default -> throw new AssertionError("Unexpected fx:id element " + tagName);
         };
     }
