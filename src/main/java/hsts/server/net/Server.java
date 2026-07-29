@@ -11,12 +11,14 @@ import hsts.common.CreateQuestionPayload;
 import hsts.common.ExecutionCodePayload;
 import hsts.common.ExecutionIdPayload;
 import hsts.common.ExamVersionPayload;
+import hsts.common.ExamVersionSelectionPayload;
 import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionIdPayload;
+import hsts.common.QuestionVersionPayload;
 import hsts.common.Request;
 import hsts.common.RequestType;
 import hsts.common.RejectExamPayload;
@@ -41,6 +43,7 @@ import hsts.server.control.ExamExecutionService;
 import hsts.server.control.ExamManagementService;
 import hsts.server.control.GradingService;
 import hsts.server.control.NotificationService;
+import hsts.server.control.PrincipalOversightService;
 import hsts.server.control.ReportService;
 
 import java.io.IOException;
@@ -64,6 +67,7 @@ public class Server extends AbstractServer {
     private ReportService reportService;
     private NotificationService notificationService;
     private CourseBotService courseBotService;
+    private PrincipalOversightService principalOversightService;
 
     // COMPATIBILITY-ONLY: Runs internal automatic submission while the server is active.
     private ScheduledExecutorService autoSubmissionScheduler;
@@ -91,6 +95,16 @@ public class Server extends AbstractServer {
                   ExamExecutionService examExecutionService,
                   ReportService reportService,
                   CourseBotService courseBotService) {
+        this(port, examManagementService, authService, examExecutionService,
+                reportService, courseBotService, null);
+    }
+
+    public Server(int port, ExamManagementService examManagementService,
+                  AuthService authService,
+                  ExamExecutionService examExecutionService,
+                  ReportService reportService,
+                  CourseBotService courseBotService,
+                  PrincipalOversightService principalOversightService) {
         super(port);
         this.port = port;
         this.examManagementService = examManagementService;
@@ -98,6 +112,7 @@ public class Server extends AbstractServer {
         this.examExecutionService = examExecutionService;
         this.reportService = reportService;
         this.courseBotService = courseBotService;
+        this.principalOversightService = principalOversightService;
     }
 
     public void startServer() {
@@ -164,7 +179,13 @@ public class Server extends AbstractServer {
                      CREATE_COURSE_BOT, UPDATE_COURSE_BOT, GET_BOT_SOURCES,
                      ADD_BOT_TEXT_SOURCE, UPLOAD_BOT_SOURCE,
                      ADD_BOT_QUESTION_SOURCES, REMOVE_BOT_SOURCE, GET_BOT_USAGE,
-                     LIST_MY_AVAILABLE_BOTS, GET_MY_BOT_HISTORY, ASK_COURSE_BOT ->
+                     LIST_MY_AVAILABLE_BOTS, GET_MY_BOT_HISTORY, ASK_COURSE_BOT,
+                     LIST_ALL_QUESTIONS, LIST_QUESTION_VERSIONS_FOR_PRINCIPAL,
+                     GET_QUESTION_VERSION_FOR_PRINCIPAL, LIST_ALL_EXAMS,
+                     LIST_EXAM_VERSIONS_FOR_PRINCIPAL,
+                     GET_EXAM_VERSION_FOR_PRINCIPAL, LIST_ALL_EXECUTIONS,
+                     LIST_EXECUTION_RESULTS_FOR_PRINCIPAL,
+                     GET_SUBMISSION_RESULT_FOR_PRINCIPAL ->
                         Response.error("Authentication context required");
             };
 
@@ -787,6 +808,115 @@ public class Server extends AbstractServer {
                     );
                 }
 
+                case LIST_ALL_QUESTIONS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "All questions loaded successfully",
+                            requirePrincipalOversightService().getAllQuestions(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case LIST_QUESTION_VERSIONS_FOR_PRINCIPAL -> {
+                    QuestionIdPayload payload = requireQuestionIdPayload(request);
+                    yield Response.success(
+                            "Question versions loaded successfully",
+                            requirePrincipalOversightService().getQuestionVersions(
+                                    authenticatedUserId, payload.getQuestionId()
+                            )
+                    );
+                }
+
+                case GET_QUESTION_VERSION_FOR_PRINCIPAL -> {
+                    if (!(request.getPayload() instanceof QuestionVersionPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Question version payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Question version loaded successfully",
+                            requirePrincipalOversightService().getQuestionVersion(
+                                    authenticatedUserId, payload.getQuestionId(),
+                                    payload.getVersionNo()
+                            )
+                    );
+                }
+
+                case LIST_ALL_EXAMS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "All exams loaded successfully",
+                            requirePrincipalOversightService().getAllExams(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case LIST_EXAM_VERSIONS_FOR_PRINCIPAL -> {
+                    int examId = requireExamIdPayload(request);
+                    yield Response.success(
+                            "Exam versions loaded successfully",
+                            requirePrincipalOversightService().getExamVersions(
+                                    authenticatedUserId, examId
+                            )
+                    );
+                }
+
+                case GET_EXAM_VERSION_FOR_PRINCIPAL -> {
+                    if (!(request.getPayload()
+                            instanceof ExamVersionSelectionPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Exam version payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Exam version loaded successfully",
+                            requirePrincipalOversightService().getExamVersion(
+                                    authenticatedUserId, payload.getExamId(),
+                                    payload.getVersionNo()
+                            )
+                    );
+                }
+
+                case LIST_ALL_EXECUTIONS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "All exam executions loaded successfully",
+                            requirePrincipalOversightService().getAllExecutions(
+                                    authenticatedUserId
+                            )
+                    );
+                }
+
+                case LIST_EXECUTION_RESULTS_FOR_PRINCIPAL -> {
+                    if (!(request.getPayload() instanceof ExecutionIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Execution ID payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Execution results loaded successfully",
+                            requirePrincipalOversightService().getExecutionResults(
+                                    authenticatedUserId, payload.getExecutionId()
+                            )
+                    );
+                }
+
+                case GET_SUBMISSION_RESULT_FOR_PRINCIPAL -> {
+                    if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Submission ID payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Submission result loaded successfully",
+                            requirePrincipalOversightService().getSubmissionResult(
+                                    authenticatedUserId, payload.getSubmissionId()
+                            )
+                    );
+                }
+
                 default -> handleRequest(request);
             };
         } catch (Exception exception) {
@@ -884,6 +1014,13 @@ public class Server extends AbstractServer {
             throw new IllegalStateException("Course Bot service is unavailable");
         }
         return courseBotService;
+    }
+
+    private PrincipalOversightService requirePrincipalOversightService() {
+        if (principalOversightService == null) {
+            throw new IllegalStateException("Principal oversight service is unavailable");
+        }
+        return principalOversightService;
     }
 
     private Response errorResponse(Exception exception) {

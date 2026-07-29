@@ -2,6 +2,7 @@ package hsts.server.repository;
 
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.PrincipalQuestionDTO;
 import hsts.common.QuestionVersionDTO;
 import hsts.common.type.DifficultyLevel;
 import hsts.common.type.QuestionStatus;
@@ -260,6 +261,53 @@ public class QuestionRepository {
             ORDER BY qv.version_no DESC
             """;
 
+    private static final String PRINCIPAL_QUESTION_SELECT = """
+            SELECT q.question_id, q.current_version_no, q.course_id,
+                   c.name AS course_name, q.created_by_user_id,
+                   creator.full_name AS creator_name, q.status,
+                   q.updated_at AS question_updated_at,
+                   qv.version_no, qv.content, qv.topic, qv.question_type,
+                   qv.difficulty, qv.illustration_path,
+                   qv.correct_option_number, qv.created_at AS version_created_at,
+                   option_1.option_text AS answer_option_1,
+                   option_2.option_text AS answer_option_2,
+                   option_3.option_text AS answer_option_3,
+                   option_4.option_text AS answer_option_4
+            FROM questions q
+            JOIN question_versions qv ON qv.question_id = q.question_id
+            JOIN courses c ON c.course_id = q.course_id
+            JOIN users creator ON creator.user_id = q.created_by_user_id
+            JOIN answer_options option_1
+              ON option_1.question_id = qv.question_id
+             AND option_1.version_no = qv.version_no AND option_1.option_number = 1
+            JOIN answer_options option_2
+              ON option_2.question_id = qv.question_id
+             AND option_2.version_no = qv.version_no AND option_2.option_number = 2
+            JOIN answer_options option_3
+              ON option_3.question_id = qv.question_id
+             AND option_3.version_no = qv.version_no AND option_3.option_number = 3
+            JOIN answer_options option_4
+              ON option_4.question_id = qv.question_id
+             AND option_4.version_no = qv.version_no AND option_4.option_number = 4
+            """;
+
+    private static final String PRINCIPAL_CURRENT_QUESTIONS_SQL =
+            PRINCIPAL_QUESTION_SELECT + """
+            WHERE qv.version_no = q.current_version_no
+            ORDER BY c.name ASC, q.question_id ASC
+            """;
+
+    private static final String PRINCIPAL_QUESTION_VERSIONS_SQL =
+            PRINCIPAL_QUESTION_SELECT + """
+            WHERE q.question_id = ?
+            ORDER BY qv.version_no DESC
+            """;
+
+    private static final String PRINCIPAL_QUESTION_VERSION_SQL =
+            PRINCIPAL_QUESTION_SELECT + """
+            WHERE q.question_id = ? AND qv.version_no = ?
+            """;
+
     public QuestionRepository() {
         this(new DatabaseController());
     }
@@ -479,6 +527,83 @@ public class QuestionRepository {
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load question versions", e);
         }
+    }
+
+    public List<PrincipalQuestionDTO> findAllForPrincipal() {
+        return loadPrincipalQuestions(PRINCIPAL_CURRENT_QUESTIONS_SQL);
+    }
+
+    public List<PrincipalQuestionDTO> findVersionsForPrincipal(int questionId) {
+        requirePositiveId(questionId, "Question ID must be positive");
+        return loadPrincipalQuestions(PRINCIPAL_QUESTION_VERSIONS_SQL, questionId);
+    }
+
+    public Optional<PrincipalQuestionDTO> findVersionForPrincipal(
+            int questionId, int versionNo
+    ) {
+        requirePositiveId(questionId, "Question ID must be positive");
+        requirePositiveId(versionNo, "Question version must be positive");
+        List<PrincipalQuestionDTO> rows = loadPrincipalQuestions(
+                PRINCIPAL_QUESTION_VERSION_SQL, questionId, versionNo
+        );
+        if (rows.size() > 1) {
+            throw new IllegalArgumentException(
+                    "Duplicate question version projection: " + questionId
+            );
+        }
+        return rows.stream().findFirst();
+    }
+
+    private List<PrincipalQuestionDTO> loadPrincipalQuestions(
+            String sql, int... parameters
+    ) {
+        List<PrincipalQuestionDTO> questions = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int index = 0; index < parameters.length; index++) {
+                statement.setInt(index + 1, parameters[index]);
+            }
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    questions.add(mapPrincipalQuestion(resultSet));
+                }
+            }
+            return List.copyOf(questions);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load Principal questions", exception);
+        }
+    }
+
+    private PrincipalQuestionDTO mapPrincipalQuestion(ResultSet resultSet)
+            throws SQLException {
+        int questionId = resultSet.getInt("question_id");
+        int correctOption = resultSet.getInt("correct_option_number");
+        if (correctOption < 1 || correctOption > 4) {
+            throw new IllegalArgumentException(
+                    "Correct answer number is invalid for question: " + questionId
+            );
+        }
+        return new PrincipalQuestionDTO(
+                questionId, resultSet.getInt("version_no"),
+                resultSet.getInt("course_id"), resultSet.getString("course_name"),
+                resultSet.getInt("created_by_user_id"),
+                resultSet.getString("creator_name"), resultSet.getString("content"),
+                resultSet.getString("topic"),
+                parsePersistedEnum(resultSet.getString("question_type"),
+                        QuestionType.class, "Question type", questionId),
+                parsePersistedEnum(resultSet.getString("difficulty"),
+                        DifficultyLevel.class, "Question difficulty", questionId),
+                parsePersistedEnum(resultSet.getString("status"),
+                        QuestionStatus.class, "Question status", questionId),
+                resultSet.getString("illustration_path"),
+                List.of(resultSet.getString("answer_option_1"),
+                        resultSet.getString("answer_option_2"),
+                        resultSet.getString("answer_option_3"),
+                        resultSet.getString("answer_option_4")),
+                correctOption,
+                resultSet.getObject("version_created_at", LocalDateTime.class),
+                resultSet.getObject("question_updated_at", LocalDateTime.class)
+        );
     }
 
     public List<QuestionDTO> findCurrentForTeacher(int authenticatedUserId,

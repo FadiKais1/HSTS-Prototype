@@ -41,6 +41,7 @@ public class MainServerWiringTest {
         assertEquals(1, occurrences(source, "CourseBotProviderFactory.createFromEnvironment()"));
         assertEquals(0, occurrences(source, "new DeterministicExternalBotSystem()"));
         assertEquals(1, occurrences(source, "new CourseBotService("));
+        assertEquals(1, occurrences(source, "new PrincipalOversightService("));
         assertTrue(normalized.contains(
                 "new ExamExecutionService( examExecutionRepository, "
                         + "examSubmissionRepository, studentEnrollmentRepository, "
@@ -59,8 +60,14 @@ public class MainServerWiringTest {
                         + "Clock.systemDefaultZone(), () -> UUID.randomUUID().toString() )"
         ));
         assertTrue(normalized.contains(
+                "new PrincipalOversightService( userRepository, questionRepository, "
+                        + "examRepository, examExecutionRepository, "
+                        + "examSubmissionRepository )"
+        ));
+        assertTrue(normalized.contains(
                 "new Server( port, examManagementService, authService, "
-                        + "examExecutionService, reportService, courseBotService )"
+                        + "examExecutionService, reportService, courseBotService, "
+                        + "principalOversightService )"
         ));
     }
 

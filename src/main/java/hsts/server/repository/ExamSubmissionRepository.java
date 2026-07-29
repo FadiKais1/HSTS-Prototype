@@ -628,6 +628,48 @@ public class ExamSubmissionRepository {
             WHERE submission.submission_id = ?
             """ + MANAGER_READ_AUTHORIZATION_SQL;
 
+    private static final String PRINCIPAL_SUBMISSION_SUMMARIES_SQL = """
+            SELECT submission.submission_id, submission.execution_id,
+                   execution.exam_id, execution.exam_version_no,
+                   version.title AS exam_title, submission.student_user_id,
+                   student.full_name AS student_name, submission.status,
+                   submission.automatic_score, submission.final_score,
+                   submission.started_at, submission.submitted_at,
+                   submission.reviewed_at, submission.published_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN users student ON student.user_id = submission.student_user_id
+            WHERE execution.execution_id = ?
+            ORDER BY student.full_name ASC,
+                     submission.student_user_id ASC,
+                     submission.submission_id ASC
+            """;
+
+    private static final String PRINCIPAL_SUBMISSION_REVIEW_SQL = """
+            SELECT submission.submission_id, submission.execution_id,
+                   execution.exam_id, execution.exam_version_no,
+                   version.title AS exam_title, submission.student_user_id,
+                   student.full_name AS student_name, submission.status,
+                   submission.automatic_score, submission.final_score,
+                   submission.teacher_feedback, submission.manual_change_reason,
+                   submission.reviewed_by_user_id, submission.started_at,
+                   submission.submitted_at, submission.reviewed_at,
+                   submission.updated_at, submission.published_by_user_id,
+                   submission.published_at
+            FROM exam_submissions submission
+            JOIN exam_executions execution
+              ON execution.execution_id = submission.execution_id
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN users student ON student.user_id = submission.student_user_id
+            WHERE submission.submission_id = ?
+            """;
+
     private static final String SUBMISSION_ANSWER_REVIEW_SQL = """
             SELECT selection.question_id,
                    selection.question_version_no,
@@ -933,6 +975,65 @@ public class ExamSubmissionRepository {
                     "Failed to load submission for review",
                     exception
             );
+        }
+    }
+
+    public List<ExecutionSubmissionSummaryDTO> findSummariesForPrincipal(
+            int executionId
+    ) {
+        requirePositivePrincipalId(executionId, "Execution ID must be positive");
+        List<ExecutionSubmissionSummaryDTO> summaries = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     PRINCIPAL_SUBMISSION_SUMMARIES_SQL
+             )) {
+            statement.setInt(1, executionId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    summaries.add(mapExecutionSubmissionSummary(resultSet));
+                }
+            }
+            return List.copyOf(summaries);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load Principal execution results", exception
+            );
+        }
+    }
+
+    public Optional<SubmissionReviewDTO> findReviewForPrincipal(int submissionId) {
+        requirePositivePrincipalId(submissionId, "Submission ID must be positive");
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     PRINCIPAL_SUBMISSION_REVIEW_SQL
+             )) {
+            statement.setInt(1, submissionId);
+            ReviewHeader header;
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                header = mapReviewHeader(resultSet);
+                if (resultSet.next()) {
+                    throw new IllegalArgumentException(
+                            "Duplicate submission review projection: " + submissionId
+                    );
+                }
+            }
+            return Optional.of(header.toDto(loadSubmissionAnswerReviews(
+                    connection, header.submissionId(), header.examId(),
+                    header.examVersionNo()
+            )));
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load Principal submission result", exception
+            );
+        }
+    }
+
+    private static void requirePositivePrincipalId(int value, String message) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(message);
         }
     }
 

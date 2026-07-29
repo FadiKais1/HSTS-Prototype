@@ -29,6 +29,9 @@ public class PrincipalDashboard {
     @FXML
     private Button reportsButton;
     private Runnable reportsHandler;
+    @FXML
+    private Button oversightButton;
+    private Runnable oversightHandler;
 
     public void configure(Stage stage, Client client, LoginResult loginResult, Runnable logoutHandler) {
         configure(stage, client, loginResult, logoutHandler, null);
@@ -36,14 +39,22 @@ public class PrincipalDashboard {
 
     public void configure(Stage stage, Client client, LoginResult loginResult,
                           Runnable logoutHandler, Runnable reportsHandler) {
+        configure(stage, client, loginResult, logoutHandler, reportsHandler, null);
+    }
+
+    public void configure(Stage stage, Client client, LoginResult loginResult,
+                          Runnable logoutHandler, Runnable reportsHandler,
+                          Runnable oversightHandler) {
         this.stage = Objects.requireNonNull(stage);
         this.client = Objects.requireNonNull(client);
         this.loginResult = Objects.requireNonNull(loginResult);
         this.logoutHandler = Objects.requireNonNull(logoutHandler);
         this.reportsHandler = reportsHandler;
+        this.oversightHandler = oversightHandler;
 
         displayIdentity();
         updateReportsState();
+        updateOversightState();
         showError("");
     }
 
@@ -87,6 +98,25 @@ public class PrincipalDashboard {
     private void updateReportsState() {
         if (reportsButton != null) {
             reportsButton.setDisable(reportsHandler == null);
+        }
+    }
+
+    @FXML
+    private void handleOversight() {
+        if (oversightHandler == null) {
+            showError("Principal oversight is unavailable");
+            return;
+        }
+        try {
+            oversightHandler.run();
+        } catch (RuntimeException exception) {
+            showError("Principal oversight is unavailable");
+        }
+    }
+
+    private void updateOversightState() {
+        if (oversightButton != null) {
+            oversightButton.setDisable(oversightHandler == null);
         }
     }
 

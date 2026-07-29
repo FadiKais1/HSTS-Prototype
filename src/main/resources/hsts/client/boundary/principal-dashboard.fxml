@@ -35,7 +35,7 @@
                   style="-fx-background-color: white; -fx-background-radius: 16; -fx-border-color: #dbe3ef; -fx-border-radius: 16; -fx-padding: 30;">
                 <Label text="Principal Dashboard"
                        style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-                <Label text="Reporting and review features will become available as Assignment 3 implementation continues."
+                <Label text="Review institution-wide questions, exams, results, and reports."
                        wrapText="true" style="-fx-text-fill: #6b7280;"/>
                 <Label fx:id="errorLabel" text="" managed="false" visible="false"
                        wrapText="true" maxWidth="Infinity"
@@ -43,9 +43,9 @@
                 <Button fx:id="reportsButton" text="Reports" onAction="#handleReports"
                         maxWidth="Infinity" prefHeight="46"
                         style="-fx-background-color: #0369a1; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
-                <Button text="Questions" disable="true" maxWidth="Infinity" prefHeight="46"/>
-                <Button text="Exams" disable="true" maxWidth="Infinity" prefHeight="46"/>
-                <Button text="Results" disable="true" maxWidth="Infinity" prefHeight="46"/>
+                <Button fx:id="oversightButton" text="View Questions, Exams &amp; Results"
+                        onAction="#handleOversight" maxWidth="Infinity" prefHeight="46"
+                        style="-fx-background-color: #1d4ed8; -fx-background-radius: 8; -fx-text-fill: white; -fx-font-weight: bold;"/>
             </VBox>
         </StackPane>
     </center>

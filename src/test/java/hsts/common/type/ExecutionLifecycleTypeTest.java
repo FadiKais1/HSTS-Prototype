@@ -86,7 +86,16 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.GET_BOT_USAGE,
                         RequestType.LIST_MY_AVAILABLE_BOTS,
                         RequestType.GET_MY_BOT_HISTORY,
-                        RequestType.ASK_COURSE_BOT
+                        RequestType.ASK_COURSE_BOT,
+                        RequestType.LIST_ALL_QUESTIONS,
+                        RequestType.LIST_QUESTION_VERSIONS_FOR_PRINCIPAL,
+                        RequestType.GET_QUESTION_VERSION_FOR_PRINCIPAL,
+                        RequestType.LIST_ALL_EXAMS,
+                        RequestType.LIST_EXAM_VERSIONS_FOR_PRINCIPAL,
+                        RequestType.GET_EXAM_VERSION_FOR_PRINCIPAL,
+                        RequestType.LIST_ALL_EXECUTIONS,
+                        RequestType.LIST_EXECUTION_RESULTS_FOR_PRINCIPAL,
+                        RequestType.GET_SUBMISSION_RESULT_FOR_PRINCIPAL
                 },
                 RequestType.values()
         );

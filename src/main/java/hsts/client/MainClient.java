@@ -223,8 +223,43 @@ public class MainClient extends Application {
                 client,
                 loginResult,
                 this::logout,
-                () -> showReports(loginResult)
+                () -> showReports(loginResult),
+                () -> showPrincipalOversight(loginResult)
         );
+    }
+
+    private void showPrincipalOversight(LoginResult loginResult) {
+        if (loginResult == null || loginResult.getRole() != UserRole.PRINCIPAL) {
+            showNavigationError("Principal oversight is unavailable");
+            return;
+        }
+        try {
+            hsts.client.boundary.PrincipalOversightPage controller =
+                    SceneNavigator.switchScene(
+                            stage,
+                            "/hsts/client/boundary/principal-oversight-page.fxml",
+                            "HSTS Exam Management System - Principal Oversight"
+                    );
+            controller.configure(
+                    stage, client, loginResult,
+                    () -> returnFromPrincipalOversight(loginResult)
+            );
+        } catch (IOException | RuntimeException exception) {
+            try {
+                showPrincipalDashboard(loginResult);
+                showNavigationError("Unable to open Principal oversight");
+            } catch (IOException | RuntimeException restoreException) {
+                cleanupAfterNavigationFailure();
+            }
+        }
+    }
+
+    private void returnFromPrincipalOversight(LoginResult loginResult) {
+        try {
+            showPrincipalDashboard(loginResult);
+        } catch (IOException | RuntimeException exception) {
+            cleanupAfterNavigationFailure();
+        }
     }
 
     private void showReports(LoginResult loginResult) {

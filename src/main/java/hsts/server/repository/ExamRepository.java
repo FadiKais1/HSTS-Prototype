@@ -79,6 +79,26 @@ public class ExamRepository {
             ORDER BY ev.submitted_at ASC, e.exam_id ASC
             """;
 
+    private static final String PRINCIPAL_EXAM_LIST_SQL = EXAM_SUMMARY_SELECT + """
+            ORDER BY e.created_at DESC, e.exam_id DESC
+            """;
+
+    private static final String PRINCIPAL_EXAM_VERSION_SUMMARY_SQL = """
+            SELECT e.exam_id, e.exam_code, e.course_id,
+                   c.name AS course_name, s.subject_id, s.name AS subject_name,
+                   e.created_by_user_id, creator.full_name AS creator_name,
+                   ev.version_no, ev.title, ev.duration_minutes, ev.total_score,
+                   ev.status, ev.created_at, ev.submitted_at, ev.reviewed_at,
+                   ev.rejection_reason
+            FROM exams e
+            JOIN exam_versions ev ON ev.exam_id = e.exam_id
+            JOIN courses c ON c.course_id = e.course_id
+            JOIN subjects s ON s.subject_id = c.subject_id
+            JOIN users creator ON creator.user_id = e.created_by_user_id
+            WHERE e.exam_id = ?
+            ORDER BY ev.version_no DESC
+            """;
+
     private static final String EXAM_DETAIL_SELECT = """
             SELECT e.exam_id,
                    e.exam_code,
@@ -124,6 +144,24 @@ public class ExamRepository {
               ON sc.subject_id = s.subject_id
              AND sc.coordinator_user_id = ?
             WHERE e.exam_id = ?
+            """;
+
+    private static final String PRINCIPAL_EXAM_VERSION_SQL = """
+            SELECT e.exam_id, e.exam_code, e.course_id,
+                   c.name AS course_name, s.subject_id, s.name AS subject_name,
+                   e.created_by_user_id, creator.full_name AS creator_name,
+                   ev.version_no, ev.title, ev.duration_minutes,
+                   ev.teacher_notes, ev.student_instructions, ev.total_score,
+                   ev.status, ev.created_at, ev.submitted_at,
+                   ev.reviewed_by_user_id, reviewer.full_name AS reviewer_name,
+                   ev.reviewed_at, ev.rejection_reason
+            FROM exams e
+            JOIN exam_versions ev ON ev.exam_id = e.exam_id
+            JOIN courses c ON c.course_id = e.course_id
+            JOIN subjects s ON s.subject_id = c.subject_id
+            JOIN users creator ON creator.user_id = e.created_by_user_id
+            LEFT JOIN users reviewer ON reviewer.user_id = ev.reviewed_by_user_id
+            WHERE e.exam_id = ? AND ev.version_no = ?
             """;
 
     private static final String EXAM_ENTITY_COLUMNS = """
@@ -473,6 +511,55 @@ public class ExamRepository {
             return loadExam(connection, statement);
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load coordinator exam", e);
+        }
+    }
+
+    public List<ExamSummaryDTO> findAllForPrincipal() {
+        List<ExamSummaryDTO> exams = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     PRINCIPAL_EXAM_LIST_SQL
+             ); ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                exams.add(mapExamSummary(resultSet));
+            }
+            return List.copyOf(exams);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load Principal exams", exception);
+        }
+    }
+
+    public List<ExamSummaryDTO> findVersionsForPrincipal(int examId) {
+        requirePositive(examId, "Exam ID must be positive");
+        List<ExamSummaryDTO> versions = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     PRINCIPAL_EXAM_VERSION_SUMMARY_SQL
+             )) {
+            statement.setInt(1, examId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    versions.add(mapExamSummary(resultSet));
+                }
+            }
+            return List.copyOf(versions);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load Principal exam versions", exception);
+        }
+    }
+
+    public Optional<ExamDTO> findVersionForPrincipal(int examId, int versionNo) {
+        requirePositive(examId, "Exam ID must be positive");
+        requirePositive(versionNo, "Exam version must be positive");
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     PRINCIPAL_EXAM_VERSION_SQL
+             )) {
+            statement.setInt(1, examId);
+            statement.setInt(2, versionNo);
+            return loadExam(connection, statement);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load Principal exam version", exception);
         }
     }
 
@@ -946,6 +1033,12 @@ public class ExamRepository {
                 resultSet.getString("answer_option_4"),
                 resultSet.getInt("correct_option_number")
         );
+    }
+
+    private static void requirePositive(int value, String message) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(message);
+        }
     }
 
     private int createExam(int authenticatedUserId, int courseId,

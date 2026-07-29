@@ -27,6 +27,7 @@ public final class PackagingVerifier {
             "hsts/client/boundary/student-dashboard.fxml",
             "hsts/client/boundary/teacher-dashboard.fxml",
             "hsts/client/boundary/principal-dashboard.fxml",
+            "hsts/client/boundary/principal-oversight-page.fxml",
             "hsts/client/boundary/question-bank-page.fxml",
             "hsts/client/boundary/exam-builder-page.fxml",
             "hsts/client/boundary/approval-requests-page.fxml",

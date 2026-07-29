@@ -8,6 +8,7 @@ import hsts.server.control.CourseBotService;
 import hsts.server.control.ExamExecutionService;
 import hsts.server.control.ExamManagementService;
 import hsts.server.control.GradingService;
+import hsts.server.control.PrincipalOversightService;
 import hsts.server.control.ReportService;
 import hsts.server.net.Server;
 import hsts.server.repository.CourseRepository;
@@ -88,6 +89,14 @@ public class MainServer {
                 Clock.systemDefaultZone(),
                 () -> UUID.randomUUID().toString()
         );
+        PrincipalOversightService principalOversightService =
+                new PrincipalOversightService(
+                        userRepository,
+                        questionRepository,
+                        examRepository,
+                        examExecutionRepository,
+                        examSubmissionRepository
+                );
 
         Server server = new Server(
                 port,
@@ -95,7 +104,8 @@ public class MainServer {
                 authService,
                 examExecutionService,
                 reportService,
-                courseBotService
+                courseBotService,
+                principalOversightService
         );
         server.startServer();
     }

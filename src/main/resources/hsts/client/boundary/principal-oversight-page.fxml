@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="hsts.client.boundary.PrincipalOversightPage"
+            prefWidth="1280" prefHeight="800"
+            style="-fx-background-color: #f4f7fb;">
+    <top>
+        <VBox spacing="10" style="-fx-background-color: white; -fx-border-color: transparent transparent #dbe3ef transparent;">
+            <padding><Insets top="16" right="24" bottom="14" left="24"/></padding>
+            <HBox alignment="CENTER_LEFT" spacing="12">
+                <VBox spacing="3">
+                    <Label text="Principal Oversight"
+                           style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                    <Label fx:id="identityLabel" text="PRINCIPAL"
+                           style="-fx-text-fill: #475569; -fx-opacity: 1;"/>
+                </VBox>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="refreshButton" text="Refresh" onAction="#handleRefresh"
+                        style="-fx-background-color: #e2e8f0; -fx-text-fill: #111827; -fx-font-weight: bold;"/>
+                <Button fx:id="backButton" text="Back" onAction="#handleBack"
+                        style="-fx-background-color: #1d4ed8; -fx-text-fill: white; -fx-font-weight: bold;"/>
+            </HBox>
+            <Label fx:id="errorLabel" text="" visible="false" managed="false"
+                   style="-fx-background-color: #fef2f2; -fx-text-fill: #b91c1c; -fx-padding: 8; -fx-opacity: 1;"/>
+        </VBox>
+    </top>
+    <center>
+        <TabPane fx:id="oversightTabs" tabClosingPolicy="UNAVAILABLE">
+            <tabs>
+                <Tab text="Questions">
+                    <SplitPane dividerPositions="0.48">
+                        <items>
+                            <VBox spacing="8" style="-fx-padding: 14;">
+                                <Label text="All persisted questions"
+                                       style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <TableView fx:id="questionTable" VBox.vgrow="ALWAYS">
+                                    <placeholder><Label text="No questions found" style="-fx-text-fill: #475569;"/></placeholder>
+                                    <columns>
+                                        <TableColumn fx:id="questionIdColumn" text="ID" prefWidth="55"/>
+                                        <TableColumn fx:id="questionCourseColumn" text="Course" prefWidth="150"/>
+                                        <TableColumn fx:id="questionCreatorColumn" text="Creator" prefWidth="135"/>
+                                        <TableColumn fx:id="questionTopicColumn" text="Topic" prefWidth="120"/>
+                                        <TableColumn fx:id="questionStatusColumn" text="Status" prefWidth="90"/>
+                                    </columns>
+                                </TableView>
+                            </VBox>
+                            <VBox spacing="9" style="-fx-padding: 14; -fx-background-color: white;">
+                                <HBox alignment="CENTER_LEFT" spacing="10">
+                                    <Label text="Exact version" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                    <ComboBox fx:id="questionVersionCombo" prefWidth="110"/>
+                                </HBox>
+                                <TextArea fx:id="questionDetailArea" editable="false" wrapText="true" prefRowCount="15" VBox.vgrow="ALWAYS"
+                                          style="-fx-control-inner-background: white; -fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label text="Ordered answer options" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                <ListView fx:id="questionOptionsList" prefHeight="150"/>
+                            </VBox>
+                        </items>
+                    </SplitPane>
+                </Tab>
+                <Tab text="Exams">
+                    <SplitPane dividerPositions="0.48">
+                        <items>
+                            <VBox spacing="8" style="-fx-padding: 14;">
+                                <Label text="All exams" style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <TableView fx:id="examTable" VBox.vgrow="ALWAYS">
+                                    <placeholder><Label text="No exams found" style="-fx-text-fill: #475569;"/></placeholder>
+                                    <columns>
+                                        <TableColumn fx:id="examCodeColumn" text="Code" prefWidth="75"/>
+                                        <TableColumn fx:id="examTitleColumn" text="Title" prefWidth="165"/>
+                                        <TableColumn fx:id="examCourseColumn" text="Course" prefWidth="145"/>
+                                        <TableColumn fx:id="examCreatorColumn" text="Creator" prefWidth="125"/>
+                                        <TableColumn fx:id="examStatusColumn" text="Status" prefWidth="120"/>
+                                    </columns>
+                                </TableView>
+                            </VBox>
+                            <VBox spacing="9" style="-fx-padding: 14; -fx-background-color: white;">
+                                <HBox alignment="CENTER_LEFT" spacing="10">
+                                    <Label text="Exact version" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                    <ComboBox fx:id="examVersionCombo" prefWidth="110"/>
+                                </HBox>
+                                <TextArea fx:id="examDetailArea" editable="false" wrapText="true" prefRowCount="15" VBox.vgrow="ALWAYS"
+                                          style="-fx-control-inner-background: white; -fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label text="Ordered question snapshots" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                <ListView fx:id="examQuestionsList" prefHeight="170"/>
+                            </VBox>
+                        </items>
+                    </SplitPane>
+                </Tab>
+                <Tab text="Results">
+                    <VBox spacing="10" style="-fx-padding: 14;">
+                        <Label text="All scheduled exam executions"
+                               style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                        <TableView fx:id="executionTable" prefHeight="220">
+                            <placeholder><Label text="No executions found" style="-fx-text-fill: #475569;"/></placeholder>
+                            <columns>
+                                <TableColumn fx:id="executionCodeColumn" text="Code" prefWidth="75"/>
+                                <TableColumn fx:id="executionExamColumn" text="Exam" prefWidth="190"/>
+                                <TableColumn fx:id="executionCourseColumn" text="Course" prefWidth="170"/>
+                                <TableColumn fx:id="executionStatusColumn" text="Status" prefWidth="100"/>
+                                <TableColumn fx:id="executionWindowColumn" text="Opening — Closing" prefWidth="310"/>
+                            </columns>
+                        </TableView>
+                        <SplitPane dividerPositions="0.45" VBox.vgrow="ALWAYS">
+                            <items>
+                                <VBox spacing="7">
+                                    <Label text="Execution submissions" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                    <TableView fx:id="submissionTable" VBox.vgrow="ALWAYS">
+                                        <placeholder><Label text="Select an execution" style="-fx-text-fill: #475569;"/></placeholder>
+                                        <columns>
+                                            <TableColumn fx:id="studentColumn" text="Student" prefWidth="170"/>
+                                            <TableColumn fx:id="submissionStatusColumn" text="Status" prefWidth="120"/>
+                                            <TableColumn fx:id="finalScoreColumn" text="Final Score" prefWidth="90"/>
+                                        </columns>
+                                    </TableView>
+                                </VBox>
+                                <VBox spacing="7" style="-fx-padding: 0 0 0 10; -fx-background-color: white;">
+                                    <Label text="Selected result" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                    <TextArea fx:id="submissionDetailArea" editable="false" wrapText="true" VBox.vgrow="ALWAYS"
+                                              style="-fx-control-inner-background: white; -fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                    <Label text="Ordered answer review" style="-fx-font-weight: bold; -fx-text-fill: #334155;"/>
+                                    <ListView fx:id="submissionAnswersList" prefHeight="150"/>
+                                </VBox>
+                            </items>
+                        </SplitPane>
+                    </VBox>
+                </Tab>
+            </tabs>
+        </TabPane>
+    </center>
+</BorderPane>

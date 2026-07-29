@@ -179,6 +179,27 @@ public class ExamExecutionRepository {
               AND execution.execution_id = ?
             """;
 
+    private static final String PRINCIPAL_EXECUTION_LIST_SQL = """
+            SELECT execution.execution_id, execution.execution_code,
+                   execution.exam_id, execution.exam_version_no,
+                   exam.exam_code, version.title AS exam_title,
+                   exam.course_id, course.name AS course_name,
+                   execution.opening_time, execution.closing_time,
+                   execution.duration_minutes, execution.status,
+                   execution.created_by_user_id,
+                   creator.full_name AS creator_name, execution.created_at,
+                   execution.started_count, execution.submitted_count,
+                   execution.auto_submitted_count
+            FROM exam_executions execution
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            JOIN users creator ON creator.user_id = execution.created_by_user_id
+            ORDER BY execution.created_at DESC, execution.execution_id DESC
+            """;
+
     private static final String STUDENT_EXECUTION_PREVIEW_SQL = """
             SELECT execution.execution_id,
                    execution.execution_code,
@@ -382,6 +403,23 @@ public class ExamExecutionRepository {
             return executions;
         } catch (SQLException exception) {
             throw new IllegalStateException("Failed to load exam executions", exception);
+        }
+    }
+
+    public List<ExamExecutionSummaryDTO> findAllForPrincipal() {
+        List<ExamExecutionSummaryDTO> executions = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     PRINCIPAL_EXECUTION_LIST_SQL
+             ); ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                executions.add(mapSummary(resultSet));
+            }
+            return List.copyOf(executions);
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to load Principal exam executions", exception
+            );
         }
     }
 
