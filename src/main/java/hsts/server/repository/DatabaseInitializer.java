@@ -44,7 +44,7 @@ public class DatabaseInitializer {
                     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
                     CONSTRAINT chk_users_role CHECK (role IN ('STUDENT', 'TEACHER', 'COORDINATOR', 'PRINCIPAL')),
                     CONSTRAINT chk_users_status CHECK (status IN ('ACTIVE', 'BLOCKED'))
-                )
+                ) ENGINE=InnoDB
                 """;
 
         try (Connection connection = DatabaseConnection.getConnection();
@@ -1742,7 +1742,7 @@ public class DatabaseInitializer {
                     answer_option_3 TEXT,
                     answer_option_4 TEXT,
                     correct_option_number INT
-                )
+                ) ENGINE=InnoDB
                 """;
 
         try (Connection connection = DatabaseConnection.getConnection();

@@ -1,6 +1,5 @@
 package hsts.server.entity;
 
-import hsts.common.QuestionIllustrationUploadPayload;
 import org.junit.Test;
 
 import javax.imageio.ImageIO;
@@ -31,7 +30,6 @@ public class QuestionIllustrationTest {
         byte[] first = illustration.getContent();
         first[0] ^= 1;
         assertArrayEquals(illustration.getContent(), illustration.copy().getContent());
-        assertArrayEquals(illustration.getContent(), illustration.toDto().getContent());
     }
 
     @Test
@@ -89,11 +87,19 @@ public class QuestionIllustrationTest {
                 .map(java.lang.reflect.Field::getName).toList();
         assertFalse(names.contains("path"));
         assertFalse(names.contains("url"));
+        java.util.Arrays.stream(QuestionIllustration.class.getDeclaredMethods())
+                .forEach(method -> {
+                    assertFalse(method.getReturnType().getName().startsWith("hsts.common"));
+                    java.util.Arrays.stream(method.getParameterTypes()).forEach(type ->
+                            assertFalse(type.getName().startsWith("hsts.common"))
+                    );
+                });
     }
 
     private static QuestionIllustration create(String name, byte[] bytes) {
         return QuestionIllustration.create(
-                new QuestionIllustrationUploadPayload(name, bytes),
+                name,
+                bytes,
                 LocalDateTime.of(2026, 7, 29, 12, 0)
         );
     }

@@ -54,6 +54,13 @@ final class QuestionIllustrationJdbcSupport {
 
     static QuestionIllustrationDTO readDto(ResultSet resultSet) throws SQLException {
         QuestionIllustration illustration = readEntity(resultSet);
-        return illustration == null ? null : illustration.toDto();
+        return illustration == null ? null : new QuestionIllustrationDTO(
+                illustration.getMediaType(),
+                illustration.getContent(),
+                illustration.getByteLength(),
+                illustration.getWidth(),
+                illustration.getHeight(),
+                illustration.getSha256()
+        );
     }
 }

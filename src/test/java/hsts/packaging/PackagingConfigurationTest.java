@@ -85,6 +85,15 @@ public class PackagingConfigurationTest {
     }
 
     @Test
+    public void compilerEnforcesTheJava17ApiSurface() throws Exception {
+        String pom = Files.readString(PROJECT_ROOT.resolve("pom.xml"));
+        assertTrue(pom.contains("<maven.compiler.release>17</maven.compiler.release>"));
+        assertTrue(pom.contains("<release>${maven.compiler.release}</release>"));
+        assertFalse(pom.contains("<maven.compiler.source>"));
+        assertFalse(pom.contains("<maven.compiler.target>"));
+    }
+
+    @Test
     public void definesServerOnlyPdfAndDocxDependencies() throws Exception {
         assertEquals("3.0.5", dependencyVersion("org.apache.pdfbox", "pdfbox"));
         assertEquals("5.4.1", dependencyVersion("org.apache.poi", "poi-ooxml"));

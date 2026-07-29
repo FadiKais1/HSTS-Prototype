@@ -51,6 +51,9 @@ public class DatabaseInitializerSchemaTest {
         );
 
         assertContainsAll(INITIALIZER,
+                "chk_users_status CHECK (status IN ('ACTIVE', 'BLOCKED'))\n"
+                        + ") ENGINE=InnoDB",
+                "correct_option_number INT\n) ENGINE=InnoDB",
                 "createSubjectsTable()",
                 "createCoursesTable()",
                 "createTeacherCoursesTable()",

@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class MainServerWiringTest {
@@ -69,6 +70,23 @@ public class MainServerWiringTest {
                         + "examExecutionService, reportService, courseBotService, "
                         + "principalOversightService )"
         ));
+    }
+
+    @Test
+    public void serverPortUsesPropertyThenEnvironmentThenDefaultAndValidatesRange() {
+        assertEquals(6100, MainServer.resolvePort(" 6100 ", "6200"));
+        assertEquals(6200, MainServer.resolvePort(null, " 6200 "));
+        assertEquals(5555, MainServer.resolvePort(null, null));
+        assertEquals(
+                "Server port must be a number from 1 to 65535",
+                assertThrows(IllegalArgumentException.class,
+                        () -> MainServer.resolvePort("not-a-port", null)).getMessage()
+        );
+        assertEquals(
+                "Server port must be between 1 and 65535",
+                assertThrows(IllegalArgumentException.class,
+                        () -> MainServer.resolvePort("65536", null)).getMessage()
+        );
     }
 
     private static int occurrences(String value, String target) {

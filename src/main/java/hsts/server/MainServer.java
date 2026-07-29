@@ -31,9 +31,9 @@ public class MainServer {
     private static final int PORT = 5555;
 
     public static void main(String[] args) {
+        int port = resolvePort();
         new DatabaseInitializer().initialize();
 
-        int port = PORT;
         QuestionRepository questionRepository = new QuestionRepository();
         CourseRepository courseRepository = new CourseRepository();
         UserRepository userRepository = new UserRepository();
@@ -108,5 +108,34 @@ public class MainServer {
                 principalOversightService
         );
         server.startServer();
+    }
+
+    private static int resolvePort() {
+        return resolvePort(
+                System.getProperty("hsts.server.port"),
+                System.getenv("HSTS_SERVER_PORT")
+        );
+    }
+
+    static int resolvePort(String propertyValue, String environmentValue) {
+        String configuredPort = propertyValue != null
+                ? propertyValue.trim()
+                : environmentValue != null
+                ? environmentValue.trim()
+                : String.valueOf(PORT);
+        final int port;
+        try {
+            port = Integer.parseInt(configuredPort);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Server port must be a number from 1 to 65535", exception
+            );
+        }
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException(
+                    "Server port must be between 1 and 65535"
+            );
+        }
+        return port;
     }
 }

@@ -10,6 +10,7 @@ import hsts.common.ExamVersionPayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
+import hsts.common.QuestionIllustrationDTO;
 import hsts.common.QuestionIllustrationUploadPayload;
 import hsts.common.QuestionVersionDTO;
 import hsts.common.RejectExamPayload;
@@ -949,7 +950,20 @@ public class ExamManagementService {
                 0,
                 1,
                 question.getIllustration() == null
-                        ? null : question.getIllustration().toDto()
+                        ? null : toIllustrationDto(question.getIllustration())
+        );
+    }
+
+    private QuestionIllustrationDTO toIllustrationDto(
+            QuestionIllustration illustration
+    ) {
+        return new QuestionIllustrationDTO(
+                illustration.getMediaType(),
+                illustration.getContent(),
+                illustration.getByteLength(),
+                illustration.getWidth(),
+                illustration.getHeight(),
+                illustration.getSha256()
         );
     }
 
@@ -958,7 +972,9 @@ public class ExamManagementService {
     ) {
         return upload == null
                 ? null
-                : QuestionIllustration.create(upload, LocalDateTime.now());
+                : QuestionIllustration.create(
+                        upload.getFileName(), upload.getContent(), LocalDateTime.now()
+                );
     }
 
     private void validateIllustrationChange(UpdateQuestionPayload payload) {

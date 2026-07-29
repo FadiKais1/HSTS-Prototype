@@ -1,8 +1,5 @@
 package hsts.server.entity;
 
-import hsts.common.QuestionIllustrationDTO;
-import hsts.common.QuestionIllustrationUploadPayload;
-
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
@@ -18,6 +15,11 @@ import java.util.Locale;
 import java.util.Objects;
 
 public final class QuestionIllustration {
+    private static final int MAX_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_WIDTH = 4096;
+    private static final int MAX_HEIGHT = 4096;
+    private static final long MAX_PIXELS = 16_000_000L;
+
     private final String mediaType;
     private final byte[] content;
     private final int width;
@@ -39,18 +41,15 @@ public final class QuestionIllustration {
     }
 
     public static QuestionIllustration create(
-            QuestionIllustrationUploadPayload upload,
+            String fileName,
+            byte[] content,
             LocalDateTime createdAt
     ) {
-        if (upload == null) {
-            throw new IllegalArgumentException("Question illustration content is required");
-        }
-        String fileName = validateFileName(upload.getFileName());
-        byte[] content = upload.getContent();
+        fileName = validateFileName(fileName);
         if (content == null || content.length == 0) {
             throw new IllegalArgumentException("Question illustration content is required");
         }
-        if (content.length > QuestionIllustrationDTO.MAX_BYTES) {
+        if (content.length > MAX_BYTES) {
             throw new IllegalArgumentException("Question illustration exceeds 2 MiB");
         }
         DecodedImage decoded = decode(content);
@@ -70,10 +69,25 @@ public final class QuestionIllustration {
             String mediaType, byte[] content, int byteLength,
             int width, int height, String sha256, LocalDateTime createdAt
     ) {
-        QuestionIllustrationDTO metadata = new QuestionIllustrationDTO(
-                mediaType, content, byteLength, width, height, sha256
-        );
-        DecodedImage decoded = decode(metadata.getContent());
+        validateMediaType(mediaType);
+        if (content == null || content.length == 0) {
+            throw new IllegalArgumentException("Question illustration content is required");
+        }
+        if (content.length > MAX_BYTES) {
+            throw new IllegalArgumentException("Question illustration exceeds 2 MiB");
+        }
+        if (byteLength != content.length) {
+            throw new IllegalArgumentException("Question illustration byte length is invalid");
+        }
+        validateDimensions(width, height);
+        if (sha256 == null || !sha256.matches("[0-9a-f]{64}")
+                || !MessageDigest.isEqual(
+                        HexFormat.of().parseHex(sha256),
+                        HexFormat.of().parseHex(sha256(content))
+                )) {
+            throw new IllegalArgumentException("Question illustration checksum is invalid");
+        }
+        DecodedImage decoded = decode(content);
         if (!mediaType.equals(decoded.mediaType())) {
             throw new IllegalArgumentException(
                     "Question illustration content does not match its type"
@@ -85,19 +99,13 @@ public final class QuestionIllustration {
             );
         }
         return new QuestionIllustration(
-                mediaType, metadata.getContent(), width, height, sha256, createdAt
+                mediaType, content, width, height, sha256, createdAt
         );
     }
 
     public QuestionIllustration copy() {
         return new QuestionIllustration(
                 mediaType, content, width, height, sha256, createdAt
-        );
-    }
-
-    public QuestionIllustrationDTO toDto() {
-        return new QuestionIllustrationDTO(
-                mediaType, content, content.length, width, height, sha256
         );
     }
 
@@ -187,12 +195,17 @@ public final class QuestionIllustration {
                     "Question illustration dimensions are invalid"
             );
         }
-        if (width > QuestionIllustrationDTO.MAX_WIDTH
-                || height > QuestionIllustrationDTO.MAX_HEIGHT
-                || (long) width * height > QuestionIllustrationDTO.MAX_PIXELS) {
+        if (width > MAX_WIDTH || height > MAX_HEIGHT
+                || (long) width * height > MAX_PIXELS) {
             throw new IllegalArgumentException(
                     "Question illustration exceeds dimension limits"
             );
+        }
+    }
+
+    private static void validateMediaType(String mediaType) {
+        if (!"image/png".equals(mediaType) && !"image/jpeg".equals(mediaType)) {
+            throw new IllegalArgumentException("Question illustration type is invalid");
         }
     }
 
