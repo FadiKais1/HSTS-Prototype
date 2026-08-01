@@ -592,6 +592,11 @@ public class MainClient extends Application {
 
     private void sendLogoutAndReturnToLogin(String loginError) {
         Client sessionClient = client;
+        // Detach the outgoing screen's listener so pushed events cannot reach a
+        // detached controller, or be handled under the next user's session.
+        if (sessionClient != null) {
+            sessionClient.setServerEventListener(null);
+        }
         CompletableFuture
                 .supplyAsync(() -> sessionClient.sendRequest(new Request(RequestType.LOGOUT, null)))
                 .whenComplete((response, exception) -> {

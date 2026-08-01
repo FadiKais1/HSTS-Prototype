@@ -169,7 +169,7 @@ public final class BotConversation {
             }
             if (message.getCreatedAt().isAfter(updatedAt)) {
                 throw new IllegalArgumentException(
-                        "Bot message time cannot follow conversation update time"
+                        "This Course Bot conversation is out of date. Please reopen the Course Bot and ask your question again."
                 );
             }
             copies.add(message.copy());

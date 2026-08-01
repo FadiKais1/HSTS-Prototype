@@ -11,6 +11,8 @@ import hsts.common.SubmissionAnswerReviewDTO;
 import hsts.common.SubmissionReviewDTO;
 import hsts.common.type.SubmissionStatus;
 import hsts.common.type.UserRole;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -130,6 +132,8 @@ public class GradeReviewPage {
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         requireManagerRole(loginResult);
         this.executionClientController = new ExamExecutionClientController(client);
+        // Server-pushed changes keep this screen current without a manual refresh.
+        client.setServerEventListener(this::onServerEvent);
         disposed = false;
         mutationInProgress = false;
         userLabel.setText(loginResult.getFullName());
@@ -438,6 +442,42 @@ public class GradeReviewPage {
         }
     }
 
+    /**
+     * Reacts to server-pushed changes.
+     *
+     * <p>Deliberately conservative: while a submission detail is open the
+     * reviewer may be part-way through typing a score or feedback, so only the
+     * list levels are reloaded. Nothing the reviewer has typed is discarded.</p>
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (event == null) {
+            return;
+        }
+        ServerEventType type = event.getType();
+        if (type != ServerEventType.SUBMISSION_RECEIVED
+                && type != ServerEventType.GRADES_PUBLISHED
+                && type != ServerEventType.EXAM_TIME_EXTENDED
+                && type != ServerEventType.NOTIFICATION_CREATED) {
+            return;
+        }
+
+        Platform.runLater(() -> {
+            if (disposed || !isConfigured() || mutationInProgress) {
+                return;
+            }
+            if (selectedSubmissionId() > 0) {
+                // A review is open; leave it untouched.
+                return;
+            }
+            int executionId = selectedExecutionId();
+            if (executionId > 0) {
+                loadSubmissions(executionId, null, null);
+            } else {
+                loadExecutions(null);
+            }
+        });
+    }
+
     @FXML
     private void handleRefresh() {
         if (!isConfigured() || mutationInProgress) {
@@ -461,6 +501,9 @@ public class GradeReviewPage {
             return;
         }
         disposed = true;
+        if (client != null) {
+            client.setServerEventListener(null);
+        }
         executionRequestGeneration++;
         submissionRequestGeneration++;
         detailRequestGeneration++;

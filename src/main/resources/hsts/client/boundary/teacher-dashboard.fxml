@@ -33,7 +33,7 @@
             <padding><Insets top="34" right="34" bottom="34" left="34"/></padding>
             <VBox alignment="TOP_LEFT" spacing="16" maxWidth="660"
                   style="-fx-background-color: white; -fx-background-radius: 16; -fx-border-color: #dbe3ef; -fx-border-radius: 16; -fx-padding: 30;">
-                <Label text="Teacher and Coordinator Dashboard"
+                <Label fx:id="dashboardTitleLabel" text="Teacher Dashboard"
                        style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
                 <Label text="Open the working question bank or review upcoming Assignment 3 areas."
                        wrapText="true" style="-fx-text-fill: #6b7280;"/>

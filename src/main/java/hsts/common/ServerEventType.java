@@ -17,5 +17,8 @@ public enum ServerEventType {
     GRADES_PUBLISHED,
 
     /** An exam version was approved or rejected by a coordinator. */
-    EXAM_APPROVAL_CHANGED
+    EXAM_APPROVAL_CHANGED,
+
+    /** A student submitted an exam attempt and it is now awaiting review. */
+    SUBMISSION_RECEIVED
 }

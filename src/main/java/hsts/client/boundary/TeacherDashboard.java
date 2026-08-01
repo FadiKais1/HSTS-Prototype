@@ -29,6 +29,9 @@ public class TeacherDashboard {
     private Label welcomeLabel;
     @FXML
     private Label roleLabel;
+
+    @FXML
+    private Label dashboardTitleLabel;
     @FXML
     private Label errorLabel;
     @FXML
@@ -373,6 +376,13 @@ public class TeacherDashboard {
 
         if (welcomeLabel != null) {
             welcomeLabel.setText("Welcome, " + loginResult.getFullName());
+        }
+        if (dashboardTitleLabel != null) {
+            dashboardTitleLabel.setText(
+                    loginResult.getRole() == UserRole.COORDINATOR
+                            ? "Coordinator Dashboard"
+                            : "Teacher Dashboard"
+            );
         }
         if (roleLabel != null) {
             roleLabel.setText(loginResult.getRole().name());

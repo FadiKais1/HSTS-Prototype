@@ -498,12 +498,12 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
                         throw new IllegalArgumentException("Submission data is missing");
                     }
+                    Object submittedAttempt = requireExamExecutionService()
+                            .submitExam(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.SUBMISSION_RECEIVED, 0));
                     yield Response.success(
                             "Exam submitted successfully",
-                            requireExamExecutionService().submitExam(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                            submittedAttempt
                     );
                 }
 
