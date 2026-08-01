@@ -29,6 +29,8 @@ import hsts.common.ReportExportPayload;
 import hsts.common.NotificationIdPayload;
 import hsts.common.PublishSubmissionPayload;
 import hsts.common.Response;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.ReviewSubmissionPayload;
 import hsts.common.SaveExamAnswerPayload;
 import hsts.common.ScheduleExamExecutionPayload;
@@ -394,20 +396,24 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof ExamVersionPayload payload)) {
                         throw new IllegalArgumentException("Exam version data is missing");
                     }
-                    yield Response.success(
-                            "Exam approved successfully",
-                            examManagementService.approveExam(authenticatedUserId, payload)
-                    );
+                    Object approvedExam =
+                            examManagementService.approveExam(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(
+                            ServerEventType.EXAM_APPROVAL_CHANGED, 0
+                    ));
+                    yield Response.success("Exam approved successfully", approvedExam);
                 }
 
                 case REJECT_EXAM -> {
                     if (!(request.getPayload() instanceof RejectExamPayload payload)) {
                         throw new IllegalArgumentException("Exam rejection data is missing");
                     }
-                    yield Response.success(
-                            "Exam rejected successfully",
-                            examManagementService.rejectExam(authenticatedUserId, payload)
-                    );
+                    Object rejectedExam =
+                            examManagementService.rejectExam(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(
+                            ServerEventType.EXAM_APPROVAL_CHANGED, 0
+                    ));
+                    yield Response.success("Exam rejected successfully", rejectedExam);
                 }
 
                 case SCHEDULE_EXAM_EXECUTION -> {
@@ -506,12 +512,12 @@ public class Server extends AbstractServer {
                             instanceof ExtendSubmissionTimePayload payload)) {
                         throw new IllegalArgumentException("Time extension data is missing");
                     }
+                    Object extendedSubmission = requireExamExecutionService()
+                            .extendStudentTime(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.EXAM_TIME_EXTENDED, 0));
                     yield Response.success(
                             "Exam time extended successfully",
-                            requireExamExecutionService().extendStudentTime(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                            extendedSubmission
                     );
                 }
 
@@ -522,12 +528,15 @@ public class Server extends AbstractServer {
                                 "Time extension data is missing"
                         );
                     }
+                    Object extendedExecution = requireExamExecutionService()
+                            .extendExecutionTime(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(
+                            ServerEventType.EXAM_TIME_EXTENDED,
+                            payload.getExecutionId()
+                    ));
                     yield Response.success(
                             "Exam execution extended successfully",
-                            requireExamExecutionService().extendExecutionTime(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                            extendedExecution
                     );
                 }
 
@@ -580,12 +589,12 @@ public class Server extends AbstractServer {
                                 "Grade publication data is invalid"
                         );
                     }
+                    Object publishedGrade = requireExamExecutionService()
+                            .publishSubmissionGrade(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.GRADES_PUBLISHED, 0));
                     yield Response.success(
                             "Submission grade published successfully",
-                            requireExamExecutionService().publishSubmissionGrade(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                            publishedGrade
                     );
                 }
 
@@ -1189,6 +1198,34 @@ public class Server extends AbstractServer {
     }
 
     // COMPATIBILITY-ONLY: OCSF response delivery requires a target client connection.
+    /**
+     * Pushes a state-change event to every authenticated client.
+     *
+     * <p>Screens subscribe to these events and refresh themselves, so the user
+     * never has to initiate a screen refresh. Delivery is best effort: a
+     * failure to reach one client must not affect the request being served.</p>
+     */
+    void publishEvent(ServerEvent event) {
+        if (event == null) {
+            return;
+        }
+
+        for (ConnectionToClient client : getClientConnections()) {
+            if (!(client.getInfo(AUTHENTICATED_USER_ID) instanceof Integer)) {
+                continue;
+            }
+
+            try {
+                client.sendToClient(event);
+            } catch (IOException | RuntimeException exception) {
+                System.out.println(
+                        "Failed to push " + event.getType() + " to a client: "
+                                + exception.getMessage()
+                );
+            }
+        }
+    }
+
     private void sendResponse(ConnectionToClient client, Response response) {
         try {
             client.sendToClient(response);

@@ -2,12 +2,14 @@ package hsts.client.net;
 
 import hsts.common.Request;
 import hsts.common.Response;
+import hsts.common.ServerEvent;
 import hsts.ocsf.AbstractClient;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -25,6 +27,9 @@ public class Client extends AbstractClient {
     private final AtomicInteger staleResponsesToDiscard = new AtomicInteger();
     private final Duration defaultResponseTimeout;
     private final Duration courseBotResponseTimeout;
+
+    // Unsolicited server events are delivered here instead of the response queue.
+    private volatile Consumer<ServerEvent> serverEventListener;
 
     // COMPATIBILITY-ONLY: Preserves the working HSTSClient constructor and connection behavior.
     public Client(String host, int port) throws IOException {
@@ -116,13 +121,43 @@ public class Client extends AbstractClient {
         responseQueue.offer(response);
     }
 
+    /**
+     * Registers the listener notified when the server pushes an unsolicited
+     * event. Passing {@code null} removes the current listener.
+     *
+     * <p>The listener is invoked on the OCSF reader thread, so JavaFX screens
+     * must marshal onto the application thread themselves.</p>
+     */
+    public void setServerEventListener(Consumer<ServerEvent> listener) {
+        this.serverEventListener = listener;
+    }
+
     // COMPATIBILITY-ONLY: OCSF delivers raw server messages through this callback.
     @Override
     protected void handleMessageFromServer(Object message) {
+        if (message instanceof ServerEvent event) {
+            dispatchServerEvent(event);
+            return;
+        }
+
         if (message instanceof Response response) {
             handleResponse(response);
         } else {
             handleResponse(Response.error("Invalid response type from server"));
+        }
+    }
+
+    private void dispatchServerEvent(ServerEvent event) {
+        Consumer<ServerEvent> listener = serverEventListener;
+        if (listener == null) {
+            return;
+        }
+
+        try {
+            listener.accept(event);
+        } catch (RuntimeException exception) {
+            // A failing screen listener must never break the transport.
+            System.err.println("Server event listener failed: " + exception.getMessage());
         }
     }
 
