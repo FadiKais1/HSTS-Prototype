@@ -1,6 +1,7 @@
 package hsts.client;
 
 import hsts.client.boundary.LoginPage;
+import hsts.client.boundary.ConnectionPage;
 import hsts.client.boundary.ApprovalRequestsPage;
 import hsts.client.boundary.ExamBuilderPage;
 import hsts.client.boundary.ExamSchedulingPage;
@@ -49,16 +50,29 @@ public class MainClient extends Application {
         this.stage = stage;
 
         try {
-            serverHost = resolveHost();
-            serverPort = resolvePort();
-            client = new Client(serverHost, serverPort);
-            showLogin(null);
-        } catch (IllegalArgumentException exception) {
-            failStartup(exception.getMessage());
-        } catch (IOException exception) {
-            failStartup("Unable to connect to HSTS server at " + serverHost + ":" + serverPort);
-        } catch (RuntimeException exception) {
+            showConnection();
+        } catch (IOException | RuntimeException exception) {
             failStartup("Unable to start the HSTS client");
+        }
+    }
+
+    private void showConnection() throws IOException {
+        ConnectionPage connectionPage = SceneNavigator.switchScene(
+                stage,
+                "/hsts/client/boundary/connection-page.fxml",
+                "HSTS Exam Management System - Connect to Server"
+        );
+        connectionPage.configure(defaultHost(), defaultPort(), this::onConnected);
+    }
+
+    private void onConnected(Client connectedClient, String host, int port) {
+        this.client = connectedClient;
+        this.serverHost = host;
+        this.serverPort = port;
+        try {
+            showLogin(null);
+        } catch (IOException | RuntimeException exception) {
+            failStartup("Unable to open the login page");
         }
     }
 
@@ -68,32 +82,24 @@ public class MainClient extends Application {
         client = null;
     }
 
-    private String resolveHost() {
+    private String defaultHost() {
         String host = resolveSetting("hsts.server.host", "HSTS_SERVER_HOST", DEFAULT_HOST);
-        if (host.isBlank()) {
-            throw new IllegalArgumentException("Server host must not be blank");
-        }
-        return host;
+        return host.isBlank() ? DEFAULT_HOST : host;
     }
 
-    private int resolvePort() {
+    private int defaultPort() {
         String configuredPort = resolveSetting(
                 "hsts.server.port",
                 "HSTS_SERVER_PORT",
                 String.valueOf(DEFAULT_PORT)
         );
 
-        final int port;
         try {
-            port = Integer.parseInt(configuredPort);
+            int port = Integer.parseInt(configuredPort);
+            return (port >= 1 && port <= 65535) ? port : DEFAULT_PORT;
         } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("Server port must be a number from 1 to 65535");
+            return DEFAULT_PORT;
         }
-
-        if (port < 1 || port > 65535) {
-            throw new IllegalArgumentException("Server port must be between 1 and 65535");
-        }
-        return port;
     }
 
     private String resolveSetting(String propertyName, String environmentName, String defaultValue) {

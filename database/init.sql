@@ -403,6 +403,7 @@ CREATE TABLE IF NOT EXISTS exam_executions (
     opening_time DATETIME NOT NULL,
     closing_time DATETIME NOT NULL,
     duration_minutes INT NOT NULL,
+    cumulative_extension_minutes INT NOT NULL DEFAULT 0,
     status VARCHAR(32) NOT NULL,
     created_by_user_id INT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
