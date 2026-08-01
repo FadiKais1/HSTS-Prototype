@@ -8,6 +8,8 @@ import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
 import hsts.common.RejectExamPayload;
 import hsts.common.type.ExamStatus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleIntegerProperty;
@@ -131,6 +133,8 @@ public class ApprovalRequestsPage {
         this.client = Objects.requireNonNull(client, "client");
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         this.examClientController = new ExamClientController(client);
+        // Newly submitted exams appear without the coordinator refreshing.
+        client.setServerEventListener(this::onServerEvent);
         this.closed = false;
         setFeedback("Loading pending exams...");
         updateActionState();
@@ -224,6 +228,24 @@ public class ApprovalRequestsPage {
                     updateActionState();
                 })
         );
+    }
+
+    /**
+     * Reloads the pending list when an exam is submitted, approved or rejected,
+     * so the approval queue stays current without a manual refresh.
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (event == null
+                || event.getType() != ServerEventType.EXAM_APPROVAL_CHANGED) {
+            return;
+        }
+        Platform.runLater(() -> {
+            if (closed) {
+                return;
+            }
+            Integer examId = loadedExam == null ? null : loadedExam.getExamId();
+            loadPendingExams(examId, null, true, false);
+        });
     }
 
     @FXML
@@ -376,6 +398,9 @@ public class ApprovalRequestsPage {
             return;
         }
         closed = true;
+        if (client != null) {
+            client.setServerEventListener(null);
+        }
         listRequestGeneration++;
         detailRequestGeneration++;
         try {

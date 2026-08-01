@@ -383,13 +383,12 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof ExamVersionPayload payload)) {
                         throw new IllegalArgumentException("Exam version data is missing");
                     }
-                    yield Response.success(
-                            "Exam submitted for approval",
-                            examManagementService.submitExamForApproval(
-                                    authenticatedUserId,
-                                    payload
-                            )
-                    );
+                    Object submittedExam = examManagementService
+                            .submitExamForApproval(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(
+                            ServerEventType.EXAM_APPROVAL_CHANGED, 0
+                    ));
+                    yield Response.success("Exam submitted for approval", submittedExam);
                 }
 
                 case APPROVE_EXAM -> {
