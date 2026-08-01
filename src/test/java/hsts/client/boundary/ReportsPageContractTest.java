@@ -259,7 +259,7 @@ public class ReportsPageContractTest {
         String teacher = Files.readString(TEACHER_DASHBOARD);
         String principal = Files.readString(PRINCIPAL_DASHBOARD);
         String student = Files.readString(STUDENT_DASHBOARD);
-        String main = Files.readString(MAIN_CLIENT);
+        String main = Files.readString(MAIN_CLIENT).replace("\r\n", "\n");
 
         assertTrue(teacher.contains("reportsHandler"));
         assertTrue(teacher.contains("handleReports"));

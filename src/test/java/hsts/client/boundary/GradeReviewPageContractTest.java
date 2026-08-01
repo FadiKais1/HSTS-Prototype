@@ -232,7 +232,7 @@ public class GradeReviewPageContractTest {
             throws Exception {
         String dashboard = Files.readString(DASHBOARD_SOURCE);
         String dashboardFxml = Files.readString(DASHBOARD_FXML);
-        String mainClient = Files.readString(MAIN_CLIENT);
+        String mainClient = Files.readString(MAIN_CLIENT).replace("\r\n", "\n");
 
         assertTrue(dashboard.contains("gradeReviewHandler"));
         assertTrue(dashboard.contains("handleGradeReview"));

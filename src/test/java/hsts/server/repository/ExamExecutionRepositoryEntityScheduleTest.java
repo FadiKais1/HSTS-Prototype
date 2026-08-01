@@ -4,6 +4,7 @@ import hsts.server.entity.ExamExecution;
 import org.junit.Test;
 
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -83,8 +84,8 @@ public class ExamExecutionRepositoryEntityScheduleTest {
 
     @Test
     public void localWallClockWindowIsPersistedWithoutTimezoneShift() {
-        LocalDateTime teacherOpening = LocalDateTime.of(2026, 8, 1, 11, 42);
-        LocalDateTime teacherClosing = LocalDateTime.of(2026, 8, 1, 11, 45);
+        LocalDateTime teacherOpening = LocalDate.now().plusDays(1).atTime(11, 42);
+        LocalDateTime teacherClosing = teacherOpening.plusMinutes(3);
         ExamRepositoryJdbcTestSupport.FakeDatabaseController database =
                 new ExamRepositoryJdbcTestSupport.FakeDatabaseController();
         database.plan(LOCK_MARKER).queryRows(row("duration_minutes", 75));
@@ -237,11 +238,11 @@ public class ExamExecutionRepositoryEntityScheduleTest {
     }
 
     private static LocalDateTime openingTime() {
-        return LocalDateTime.of(2026, 8, 1, 9, 0);
+        return LocalDate.now().plusDays(1).atTime(9, 0);
     }
 
     private static LocalDateTime closingTime() {
-        return LocalDateTime.of(2026, 8, 1, 12, 0);
+        return LocalDate.now().plusDays(1).atTime(12, 0);
     }
 
     private static String normalized(String sql) {

@@ -3,6 +3,7 @@ package hsts.server.repository;
 import org.junit.Test;
 
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -343,11 +344,11 @@ public class ExamExecutionRepositoryCreateTest {
     }
 
     private static LocalDateTime openingTime() {
-        return LocalDateTime.of(2026, 8, 1, 9, 0);
+        return LocalDate.now().plusDays(1).atTime(9, 0);
     }
 
     private static LocalDateTime closingTime() {
-        return LocalDateTime.of(2026, 8, 1, 12, 0);
+        return LocalDate.now().plusDays(1).atTime(12, 0);
     }
 
     private static String normalized(String sql) {
