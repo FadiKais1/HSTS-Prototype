@@ -4,6 +4,8 @@ import hsts.client.control.NotificationClientController;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
 import hsts.common.NotificationDTO;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -27,6 +29,7 @@ public final class NotificationsPage {
             FXCollections.observableArrayList();
     private Stage stage;
     private Runnable backHandler;
+    private Client client;
     private NotificationClientController controller;
     private boolean disposed;
     private boolean loading;
@@ -68,9 +71,10 @@ public final class NotificationsPage {
     public void configure(Stage stage, Client client, LoginResult loginResult,
                           Runnable backHandler) {
         this.stage = Objects.requireNonNull(stage, "stage");
-        this.controller = new NotificationClientController(
-                Objects.requireNonNull(client, "client")
-        );
+        this.client = Objects.requireNonNull(client, "client");
+        this.controller = new NotificationClientController(client);
+        // Server-pushed changes keep this list current without a manual refresh.
+        client.setServerEventListener(this::onServerEvent);
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         Objects.requireNonNull(loginResult, "loginResult");
         identityLabel.setText(loginResult.getFullName() + " · "
@@ -89,7 +93,35 @@ public final class NotificationsPage {
         if (disposed || backHandler == null) return;
         disposed = true;
         generation++;
+        if (client != null) {
+            client.setServerEventListener(null);
+            client = null;
+        }
         backHandler.run();
+    }
+
+    /**
+     * Reloads the list when the server reports a change that produces
+     * notifications. Runs on the transport thread, so the reload is marshalled
+     * onto the JavaFX application thread.
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (event == null) {
+            return;
+        }
+        ServerEventType type = event.getType();
+        if (type != ServerEventType.NOTIFICATION_CREATED
+                && type != ServerEventType.GRADES_PUBLISHED
+                && type != ServerEventType.EXAM_APPROVAL_CHANGED) {
+            return;
+        }
+
+        Platform.runLater(() -> {
+            if (disposed) {
+                return;
+            }
+            refresh();
+        });
     }
 
     private void refresh() {
@@ -106,8 +138,29 @@ public final class NotificationsPage {
                     if (failure != null) {
                         statusLabel.setText(cleanError(failure));
                     } else {
+                        NotificationDTO previouslySelected =
+                                notificationTable.getSelectionModel().getSelectedItem();
+                        int previousId = previouslySelected == null
+                                ? 0 : previouslySelected.getNotificationId();
+
                         notifications.setAll(loaded);
-                        messageArea.setText("Select a notification to read it.");
+
+                        NotificationDTO restored = null;
+                        if (previousId > 0) {
+                            for (NotificationDTO candidate : loaded) {
+                                if (candidate.getNotificationId() == previousId) {
+                                    restored = candidate;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (restored == null) {
+                            messageArea.setText("Select a notification to read it.");
+                        } else {
+                            notificationTable.getSelectionModel().select(restored);
+                        }
+
                         statusLabel.setText(loaded.isEmpty()
                                 ? "No notifications."
                                 : "Notifications loaded newest first.");

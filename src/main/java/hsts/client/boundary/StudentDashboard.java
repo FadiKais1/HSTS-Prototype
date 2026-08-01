@@ -6,6 +6,8 @@ import hsts.common.LoginResult;
 import hsts.common.type.UserRole;
 import hsts.server.entity.Student;
 import javafx.fxml.FXML;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -158,6 +160,33 @@ public class StudentDashboard {
         this.notificationsHandler = Objects.requireNonNull(notificationsHandler);
         this.notificationClientController = new NotificationClientController(client);
         notificationsButton.setDisable(false);
+        if (client != null) {
+            client.setServerEventListener(this::onServerEvent);
+        }
+        refreshUnreadBadge();
+    }
+
+    /**
+     * Refreshes the unread badge when the server reports a change that creates
+     * notifications, so the count stays current without a manual refresh.
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (event == null) {
+            return;
+        }
+        ServerEventType type = event.getType();
+        if (type != ServerEventType.NOTIFICATION_CREATED
+                && type != ServerEventType.GRADES_PUBLISHED
+                && type != ServerEventType.EXAM_APPROVAL_CHANGED) {
+            return;
+        }
+        Platform.runLater(this::refreshUnreadBadge);
+    }
+
+    private void refreshUnreadBadge() {
+        if (notificationClientController == null || notificationsButton == null) {
+            return;
+        }
         notificationClientController.getUnreadCount().whenComplete((count, failure) ->
                 Platform.runLater(() -> {
                     if (failure == null && notificationsButton != null) {

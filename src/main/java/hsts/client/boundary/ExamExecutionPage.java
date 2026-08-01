@@ -17,6 +17,8 @@ import hsts.server.entity.ExamSubmission;
 import hsts.server.entity.User;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Alert;
@@ -184,6 +186,8 @@ public class ExamExecutionPage {
         }
 
         this.executionController = new ExamExecutionClientController(client);
+        // Live server updates remove the need for a user-initiated refresh.
+        client.setServerEventListener(this::onServerEvent);
         this.closed = false;
         this.validating = false;
         this.starting = false;
@@ -385,6 +389,9 @@ public class ExamExecutionPage {
         invalidateCallbacks();
         backHandler = null;
         executionController = null;
+        if (client != null) {
+            client.setServerEventListener(null);
+        }
         client = null;
         loginResult = null;
         stage = null;
@@ -449,6 +456,30 @@ public class ExamExecutionPage {
                     updateActionState();
                 })
         );
+    }
+
+    /**
+     * Reacts to state changes pushed by the server.
+     *
+     * <p>Invoked on the transport thread, so the work is marshalled onto the
+     * JavaFX application thread. This is what keeps the countdown current when
+     * a teacher grants extra time, without the student refreshing anything.</p>
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (event == null || event.getType() != ServerEventType.EXAM_TIME_EXTENDED) {
+            return;
+        }
+
+        Platform.runLater(() -> {
+            if (closed || !isConfigured() || submissionId <= 0) {
+                return;
+            }
+            if (submissionStatus != SubmissionStatus.IN_PROGRESS) {
+                return;
+            }
+            setFeedback("Your teacher updated the exam time. The remaining time was refreshed.");
+            refreshAttempt(false);
+        });
     }
 
     private void refreshAttempt(boolean finalizationReconcile) {

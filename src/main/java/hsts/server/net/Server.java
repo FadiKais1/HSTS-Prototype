@@ -423,12 +423,12 @@ public class Server extends AbstractServer {
                                 "Execution scheduling data is missing"
                         );
                     }
+                    Object scheduledExecution = requireExamExecutionService()
+                            .scheduleExecution(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.NOTIFICATION_CREATED, 0));
                     yield Response.success(
                             "Exam execution scheduled successfully",
-                            requireExamExecutionService().scheduleExecution(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                            scheduledExecution
                     );
                 }
 
