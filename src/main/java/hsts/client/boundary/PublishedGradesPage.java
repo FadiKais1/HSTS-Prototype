@@ -87,6 +87,7 @@ public class PublishedGradesPage {
     @FXML private Label reviewReviewedValue;
     @FXML private Label reviewPublishedValue;
     @FXML private TextArea reviewFeedbackArea;
+    @FXML private TextArea reviewAdjustmentReasonArea;
     @FXML private Label questionPositionLabel;
     @FXML private Label questionOutcomeLabel;
     @FXML private Label questionMetadataLabel;
@@ -346,6 +347,11 @@ public class PublishedGradesPage {
         reviewReviewedValue.setText(formatDateTime(review.getReviewedAt()));
         reviewPublishedValue.setText(formatDateTime(review.getPublishedAt()));
         reviewFeedbackArea.setText(friendlyFeedback(review.getTeacherFeedback()));
+        if (reviewAdjustmentReasonArea != null) {
+            reviewAdjustmentReasonArea.setText(
+                    friendlyAdjustmentReason(review.getManualChangeReason())
+            );
+        }
         showCurrentReviewQuestion();
     }
 
@@ -557,6 +563,15 @@ public class PublishedGradesPage {
     static boolean isStale(boolean disposed, long responseGeneration,
                            long currentGeneration) {
         return disposed || responseGeneration != currentGeneration;
+    }
+
+    /**
+     * The teacher's justification for changing a grade by hand (requirement 39).
+     * Students see the same text the teacher was required to supply.
+     */
+    static String friendlyAdjustmentReason(String reason) {
+        return reason == null || reason.isBlank()
+                ? "Your grade was not adjusted manually." : reason;
     }
 
     static String friendlyFeedback(String feedback) {

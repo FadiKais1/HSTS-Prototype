@@ -133,6 +133,10 @@
                                 <TextArea fx:id="reviewFeedbackArea" editable="false"
                                           wrapText="true" prefRowCount="2"
                                           style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
+                                <Label text="Why your grade was adjusted" style="-fx-text-fill: #475569; -fx-font-weight: bold;"/>
+                                <TextArea fx:id="reviewAdjustmentReasonArea" editable="false"
+                                          wrapText="true" prefRowCount="2"
+                                          style="-fx-text-fill: #111827; -fx-opacity: 1;"/>
                             </VBox>
                         </HBox>
                         <Separator/>

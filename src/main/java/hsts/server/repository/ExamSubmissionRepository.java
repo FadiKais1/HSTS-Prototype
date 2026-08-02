@@ -862,7 +862,8 @@ public class ExamSubmissionRepository {
                    execution.exam_version_no, version.title AS exam_title,
                    exam.course_id, course.name AS course_name,
                    submission.status, submission.final_score,
-                   submission.teacher_feedback, submission.submitted_at,
+                   submission.teacher_feedback, submission.manual_change_reason,
+                   submission.submitted_at,
                    submission.reviewed_at, submission.published_at,
                    (SELECT COUNT(*)
                       FROM exam_version_questions selection
@@ -2423,6 +2424,7 @@ public class ExamSubmissionRepository {
                 readStoredScore(resultSet, "final_score", true,
                         "Published final score", submissionId),
                 resultSet.getString("teacher_feedback"),
+                resultSet.getString("manual_change_reason"),
                 submittedAt,
                 resultSet.getObject("reviewed_at", LocalDateTime.class),
                 requirePublishedAt(resultSet, submissionId),
@@ -3456,6 +3458,7 @@ public class ExamSubmissionRepository {
             String courseName,
             BigDecimal finalScore,
             String teacherFeedback,
+            String manualChangeReason,
             LocalDateTime submittedAt,
             LocalDateTime reviewedAt,
             LocalDateTime publishedAt,
@@ -3467,8 +3470,8 @@ public class ExamSubmissionRepository {
             return new PublishedExamReviewDTO(
                     submissionId, executionId, executionCode,
                     examId, examVersionNo, examTitle, courseId, courseName,
-                    finalScore, teacherFeedback, submittedAt, reviewedAt,
-                    publishedAt, questions
+                    finalScore, teacherFeedback, manualChangeReason,
+                    submittedAt, reviewedAt, publishedAt, questions
             );
         }
     }

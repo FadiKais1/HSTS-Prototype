@@ -21,16 +21,34 @@ public final class PublishedExamReviewDTO implements Serializable {
     private final String courseName;
     private final BigDecimal finalScore;
     private final String teacherFeedback;
+    /** The teacher's mandatory justification when a grade was changed by hand
+     *  (requirement 39). Null when the automatic score stood. */
+    private final String manualChangeReason;
     private final LocalDateTime submittedAt;
     private final LocalDateTime reviewedAt;
     private final LocalDateTime publishedAt;
     private final List<PublishedExamQuestionReviewDTO> questions;
 
+    /** Retained so existing callers and the Assignment 2 contract stay valid. */
     public PublishedExamReviewDTO(
             int submissionId, int executionId, String executionCode,
             int examId, int examVersionNo, String examTitle,
             int courseId, String courseName, BigDecimal finalScore,
             String teacherFeedback, LocalDateTime submittedAt,
+            LocalDateTime reviewedAt, LocalDateTime publishedAt,
+            List<PublishedExamQuestionReviewDTO> questions
+    ) {
+        this(submissionId, executionId, executionCode, examId, examVersionNo,
+                examTitle, courseId, courseName, finalScore, teacherFeedback,
+                null, submittedAt, reviewedAt, publishedAt, questions);
+    }
+
+    public PublishedExamReviewDTO(
+            int submissionId, int executionId, String executionCode,
+            int examId, int examVersionNo, String examTitle,
+            int courseId, String courseName, BigDecimal finalScore,
+            String teacherFeedback, String manualChangeReason,
+            LocalDateTime submittedAt,
             LocalDateTime reviewedAt, LocalDateTime publishedAt,
             List<PublishedExamQuestionReviewDTO> questions
     ) {
@@ -68,6 +86,7 @@ public final class PublishedExamReviewDTO implements Serializable {
         this.courseName = courseName;
         this.finalScore = safeFinalScore;
         this.teacherFeedback = teacherFeedback;
+        this.manualChangeReason = manualChangeReason;
         this.submittedAt = submittedAt;
         this.reviewedAt = reviewedAt;
         this.publishedAt = publishedAt;
@@ -84,6 +103,7 @@ public final class PublishedExamReviewDTO implements Serializable {
     public String getCourseName() { return courseName; }
     public BigDecimal getFinalScore() { return finalScore; }
     public String getTeacherFeedback() { return teacherFeedback; }
+    public String getManualChangeReason() { return manualChangeReason; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public LocalDateTime getReviewedAt() { return reviewedAt; }
     public LocalDateTime getPublishedAt() { return publishedAt; }
