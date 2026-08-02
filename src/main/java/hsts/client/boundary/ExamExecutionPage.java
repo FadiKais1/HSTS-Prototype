@@ -1,5 +1,6 @@
 package hsts.client.boundary;
 
+import hsts.client.net.ServerEventBus;
 import hsts.client.control.ExamExecutionClientController;
 import hsts.client.net.Client;
 import hsts.common.ExamAttemptDTO;
@@ -51,6 +52,16 @@ import java.util.Set;
 import java.util.concurrent.CompletionException;
 
 public class ExamExecutionPage {
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String NO_ACTIVE_ATTEMPT_RESPONSE =
@@ -187,7 +198,8 @@ public class ExamExecutionPage {
 
         this.executionController = new ExamExecutionClientController(client);
         // Live server updates remove the need for a user-initiated refresh.
-        client.setServerEventListener(this::onServerEvent);
+        this.eventSubscription =
+                client.getServerEventBus().subscribe(this::onServerEvent);
         this.closed = false;
         this.validating = false;
         this.starting = false;
@@ -390,7 +402,7 @@ public class ExamExecutionPage {
         backHandler = null;
         executionController = null;
         if (client != null) {
-            client.setServerEventListener(null);
+            closeEventSubscription();
         }
         client = null;
         loginResult = null;

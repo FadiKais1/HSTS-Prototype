@@ -1,5 +1,6 @@
 package hsts.client.boundary;
 
+import hsts.client.net.ServerEventBus;
 import hsts.client.control.NotificationClientController;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
@@ -22,6 +23,16 @@ import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
 public final class NotificationsPage {
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
     private static final DateTimeFormatter TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -74,7 +85,8 @@ public final class NotificationsPage {
         this.client = Objects.requireNonNull(client, "client");
         this.controller = new NotificationClientController(client);
         // Server-pushed changes keep this list current without a manual refresh.
-        client.setServerEventListener(this::onServerEvent);
+        this.eventSubscription =
+                client.getServerEventBus().subscribe(this::onServerEvent);
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         Objects.requireNonNull(loginResult, "loginResult");
         identityLabel.setText(loginResult.getFullName() + " · "
@@ -94,7 +106,7 @@ public final class NotificationsPage {
         disposed = true;
         generation++;
         if (client != null) {
-            client.setServerEventListener(null);
+            closeEventSubscription();
             client = null;
         }
         backHandler.run();

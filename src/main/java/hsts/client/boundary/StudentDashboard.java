@@ -1,5 +1,6 @@
 package hsts.client.boundary;
 
+import hsts.client.net.ServerEventBus;
 import hsts.client.control.NotificationClientController;
 import hsts.client.net.Client;
 import hsts.common.LoginResult;
@@ -17,6 +18,16 @@ import java.util.List;
 import java.util.Objects;
 
 public class StudentDashboard {
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
     private Client client;
     private Student currentStudent;
     private List notifications;
@@ -161,7 +172,8 @@ public class StudentDashboard {
         this.notificationClientController = new NotificationClientController(client);
         notificationsButton.setDisable(false);
         if (client != null) {
-            client.setServerEventListener(this::onServerEvent);
+            this.eventSubscription =
+                client.getServerEventBus().subscribe(this::onServerEvent);
         }
         refreshUnreadBadge();
     }

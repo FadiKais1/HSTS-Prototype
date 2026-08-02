@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -29,7 +28,10 @@ public class Client extends AbstractClient {
     private final Duration courseBotResponseTimeout;
 
     // Unsolicited server events are delivered here instead of the response queue.
-    private volatile Consumer<ServerEvent> serverEventListener;
+    // Every interested screen subscribes; see ServerEventBus for why this is not
+    // a single listener slot.
+    private final ServerEventBus serverEventBus =
+            new ServerEventBus(ServerEventBus.uiDispatcher());
 
     // COMPATIBILITY-ONLY: Preserves the working HSTSClient constructor and connection behavior.
     public Client(String host, int port) throws IOException {
@@ -122,14 +124,14 @@ public class Client extends AbstractClient {
     }
 
     /**
-     * Registers the listener notified when the server pushes an unsolicited
-     * event. Passing {@code null} removes the current listener.
+     * The bus carrying unsolicited server events. Screens subscribe on show and
+     * close their own subscription on hide.
      *
-     * <p>The listener is invoked on the OCSF reader thread, so JavaFX screens
-     * must marshal onto the application thread themselves.</p>
+     * <p>Handlers run on the JavaFX application thread, so screens may touch
+     * their controls directly.</p>
      */
-    public void setServerEventListener(Consumer<ServerEvent> listener) {
-        this.serverEventListener = listener;
+    public ServerEventBus getServerEventBus() {
+        return serverEventBus;
     }
 
     // COMPATIBILITY-ONLY: OCSF delivers raw server messages through this callback.
@@ -148,17 +150,9 @@ public class Client extends AbstractClient {
     }
 
     private void dispatchServerEvent(ServerEvent event) {
-        Consumer<ServerEvent> listener = serverEventListener;
-        if (listener == null) {
-            return;
-        }
-
-        try {
-            listener.accept(event);
-        } catch (RuntimeException exception) {
-            // A failing screen listener must never break the transport.
-            System.err.println("Server event listener failed: " + exception.getMessage());
-        }
+        // The bus contains subscriber failures, so the transport is never
+        // broken by a misbehaving screen.
+        serverEventBus.publish(event);
     }
 
     private void discardQueuedStaleResponses() {

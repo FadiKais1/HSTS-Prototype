@@ -1,5 +1,6 @@
 package hsts.client.boundary;
 
+import hsts.client.net.ServerEventBus;
 import hsts.client.control.ExamExecutionClientController;
 import hsts.client.net.Client;
 import hsts.common.ExamExecutionSummaryDTO;
@@ -40,6 +41,16 @@ import java.util.Locale;
 import java.util.Objects;
 
 public class GradeReviewPage {
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String SAFE_ERROR = "Unable to complete the request.";
@@ -133,7 +144,8 @@ public class GradeReviewPage {
         requireManagerRole(loginResult);
         this.executionClientController = new ExamExecutionClientController(client);
         // Server-pushed changes keep this screen current without a manual refresh.
-        client.setServerEventListener(this::onServerEvent);
+        this.eventSubscription =
+                client.getServerEventBus().subscribe(this::onServerEvent);
         disposed = false;
         mutationInProgress = false;
         userLabel.setText(loginResult.getFullName());
@@ -502,7 +514,7 @@ public class GradeReviewPage {
         }
         disposed = true;
         if (client != null) {
-            client.setServerEventListener(null);
+            closeEventSubscription();
         }
         executionRequestGeneration++;
         submissionRequestGeneration++;

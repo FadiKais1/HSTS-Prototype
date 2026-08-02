@@ -1,5 +1,6 @@
 package hsts.client.boundary;
 
+import hsts.client.net.ServerEventBus;
 import hsts.client.control.ExamClientController;
 import hsts.client.net.Client;
 import hsts.common.ExamDTO;
@@ -37,6 +38,16 @@ import java.util.List;
 import java.util.Objects;
 
 public class ApprovalRequestsPage {
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -134,7 +145,8 @@ public class ApprovalRequestsPage {
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         this.examClientController = new ExamClientController(client);
         // Newly submitted exams appear without the coordinator refreshing.
-        client.setServerEventListener(this::onServerEvent);
+        this.eventSubscription =
+                client.getServerEventBus().subscribe(this::onServerEvent);
         this.closed = false;
         setFeedback("Loading pending exams...");
         updateActionState();
@@ -399,7 +411,7 @@ public class ApprovalRequestsPage {
         }
         closed = true;
         if (client != null) {
-            client.setServerEventListener(null);
+            closeEventSubscription();
         }
         listRequestGeneration++;
         detailRequestGeneration++;

@@ -1,5 +1,6 @@
 package hsts.client.boundary;
 
+import hsts.client.net.ServerEventBus;
 import hsts.client.control.ExamClientController;
 import hsts.client.control.ExamExecutionClientController;
 import hsts.client.net.Client;
@@ -45,6 +46,16 @@ import java.util.Objects;
 import java.util.concurrent.CompletionException;
 
 public class ExamSchedulingPage {
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
@@ -130,7 +141,8 @@ public class ExamSchedulingPage {
         this.stage = Objects.requireNonNull(stage, "stage");
         this.client = Objects.requireNonNull(client, "client");
         // Live counters: students starting or submitting move these numbers.
-        client.setServerEventListener(this::onServerEvent);
+        this.eventSubscription =
+                client.getServerEventBus().subscribe(this::onServerEvent);
         this.loginResult = Objects.requireNonNull(loginResult, "loginResult");
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         requireManager(loginResult);
@@ -559,7 +571,7 @@ public class ExamSchedulingPage {
         Runnable navigation = backHandler;
         closed = true;
         if (client != null) {
-            client.setServerEventListener(null);
+            closeEventSubscription();
         }
         examRequestGeneration++;
         executionRequestGeneration++;
