@@ -82,6 +82,7 @@ public class QuestionRepositoryEntityWriteTest {
         assertOptions(options, 51, 1);
         assertEquals(List.of(
                 "setAutoCommit:false",
+                "query:question-code",
                 "execute:question",
                 "execute:version",
                 "execute:option",
