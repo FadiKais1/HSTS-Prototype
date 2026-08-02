@@ -71,7 +71,7 @@
                             <Label fx:id="previewExamTitleLabel" wrapText="true"
                                    style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
                             <HBox spacing="8"><Label text="Course:"/><Label fx:id="previewCourseLabel"/></HBox>
-                            <HBox spacing="8"><Label text="Window:"/><Label fx:id="previewWindowLabel"/></HBox>
+                            <HBox spacing="8"><Label text="Exam window:" style="-fx-font-weight: bold;"/><Label fx:id="previewWindowLabel"/></HBox>
                             <HBox spacing="8"><Label text="Duration:"/><Label fx:id="previewDurationLabel"/></HBox>
                             <HBox spacing="8"><Label text="Status:"/><Label fx:id="previewStatusLabel" style="-fx-font-weight: bold;"/></HBox>
                             <Separator/>

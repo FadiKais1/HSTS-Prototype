@@ -14,6 +14,8 @@ import hsts.common.type.ExamStatus;
 import hsts.common.type.ExecutionStatus;
 import hsts.common.type.UserRole;
 import hsts.common.type.SubmissionStatus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -127,6 +129,8 @@ public class ExamSchedulingPage {
                           Runnable backHandler) {
         this.stage = Objects.requireNonNull(stage, "stage");
         this.client = Objects.requireNonNull(client, "client");
+        // Live counters: students starting or submitting move these numbers.
+        client.setServerEventListener(this::onServerEvent);
         this.loginResult = Objects.requireNonNull(loginResult, "loginResult");
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         requireManager(loginResult);
@@ -524,6 +528,29 @@ public class ExamSchedulingPage {
         loadExecutions(null, null);
     }
 
+    /**
+     * Reloads the execution list when the server reports that a student started
+     * or submitted an exam, so the started, submitted and auto-submitted
+     * counters advance while the teacher watches.
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (event == null) {
+            return;
+        }
+        ServerEventType type = event.getType();
+        if (type != ServerEventType.ATTEMPT_STARTED
+                && type != ServerEventType.SUBMISSION_RECEIVED
+                && type != ServerEventType.EXAM_TIME_EXTENDED) {
+            return;
+        }
+        Platform.runLater(() -> {
+            if (closed) {
+                return;
+            }
+            loadExecutions(null, null);
+        });
+    }
+
     @FXML
     private void handleBack() {
         if (closed || backHandler == null) {
@@ -531,6 +558,9 @@ public class ExamSchedulingPage {
         }
         Runnable navigation = backHandler;
         closed = true;
+        if (client != null) {
+            client.setServerEventListener(null);
+        }
         examRequestGeneration++;
         executionRequestGeneration++;
         scheduleRequestGeneration++;

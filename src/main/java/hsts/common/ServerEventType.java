@@ -20,5 +20,8 @@ public enum ServerEventType {
     EXAM_APPROVAL_CHANGED,
 
     /** A student submitted an exam attempt and it is now awaiting review. */
-    SUBMISSION_RECEIVED
+    SUBMISSION_RECEIVED,
+
+    /** A student started an exam attempt, so the live counters have moved. */
+    ATTEMPT_STARTED
 }

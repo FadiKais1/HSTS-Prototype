@@ -788,9 +788,11 @@ public class ExamExecutionPage {
         }
         previewExamTitleLabel.setText(safe(preview.getExamTitle()));
         previewCourseLabel.setText(safe(preview.getCourseName()));
+        // Spelling out which time is which avoids the reader having to infer it
+        // from the order of two similar looking timestamps.
         previewWindowLabel.setText(
-                formatDateTime(preview.getOpeningTime()) + " to "
-                        + formatDateTime(preview.getClosingTime())
+                "Starts " + formatDateTime(preview.getOpeningTime())
+                        + "     Ends " + formatDateTime(preview.getClosingTime())
         );
         previewDurationLabel.setText(preview.getDurationMinutes() + " minutes");
         previewStatusLabel.setText(

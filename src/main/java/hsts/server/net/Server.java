@@ -472,12 +472,12 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof StartExamPayload payload)) {
                         throw new IllegalArgumentException("Exam attempt data is missing");
                     }
+                    Object startedAttempt = requireExamExecutionService()
+                            .startOrResumeExam(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.ATTEMPT_STARTED, 0));
                     yield Response.success(
                             "Exam attempt started successfully",
-                            requireExamExecutionService().startOrResumeExam(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                            startedAttempt
                     );
                 }
 
