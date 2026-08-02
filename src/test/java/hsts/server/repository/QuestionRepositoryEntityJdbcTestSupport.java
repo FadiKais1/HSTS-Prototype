@@ -100,6 +100,12 @@ final class QuestionRepositoryEntityJdbcTestSupport {
                         if (queryFailure != null) {
                             throw queryFailure;
                         }
+                        if ("question-code".equals(record.name)) {
+                            yield resultSet(List.of(Map.of(
+                                    "course_number", "01",
+                                    "highest_question_number", 0
+                            )));
+                        }
                         if ("lock".equals(record.name)) {
                             yield currentVersion == null
                                     ? resultSet(List.of())
@@ -156,6 +162,9 @@ final class QuestionRepositoryEntityJdbcTestSupport {
         }
 
         private String statementName(String sql) {
+            if (sql.contains("highest_question_number")) {
+                return "question-code";
+            }
             if (sql.contains("SELECT q.question_id")
                     && sql.contains("option_row.option_number")) {
                 return "entity-read";

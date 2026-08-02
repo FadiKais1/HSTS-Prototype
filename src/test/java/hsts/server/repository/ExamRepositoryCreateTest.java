@@ -49,7 +49,8 @@ public class ExamRepositoryCreateTest {
         SuccessfulPlans plans = successfulPlans(database, 45);
         Exam exam = exam();
 
-        int examId = new ExamRepository(database).create(1002, exam);
+        int examId = new ExamRepository(database, (connection, courseId) -> "010101")
+                .create(1002, exam);
 
         assertEquals(45, examId);
         assertEquals(1, database.connectionRequests);

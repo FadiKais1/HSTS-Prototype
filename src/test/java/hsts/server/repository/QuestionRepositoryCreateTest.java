@@ -301,10 +301,37 @@ public class QuestionRepositoryCreateTest {
                             }
                             return 1;
                         }
+                        if ("executeQuery".equals(method.getName())) {
+                            return questionCodeRow();
+                        }
                         if ("getGeneratedKeys".equals(method.getName())) {
                             return generatedKeys();
                         }
                         return defaultValue(method.getReturnType());
+                    }
+            );
+        }
+
+        private ResultSet questionCodeRow() {
+            boolean[] beforeFirst = {true};
+            return (ResultSet) Proxy.newProxyInstance(
+                    ResultSet.class.getClassLoader(),
+                    new Class<?>[]{ResultSet.class},
+                    (proxy, method, arguments) -> {
+                        switch (method.getName()) {
+                            case "next":
+                                if (!beforeFirst[0]) {
+                                    return false;
+                                }
+                                beforeFirst[0] = false;
+                                return true;
+                            case "getString":
+                                return "01";
+                            case "getInt":
+                                return 0;
+                            default:
+                                return defaultValue(method.getReturnType());
+                        }
                     }
             );
         }
@@ -331,6 +358,9 @@ public class QuestionRepositoryCreateTest {
         }
 
         private String statementName(String sql) {
+            if (sql.contains("highest_question_number")) {
+                return "question-code";
+            }
             if (sql.contains("INSERT INTO questions")) {
                 return "question";
             }

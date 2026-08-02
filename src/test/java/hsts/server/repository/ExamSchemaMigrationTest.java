@@ -80,7 +80,7 @@ public class ExamSchemaMigrationTest {
                     "PRIMARY KEY (exam_id)",
                     "uq_exams_exam_code",
                     "UNIQUE (exam_code)",
-                    "CHECK (exam_code REGEXP '^[A-Z0-9]{6}$')",
+                    "CHECK (exam_code REGEXP '^[0-9]{6}$')",
                     "current_version_no INT NULL",
                     "CHECK (current_version_no IS NULL OR current_version_no > 0)",
                     "idx_exams_course_id",

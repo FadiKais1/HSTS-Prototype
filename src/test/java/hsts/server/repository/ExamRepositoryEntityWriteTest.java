@@ -92,7 +92,7 @@ public class ExamRepositoryEntityWriteTest {
         assertEquals(Map.of(1, 1002, 2, 7), course.queryExecutions.get(0));
         assertEquals(Map.of(1, 1002, 2, 4, 3, 17, 4, 7, 5, 4),
                 question.queryExecutions.get(0));
-        assertEquals("ABC123", stable.updateExecutions.get(0).get(1));
+        assertEquals("010101", stable.updateExecutions.get(0).get(1));
         assertEquals(7, stable.updateExecutions.get(0).get(2));
         assertEquals(1002, stable.updateExecutions.get(0).get(3));
         assertEquals(1, version.updateExecutions.get(0).get(2));
