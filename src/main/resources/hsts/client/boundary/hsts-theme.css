@@ -1,0 +1,117 @@
+/*
+ * HSTS base theme.
+ *
+ * The screens use light cards with dark text. Without this file the text
+ * colour comes from whatever base theme the operating system supplies, so on
+ * a machine using dark mode or a high-contrast theme any label without an
+ * explicit colour becomes unreadable against the white cards.
+ *
+ * Input controls declare their border and inner fill explicitly (two
+ * background layers, as Modena does) so they stay visible regardless of the
+ * operating system appearance settings.
+ */
+
+.root {
+    -fx-base: #f4f7fb;
+    -fx-background: #f4f7fb;
+    -fx-control-inner-background: white;
+    -fx-text-background-color: #111827;
+    -fx-font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+.label {
+    -fx-text-fill: #111827;
+}
+
+/* ---- Text inputs: border layer, then inner fill ---- */
+.text-field,
+.text-area {
+    -fx-text-fill: #111827;
+    -fx-prompt-text-fill: #9ca3af;
+    -fx-background-color: #cbd5e1, white;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 5, 4;
+    -fx-padding: 5 8 5 8;
+}
+
+.text-area .content {
+    -fx-background-color: white;
+}
+
+.text-field:focused,
+.text-area:focused {
+    -fx-background-color: #2563eb, white;
+    -fx-background-insets: 0, 2;
+}
+
+/* ---- Choice controls ---- */
+.combo-box,
+.choice-box,
+.date-picker,
+.spinner {
+    -fx-background-color: #cbd5e1, white;
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 5, 4;
+}
+
+.combo-box .list-cell,
+.choice-box .label,
+.date-picker .text-field,
+.spinner .text-field {
+    -fx-text-fill: #111827;
+    -fx-background-color: transparent;
+}
+
+.combo-box-popup .list-cell {
+    -fx-text-fill: #111827;
+    -fx-background-color: white;
+}
+
+.combo-box-popup .list-cell:hover,
+.combo-box-popup .list-cell:selected {
+    -fx-text-fill: white;
+    -fx-background-color: #2563eb;
+}
+
+/* ---- Tables ---- */
+.table-view {
+    -fx-background-color: #dbe3ef, white;
+    -fx-background-insets: 0, 1;
+}
+
+.table-view .table-cell {
+    -fx-text-fill: #111827;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: white;
+}
+
+.table-row-cell:selected .table-cell,
+.table-row-cell:selected .label,
+.list-cell:selected {
+    -fx-text-fill: white;
+}
+
+/* ---- Tabs ---- */
+.tab-pane .tab .tab-label {
+    -fx-text-fill: #111827;
+}
+
+.tab-pane .tab:selected .tab-label {
+    -fx-text-fill: #1d4ed8;
+    -fx-font-weight: bold;
+}
+
+/* ---- Misc ---- */
+.check-box,
+.radio-button,
+.titled-pane > .title > .text {
+    -fx-text-fill: #111827;
+}
+
+.chart-title,
+.axis-label,
+.axis .tick-mark-label {
+    -fx-text-fill: #111827;
+}
