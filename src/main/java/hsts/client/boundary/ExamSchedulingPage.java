@@ -17,7 +17,11 @@ import hsts.common.type.UserRole;
 import hsts.common.type.SubmissionStatus;
 import hsts.common.ServerEvent;
 import hsts.common.ServerEventType;
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
+import javafx.util.Duration;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -72,6 +76,16 @@ public class ExamSchedulingPage {
     private Runnable backHandler;
     private ExamClientController examClientController;
     private ExamExecutionClientController executionClientController;
+    /**
+     * An execution moves from SCHEDULED to OPEN, and from OPEN to CLOSED, purely
+     * because the clock passed its opening or closing time. No user acts, so the
+     * server has nothing to push. This local ticker re-reads the executions
+     * while the page is open so the status column follows the clock.
+     */
+    private Timeline statusTicker;
+
+    private static final int STATUS_TICK_SECONDS = 15;
+
     private boolean closed;
     private boolean examsLoading;
     private boolean executionsLoading;
@@ -156,6 +170,28 @@ public class ExamSchedulingPage {
         updateActionState();
         loadApprovedExams();
         loadExecutions(null, null);
+        startStatusTicker();
+    }
+
+    private void startStatusTicker() {
+        stopStatusTicker();
+        statusTicker = new Timeline(new KeyFrame(
+                Duration.seconds(STATUS_TICK_SECONDS),
+                event -> {
+                    if (!closed) {
+                        reloadPreservingSelection();
+                    }
+                }
+        ));
+        statusTicker.setCycleCount(Animation.INDEFINITE);
+        statusTicker.play();
+    }
+
+    private void stopStatusTicker() {
+        if (statusTicker != null) {
+            statusTicker.stop();
+            statusTicker = null;
+        }
     }
 
     private void configureExamSelector() {
@@ -420,6 +456,18 @@ public class ExamSchedulingPage {
         );
     }
 
+    /** The execution currently selected, so a reload can restore it. */
+    private Integer selectedExecutionId() {
+        ExamExecutionSummaryDTO selected =
+                executionTable.getSelectionModel().getSelectedItem();
+        return selected == null ? null : selected.getExecutionId();
+    }
+
+    /** Reloads without disturbing which execution the user is looking at. */
+    private void reloadPreservingSelection() {
+        loadExecutions(selectedExecutionId(), null);
+    }
+
     private void loadExecutions(Integer selectExecutionId, String completionMessage) {
         long generation = ++executionRequestGeneration;
         executionsLoading = true;
@@ -559,7 +607,7 @@ public class ExamSchedulingPage {
             if (closed) {
                 return;
             }
-            loadExecutions(null, null);
+            reloadPreservingSelection();
         });
     }
 
@@ -570,6 +618,7 @@ public class ExamSchedulingPage {
         }
         Runnable navigation = backHandler;
         closed = true;
+        stopStatusTicker();
         if (client != null) {
             closeEventSubscription();
         }
