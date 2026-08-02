@@ -1182,8 +1182,80 @@ public class ExamRepository {
                     currentExam.versionNo,
                     submittedAt
             );
+            notifySubjectCoordinators(
+                    connection,
+                    examId,
+                    currentExam.versionNo,
+                    submittedAt
+            );
             return true;
         });
+    }
+
+    /**
+     * Notifies every coordinator of the exam's subject that an exam is waiting
+     * for approval. A subject may have more than one coordinator and any of them
+     * may approve, so each receives their own notification.
+     *
+     * <p>Runs inside the submitting transaction, so the notifications and the
+     * status change succeed or fail together.</p>
+     */
+    private void notifySubjectCoordinators(Connection connection, int examId,
+                                           int versionNo, LocalDateTime submittedAt)
+            throws SQLException {
+        String examCode = null;
+        String examTitle = null;
+        String courseName = null;
+        String teacherName = null;
+        List<Integer> coordinatorIds = new ArrayList<>();
+
+        String sql = """
+                SELECT exam.exam_code, version.title AS exam_title,
+                       course.name AS course_name,
+                       author.full_name AS teacher_name,
+                       coordinator.coordinator_user_id
+                FROM exams exam
+                JOIN exam_versions version
+                  ON version.exam_id = exam.exam_id
+                 AND version.version_no = ?
+                JOIN courses course ON course.course_id = exam.course_id
+                JOIN users author ON author.user_id = exam.created_by_user_id
+                JOIN subject_coordinators coordinator
+                  ON coordinator.subject_id = course.subject_id
+                WHERE exam.exam_id = ?
+                """;
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setInt(1, versionNo);
+            statement.setInt(2, examId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    examCode = resultSet.getString("exam_code");
+                    examTitle = resultSet.getString("exam_title");
+                    courseName = resultSet.getString("course_name");
+                    teacherName = resultSet.getString("teacher_name");
+                    coordinatorIds.add(resultSet.getInt("coordinator_user_id"));
+                }
+            }
+        }
+
+        // A subject without a coordinator is valid data; there is simply nobody
+        // to notify, and the exam still moves to PENDING_APPROVAL.
+        for (Integer coordinatorId : coordinatorIds) {
+            NotificationRepository.insert(
+                    connection,
+                    coordinatorId,
+                    NotificationType.EXAM_SUBMITTED,
+                    "Exam awaiting approval",
+                    examTitle + " (" + examCode + ") for " + courseName
+                            + " was submitted for approval by " + teacherName + ".",
+                    examId,
+                    null,
+                    null,
+                    "EXAM_SUBMITTED:" + examId + ":" + versionNo + ":" + coordinatorId,
+                    submittedAt
+            );
+        }
     }
 
     private boolean persistApproval(int authenticatedUserId, int examId,

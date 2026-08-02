@@ -76,7 +76,8 @@ public class FinalFunctionalContractTest {
                 NotificationType.EXAM_REJECTED,
                 NotificationType.EXAM_SCHEDULED,
                 NotificationType.EXECUTION_EXTENDED,
-                NotificationType.GRADE_PUBLISHED
+                NotificationType.GRADE_PUBLISHED,
+                NotificationType.EXAM_SUBMITTED
         }, NotificationType.values());
 
         LocalDateTime created = LocalDateTime.of(2026, 8, 1, 10, 0);

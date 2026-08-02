@@ -365,10 +365,16 @@ final class ExamExecutionServiceTestSupport {
         ExamExecution executionEntity;
         RuntimeException failure;
 
+        String lastExecutionCode;
+
+        // The service always calls the overload carrying the execution code the
+        // teacher chose, so the stub intercepts that one. A null code means the
+        // server picks the code, which is the original behaviour.
         @Override
         public ExamExecution schedule(int authenticatedUserId, int examId,
                                       int examVersionNo, LocalDateTime openingTime,
-                                      LocalDateTime closingTime) {
+                                      LocalDateTime closingTime,
+                                      String requestedExecutionCode) {
             scheduleCalls++;
             failIfConfigured();
             lastManagerId = authenticatedUserId;
@@ -376,6 +382,7 @@ final class ExamExecutionServiceTestSupport {
             lastExamVersionNo = examVersionNo;
             lastOpeningTime = openingTime;
             lastClosingTime = closingTime;
+            lastExecutionCode = requestedExecutionCode;
             return executionEntity == null
                     ? execution(ExecutionStatus.SCHEDULED, openingTime, closingTime)
                     : executionEntity;

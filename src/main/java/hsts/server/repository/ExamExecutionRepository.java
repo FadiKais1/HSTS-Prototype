@@ -206,9 +206,7 @@ public class ExamExecutionRepository {
                    exam.exam_code, version.title AS exam_title,
                    exam.course_id, course.name AS course_name,
                    execution.opening_time, execution.closing_time,
-                   execution.duration_minutes,
-                   execution.cumulative_extension_minutes,
-                   execution.status,
+                   execution.duration_minutes, execution.status,
                    execution.created_by_user_id,
                    creator.full_name AS creator_name, execution.created_at,
                    execution.started_count, execution.submitted_count,
@@ -279,6 +277,22 @@ public class ExamExecutionRepository {
     public ExamExecution schedule(int authenticatedUserId, int examId,
                                   int examVersionNo, LocalDateTime openingTime,
                                   LocalDateTime closingTime) {
+        return schedule(authenticatedUserId, examId, examVersionNo,
+                openingTime, closingTime, null);
+    }
+
+    /**
+     * Schedules an execution using the code chosen by the teacher.
+     *
+     * <p>A {@code null} code means the server picks one, which keeps the
+     * generated behaviour available. A supplied code is used exactly as given:
+     * codes are unique across executions, so a clash is reported rather than
+     * silently replaced.</p>
+     */
+    public ExamExecution schedule(int authenticatedUserId, int examId,
+                                  int examVersionNo, LocalDateTime openingTime,
+                                  LocalDateTime closingTime,
+                                  String requestedExecutionCode) {
         if (openingTime == null || closingTime == null) {
             throw new IllegalArgumentException("Opening and closing times are required");
         }
@@ -294,7 +308,8 @@ public class ExamExecutionRepository {
                         examId,
                         examVersionNo,
                         openingTime,
-                        closingTime
+                        closingTime,
+                        requestedExecutionCode
                 )
         );
     }
@@ -582,13 +597,22 @@ public class ExamExecutionRepository {
                                                LocalDateTime createdAt)
             throws SQLException {
         SQLException lastCollision = null;
+        String requestedCode = command.requestedExecutionCode();
+        boolean teacherChoseCode = requestedCode != null && !requestedCode.isBlank();
 
-        for (int attempt = 0; attempt < MAX_EXECUTION_CODE_ATTEMPTS; attempt++) {
+        // A generated code may clash by chance, so generation is retried. A code
+        // the teacher typed must not be silently swapped for another one: the
+        // clash is reported so they can choose a different code.
+        int attempts = teacherChoseCode ? 1 : MAX_EXECUTION_CODE_ATTEMPTS;
+
+        for (int attempt = 0; attempt < attempts; attempt++) {
             try {
                 ExamExecution proposedExecution = ExamExecution.schedule(
                         command.examId(),
                         command.examVersionNo(),
-                        executionCodeGenerator.get(),
+                        teacherChoseCode
+                                ? requestedCode.trim().toUpperCase(java.util.Locale.ROOT)
+                                : executionCodeGenerator.get(),
                         command.openingTime(),
                         command.closingTime(),
                         durationMinutes,
@@ -607,6 +631,12 @@ public class ExamExecutionRepository {
             }
         }
 
+        if (teacherChoseCode) {
+            throw new IllegalStateException(
+                    "Execution code " + requestedCode.trim().toUpperCase(java.util.Locale.ROOT)
+                            + " is already in use. Choose a different code."
+            );
+        }
         throw lastCollision;
     }
 
@@ -850,7 +880,8 @@ public class ExamExecutionRepository {
 
     private record SchedulingCommand(int examId, int examVersionNo,
                                      LocalDateTime openingTime,
-                                     LocalDateTime closingTime) {
+                                     LocalDateTime closingTime,
+                                     String requestedExecutionCode) {
     }
 
     private record ScheduleDetails(int durationMinutes, String examTitle,

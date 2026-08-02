@@ -80,6 +80,7 @@ public class ExamSchedulingPage {
     @FXML private DatePicker closingDatePicker;
     @FXML private Spinner<Integer> closingHourSpinner;
     @FXML private Spinner<Integer> closingMinuteSpinner;
+    @FXML private TextField executionCodeField;
     @FXML private Button scheduleButton;
     @FXML private Button refreshButton;
     @FXML private Button backButton;
@@ -473,10 +474,19 @@ public class ExamSchedulingPage {
             return;
         }
 
+        String requestedCode = executionCodeField.getText();
+        if (requestedCode != null && !requestedCode.isBlank()
+                && !requestedCode.trim().toUpperCase(java.util.Locale.ROOT)
+                        .matches("[A-Z0-9]{4}")) {
+            setFeedback("Execution code must be exactly 4 letters or digits");
+            return;
+        }
+
         ScheduleExamExecutionPayload payload = buildSchedulePayload(
                 exam,
                 openingTime,
-                closingTime
+                closingTime,
+                requestedCode
         );
         long generation = ++scheduleRequestGeneration;
         scheduling = true;
@@ -653,12 +663,30 @@ public class ExamSchedulingPage {
             LocalDateTime openingTime,
             LocalDateTime closingTime
     ) {
+        return buildSchedulePayload(exam, openingTime, closingTime, null);
+    }
+
+    /**
+     * Builds the scheduling request including the execution code the teacher
+     * typed. A blank code is sent as {@code null}, which asks the server to
+     * choose one.
+     */
+    static ScheduleExamExecutionPayload buildSchedulePayload(
+            ExamSummaryDTO exam,
+            LocalDateTime openingTime,
+            LocalDateTime closingTime,
+            String executionCode
+    ) {
         Objects.requireNonNull(exam, "exam");
+        String requestedCode = executionCode == null || executionCode.isBlank()
+                ? null
+                : executionCode.trim().toUpperCase(java.util.Locale.ROOT);
         return new ScheduleExamExecutionPayload(
                 exam.getExamId(),
                 exam.getVersionNo(),
                 openingTime,
-                closingTime
+                closingTime,
+                requestedCode
         );
     }
 

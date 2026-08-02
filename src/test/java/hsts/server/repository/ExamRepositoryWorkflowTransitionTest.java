@@ -34,6 +34,10 @@ public class ExamRepositoryWorkflowTransitionTest {
                 .queryRows(lockedExam(3, ExamStatus.DRAFT));
         ExamRepositoryJdbcTestSupport.StatementPlan submit = database.plan(SUBMIT_MARKER)
                 .updateResults(1);
+        // The submit transaction also asks which coordinators of the subject
+        // should be notified. No coordinator rows means nobody is notified,
+        // which leaves this test focused on the workflow transition itself.
+        database.plan("coordinator.coordinator_user_id").queryRows();
 
         Exam exam = submittedExam(45, 1002, 3);
         boolean submitted = new ExamRepository(database)

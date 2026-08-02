@@ -5,5 +5,6 @@ public enum NotificationType {
     EXAM_REJECTED,
     EXAM_SCHEDULED,
     EXECUTION_EXTENDED,
-    GRADE_PUBLISHED
+    GRADE_PUBLISHED,
+    EXAM_SUBMITTED
 }

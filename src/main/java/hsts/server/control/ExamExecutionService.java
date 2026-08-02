@@ -166,12 +166,24 @@ public class ExamExecutionService {
             throw new IllegalArgumentException("Execution opening time cannot be in the past");
         }
 
+        String requestedCode = payload.getExecutionCode();
+        if (requestedCode != null && !requestedCode.isBlank()) {
+            String normalizedCode = requestedCode.trim().toUpperCase(Locale.ROOT);
+            if (!normalizedCode.matches("[A-Z0-9]{4}")) {
+                throw new IllegalArgumentException(
+                        "Execution code must be exactly 4 letters or digits"
+                );
+            }
+            requestedCode = normalizedCode;
+        }
+
         ExamExecution execution = examExecutionRepository.schedule(
                 authenticatedManagerId,
                 payload.getExamId(),
                 payload.getExamVersionNo(),
                 payload.getOpeningTime(),
-                payload.getClosingTime()
+                payload.getClosingTime(),
+                requestedCode
         );
         ExamExecutionSummaryDTO summary = examExecutionRepository.findByIdForManager(
                 authenticatedManagerId,

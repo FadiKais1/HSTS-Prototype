@@ -5,6 +5,7 @@ import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
+import hsts.common.GenerateExamBreakdownPayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.RejectExamPayload;
 import hsts.common.Request;
@@ -63,6 +64,24 @@ public class ExamClientController {
     }
 
     public CompletableFuture<ExamDTO> generateExam(GenerateExamPayload payload) {
+        return sendRequest(
+                new Request(RequestType.GENERATE_EXAM, payload),
+                responsePayload -> requirePayload(
+                        responsePayload,
+                        ExamDTO.class,
+                        "Invalid generate-exam response from server"
+                )
+        );
+    }
+
+    /**
+     * Requests an exam generated from a breakdown of topic and difficulty
+     * criteria. The server distinguishes this from the single topic request by
+     * the payload type, so both share one request type.
+     */
+    public CompletableFuture<ExamDTO> generateExamFromBreakdown(
+            GenerateExamBreakdownPayload payload
+    ) {
         return sendRequest(
                 new Request(RequestType.GENERATE_EXAM, payload),
                 responsePayload -> requirePayload(

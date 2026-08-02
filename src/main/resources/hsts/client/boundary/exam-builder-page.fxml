@@ -161,6 +161,33 @@
                                             maxWidth="Infinity"
                                             style="-fx-background-color: #7c3aed; -fx-text-fill: white; -fx-font-weight: bold;"/>
                                 </GridPane>
+
+                                <Separator/>
+
+                                <Label text="Breakdown by topic and difficulty"
+                                       style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                                <Label text="Add one line per topic and difficulty. The exam is composed from every line, and the same question is never used twice. Leave the list empty to generate from the single topic above."
+                                       wrapText="true" style="-fx-text-fill: #475569;"/>
+
+                                <HBox spacing="8">
+                                    <Button fx:id="addCriterionButton" text="Add line"
+                                            onAction="#handleAddCriterion"
+                                            style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                                    <Button fx:id="removeCriterionButton" text="Remove line"
+                                            onAction="#handleRemoveCriterion"
+                                            style="-fx-background-color: #e2e8f0; -fx-text-fill: #111827;"/>
+                                    <Region HBox.hgrow="ALWAYS"/>
+                                    <Label fx:id="criteriaTotalLabel" text="No breakdown lines"
+                                           style="-fx-font-weight: bold; -fx-text-fill: #1d4ed8;"/>
+                                </HBox>
+
+                                <TableView fx:id="criteriaTable" prefHeight="150">
+                                    <columns>
+                                        <TableColumn fx:id="criterionTopicColumn" text="Topic" prefWidth="240"/>
+                                        <TableColumn fx:id="criterionDifficultyColumn" text="Difficulty" prefWidth="140"/>
+                                        <TableColumn fx:id="criterionCountColumn" text="Questions" prefWidth="110"/>
+                                    </columns>
+                                </TableView>
                             </VBox>
 
                             <SplitPane fx:id="manualQuestionPane" dividerPositions="0.49" prefHeight="420">

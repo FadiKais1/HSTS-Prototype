@@ -10,7 +10,9 @@ import hsts.common.ExamQuestionDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
+import hsts.common.GenerateExamBreakdownPayload;
 import hsts.common.GenerateExamPayload;
+import hsts.common.QuestionCriterion;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionIllustrationDTO;
 import hsts.common.QuestionFilterPayload;
@@ -52,6 +54,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 public class ExamBuilderPage {
     private Client client;
@@ -113,7 +116,17 @@ public class ExamBuilderPage {
     @FXML private ComboBox<DifficultyLevel> difficultyComboBox;
     @FXML private TextField questionCountField;
     @FXML private Button generateButton;
+    @FXML private Button addCriterionButton;
+    @FXML private Button removeCriterionButton;
+    @FXML private Label criteriaTotalLabel;
+    @FXML private TableView<CriterionItem> criteriaTable;
+    @FXML private TableColumn<CriterionItem, String> criterionTopicColumn;
+    @FXML private TableColumn<CriterionItem, String> criterionDifficultyColumn;
+    @FXML private TableColumn<CriterionItem, Number> criterionCountColumn;
     @FXML private SplitPane manualQuestionPane;
+
+    private final ObservableList<CriterionItem> criterionItems =
+            FXCollections.observableArrayList();
     @FXML private TableView<QuestionDTO> availableQuestionsTable;
     @FXML private TableColumn<QuestionDTO, Number> availableIdColumn;
     @FXML private TableColumn<QuestionDTO, String> availableContentColumn;
@@ -287,6 +300,18 @@ public class ExamBuilderPage {
         selectedScoreColumn.setCellFactory(
                 TextFieldTableCell.forTableColumn(new DoubleStringConverter())
         );
+        criterionTopicColumn.setCellValueFactory(data ->
+                new SimpleStringProperty(safe(data.getValue().getTopic())));
+        criterionDifficultyColumn.setCellValueFactory(data ->
+                new SimpleStringProperty(data.getValue().getDifficulty() == null
+                        ? "" : data.getValue().getDifficulty().name()));
+        criterionCountColumn.setCellValueFactory(data ->
+                new SimpleIntegerProperty(data.getValue().getQuestionCount()));
+        criteriaTable.setItems(criterionItems);
+        criterionItems.addListener(
+                (javafx.collections.ListChangeListener<CriterionItem>) change ->
+                        updateCriteriaTotal());
+        updateCriteriaTotal();
         selectedScoreColumn.setOnEditCommit(event -> {
             double score = event.getNewValue() == null ? Double.NaN : event.getNewValue();
             if (!isEditable() || !Double.isFinite(score) || score <= 0) {
@@ -687,42 +712,180 @@ public class ExamBuilderPage {
         updateActionState();
     }
 
+    /** One line of the automatic generation breakdown, shown in the table. */
+    public static final class CriterionItem {
+        private final String topic;
+        private final DifficultyLevel difficulty;
+        private final int questionCount;
+
+        public CriterionItem(String topic, DifficultyLevel difficulty, int questionCount) {
+            this.topic = topic;
+            this.difficulty = difficulty;
+            this.questionCount = questionCount;
+        }
+
+        public String getTopic() { return topic; }
+        public DifficultyLevel getDifficulty() { return difficulty; }
+        public int getQuestionCount() { return questionCount; }
+    }
+
+    /**
+     * Validates one breakdown line taken from the entry row.
+     * Returns an error message, or {@code null} when the line is usable.
+     */
+    static String validateCriterionInput(String topic, DifficultyLevel difficulty,
+                                         String count) {
+        if (isBlankText(topic)) {
+            return "Topic is required.";
+        }
+        if (difficulty == null) {
+            return "Difficulty is required.";
+        }
+        if (!isPositiveInteger(count)) {
+            return "Question count must be a positive whole number.";
+        }
+        return null;
+    }
+
+    @FXML
+    private void handleAddCriterion() {
+        if (!isAutomaticMode() || loadedExam != null) {
+            return;
+        }
+        String topic = topicField.getText();
+        DifficultyLevel difficulty = difficultyComboBox.getValue();
+        String count = questionCountField.getText();
+
+        String validation = validateCriterionInput(topic, difficulty, count);
+        if (validation != null) {
+            setStatus(validation);
+            return;
+        }
+
+        criterionItems.add(new CriterionItem(
+                topic.trim(), difficulty, Integer.parseInt(count.trim())
+        ));
+        topicField.clear();
+        questionCountField.clear();
+        difficultyComboBox.setValue(null);
+        topicField.requestFocus();
+        setStatus("Breakdown line added.");
+    }
+
+    @FXML
+    private void handleRemoveCriterion() {
+        if (!isAutomaticMode() || loadedExam != null) {
+            return;
+        }
+        CriterionItem selected = criteriaTable.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            setStatus("Select a breakdown line to remove.");
+            return;
+        }
+        criterionItems.remove(selected);
+        setStatus("Breakdown line removed.");
+    }
+
+    private void updateCriteriaTotal() {
+        if (criteriaTotalLabel == null) {
+            return;
+        }
+        if (criterionItems.isEmpty()) {
+            criteriaTotalLabel.setText("No breakdown lines");
+            return;
+        }
+        int total = 0;
+        for (CriterionItem item : criterionItems) {
+            total += item.getQuestionCount();
+        }
+        criteriaTotalLabel.setText(
+                criterionItems.size() + " line(s), " + total + " question(s)"
+        );
+    }
+
+    /** Validates the presentation fields shared by both generation modes. */
+    static String validateBreakdownInput(CourseSummaryDTO course, String title,
+                                         String duration, String instructions) {
+        if (course == null) {
+            return "Select an assigned course.";
+        }
+        if (isBlankText(title)) {
+            return "Exam title is required.";
+        }
+        if (!isPositiveInteger(duration)) {
+            return "Duration must be a positive whole number.";
+        }
+        if (isBlankText(instructions)) {
+            return "Student instructions are required.";
+        }
+        return null;
+    }
+
     @FXML
     private void handleGenerateDraft() {
         if (generationPending || loadedExam != null || !isAutomaticMode()) {
             return;
         }
 
-        String validation = validateAutomaticInput(
-                courseComboBox.getValue(),
-                titleField.getText(),
-                durationField.getText(),
-                studentInstructionsArea.getText(),
-                topicField.getText(),
-                difficultyComboBox.getValue(),
-                questionCountField.getText()
-        );
+        boolean useBreakdown = !criterionItems.isEmpty();
+
+        String validation = useBreakdown
+                ? validateBreakdownInput(
+                        courseComboBox.getValue(),
+                        titleField.getText(),
+                        durationField.getText(),
+                        studentInstructionsArea.getText())
+                : validateAutomaticInput(
+                        courseComboBox.getValue(),
+                        titleField.getText(),
+                        durationField.getText(),
+                        studentInstructionsArea.getText(),
+                        topicField.getText(),
+                        difficultyComboBox.getValue(),
+                        questionCountField.getText());
         if (validation != null) {
             setStatus(validation);
             return;
         }
 
-        GenerateExamPayload payload = buildAutomaticPayload(
-                courseComboBox.getValue(),
-                titleField.getText(),
-                durationField.getText(),
-                teacherNotesArea.getText(),
-                studentInstructionsArea.getText(),
-                topicField.getText(),
-                difficultyComboBox.getValue(),
-                questionCountField.getText()
-        );
+        CompletableFuture<ExamDTO> request;
+        if (useBreakdown) {
+            List<QuestionCriterion> criteria = new ArrayList<>();
+            for (CriterionItem item : criterionItems) {
+                criteria.add(new QuestionCriterion(
+                        item.getTopic(), item.getDifficulty(), item.getQuestionCount()
+                ));
+            }
+            GenerateExamBreakdownPayload breakdownPayload =
+                    new GenerateExamBreakdownPayload(
+                            courseComboBox.getValue().getCourseId(),
+                            titleField.getText().trim(),
+                            Integer.parseInt(durationField.getText().trim()),
+                            safe(teacherNotesArea.getText()).trim(),
+                            studentInstructionsArea.getText().trim(),
+                            criteria
+                    );
+            request = examClientController.generateExamFromBreakdown(breakdownPayload);
+        } else {
+            GenerateExamPayload payload = buildAutomaticPayload(
+                    courseComboBox.getValue(),
+                    titleField.getText(),
+                    durationField.getText(),
+                    teacherNotesArea.getText(),
+                    studentInstructionsArea.getText(),
+                    topicField.getText(),
+                    difficultyComboBox.getValue(),
+                    questionCountField.getText()
+            );
+            request = examClientController.generateExam(payload);
+        }
+
         long generation = ++automaticRequestGeneration;
         generationPending = true;
         updateActionState();
         setStatus("Generating DRAFT exam...");
 
-        examClientController.generateExam(payload).whenComplete((generated, error) ->
+        request.whenComplete((generated, error) ->
                 Platform.runLater(() -> {
                     if (closed || generation != automaticRequestGeneration) {
                         return;

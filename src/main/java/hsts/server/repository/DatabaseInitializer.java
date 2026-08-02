@@ -776,7 +776,7 @@ public class DatabaseInitializer {
                         FOREIGN KEY (recipient_user_id) REFERENCES users (user_id),
                     CONSTRAINT chk_notifications_type CHECK (notification_type IN
                         ('EXAM_APPROVED', 'EXAM_REJECTED', 'EXAM_SCHEDULED',
-                         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED')),
+                         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED', 'EXAM_SUBMITTED')),
                     CONSTRAINT chk_notifications_read_time
                         CHECK (read_at IS NULL OR read_at >= created_at)
                 ) ENGINE=InnoDB
@@ -802,7 +802,9 @@ public class DatabaseInitializer {
                 checkClause = resultSet.getString("CHECK_CLAUSE");
             }
         }
-        if (checkClause != null && checkClause.contains("EXAM_SCHEDULED")) {
+        // Guard on the most recently added value. Testing an older value would
+        // leave databases created before that addition permanently out of date.
+        if (checkClause != null && checkClause.contains("EXAM_SUBMITTED")) {
             return;
         }
         try (Statement statement = connection.createStatement()) {
@@ -816,7 +818,7 @@ public class DatabaseInitializer {
                     ALTER TABLE notifications
                     ADD CONSTRAINT chk_notifications_type CHECK (notification_type IN
                         ('EXAM_APPROVED', 'EXAM_REJECTED', 'EXAM_SCHEDULED',
-                         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED'))
+                         'EXECUTION_EXTENDED', 'GRADE_PUBLISHED', 'EXAM_SUBMITTED'))
                     """);
         }
     }

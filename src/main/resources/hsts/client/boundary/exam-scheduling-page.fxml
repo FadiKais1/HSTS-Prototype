@@ -81,6 +81,14 @@
                                     <Spinner fx:id="closingMinuteSpinner" prefWidth="78" editable="false"/>
                                 </HBox>
                             </VBox>
+                            <VBox spacing="6">
+                                <Label text="Execution code" style="-fx-font-weight: bold;"/>
+                                <TextField fx:id="executionCodeField" prefWidth="110"
+                                           promptText="739A"/>
+                                <Label text="4 letters or digits. Leave empty to let the system choose."
+                                       wrapText="true" maxWidth="200"
+                                       style="-fx-font-size: 11px; -fx-text-fill: #64748b;"/>
+                            </VBox>
                             <Region HBox.hgrow="ALWAYS"/>
                             <Button fx:id="scheduleButton" text="Schedule Execution"
                                     onAction="#handleSchedule" prefHeight="42"

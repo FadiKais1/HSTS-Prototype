@@ -252,6 +252,10 @@ public class ExamRepositoryEntityWriteTest {
         submitDatabase.plan(TEACHER_LOCK).queryRows(lockedExam(3, ExamStatus.DRAFT));
         ExamRepositoryJdbcTestSupport.StatementPlan submit = submitDatabase
                 .plan("submitted_at = ?").updateResults(1);
+        // The submit transaction also asks which coordinators of the subject
+        // should be notified. No coordinator rows means nobody is notified,
+        // which leaves this test focused on the workflow transition itself.
+        submitDatabase.plan("coordinator.coordinator_user_id").queryRows();
         assertTrue(new ExamRepository(submitDatabase)
                 .persistSubmissionForApproval(1002, submitted));
         assertEquals(submitted.getSubmittedAt(), submit.updateExecutions.get(0).get(2));
