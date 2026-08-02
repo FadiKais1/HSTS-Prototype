@@ -7,7 +7,9 @@ import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionSelectionPayload;
 import hsts.common.ExamSummaryDTO;
 import hsts.common.ExamVersionPayload;
+import hsts.common.GenerateExamBreakdownPayload;
 import hsts.common.GenerateExamPayload;
+import hsts.common.QuestionCriterion;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionFilterPayload;
 import hsts.common.QuestionIllustrationDTO;
@@ -276,6 +278,101 @@ public class ExamManagementService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Exam not found: " + examId
                 ));
+    }
+
+    /**
+     * Generates an exam from a breakdown of question criteria.
+     *
+     * <p>Each criterion contributes its own questions, so a paper can combine
+     * several topics at several difficulty levels. A question chosen for one
+     * criterion is never reused for another, and the finished selection is
+     * shuffled so the paper is not grouped by topic.</p>
+     */
+    public ExamDTO generateAutomaticExamFromBreakdown(
+            int authenticatedUserId,
+            GenerateExamBreakdownPayload payload
+    ) {
+        authorizeExamManager(authenticatedUserId);
+        requireAutomaticExamRepositories();
+        if (payload == null) {
+            throw new IllegalArgumentException("Automatic exam data is missing");
+        }
+
+        validateExamPresentation(
+                payload.getTitle(),
+                payload.getDurationMinutes(),
+                payload.getStudentInstructions()
+        );
+
+        List<QuestionCriterion> criteria = payload.getCriteria();
+        if (criteria.isEmpty()) {
+            throw new IllegalArgumentException("At least one question criterion is required");
+        }
+        for (QuestionCriterion criterion : criteria) {
+            if (isBlank(criterion.getTopic())) {
+                throw new IllegalArgumentException("Topic is required");
+            }
+            if (criterion.getDifficulty() == null) {
+                throw new IllegalArgumentException("Difficulty is required");
+            }
+            if (criterion.getQuestionCount() <= 0) {
+                throw new IllegalArgumentException("Question count must be positive");
+            }
+        }
+
+        List<QuestionDTO> selectedQuestions = new ArrayList<>();
+        Set<Integer> usedQuestionIds = new HashSet<>();
+        for (QuestionCriterion criterion : criteria) {
+            QuestionFilterPayload filter = new QuestionFilterPayload(
+                    payload.getCourseId(),
+                    null,
+                    criterion.getTopic().trim(),
+                    criterion.getDifficulty(),
+                    QuestionStatus.ACTIVE
+            );
+            List<QuestionDTO> matchingQuestions =
+                    questionRepository.findCurrentForTeacher(authenticatedUserId, filter);
+
+            List<QuestionDTO> availableQuestions = new ArrayList<>();
+            Set<Integer> seenForCriterion = new HashSet<>();
+            for (QuestionDTO question : matchingQuestions) {
+                if (usedQuestionIds.contains(question.getQuestionId())) {
+                    continue;
+                }
+                if (seenForCriterion.add(question.getQuestionId())) {
+                    availableQuestions.add(question);
+                }
+            }
+
+            if (availableQuestions.size() < criterion.getQuestionCount()) {
+                throw new IllegalArgumentException(
+                        "Not enough matching questions for " + criterion.describe()
+                );
+            }
+
+            Collections.shuffle(availableQuestions, ThreadLocalRandom.current());
+            for (int index = 0; index < criterion.getQuestionCount(); index++) {
+                QuestionDTO chosen = availableQuestions.get(index);
+                usedQuestionIds.add(chosen.getQuestionId());
+                selectedQuestions.add(chosen);
+            }
+        }
+
+        Collections.shuffle(selectedQuestions, ThreadLocalRandom.current());
+        List<ExamQuestionSelectionPayload> selections = createAutomaticSelections(
+                selectedQuestions,
+                selectedQuestions.size()
+        );
+
+        CreateExamPayload createPayload = new CreateExamPayload(
+                payload.getCourseId(),
+                payload.getTitle().trim(),
+                payload.getDurationMinutes(),
+                normalizeText(payload.getTeacherNotes(), ""),
+                payload.getStudentInstructions().trim(),
+                selections
+        );
+        return createExam(authenticatedUserId, createPayload);
     }
 
     public ExamDTO generateAutomaticExam(int authenticatedUserId,

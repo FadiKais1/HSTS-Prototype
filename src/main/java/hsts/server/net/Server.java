@@ -14,6 +14,7 @@ import hsts.common.ExamVersionPayload;
 import hsts.common.ExamVersionSelectionPayload;
 import hsts.common.ExtendSubmissionTimePayload;
 import hsts.common.ExtendExecutionTimePayload;
+import hsts.common.GenerateExamBreakdownPayload;
 import hsts.common.GenerateExamPayload;
 import hsts.common.LoginRequestPayload;
 import hsts.common.LoginResult;
@@ -338,6 +339,19 @@ public class Server extends AbstractServer {
                 }
 
                 case GENERATE_EXAM -> {
+                    // Two shapes share this route. A breakdown payload composes the
+                    // paper from several topic and difficulty lines; the original
+                    // payload keeps the single topic and difficulty behaviour.
+                    if (request.getPayload()
+                            instanceof GenerateExamBreakdownPayload breakdown) {
+                        yield Response.success(
+                                "Exam generated successfully",
+                                examManagementService.generateAutomaticExamFromBreakdown(
+                                        authenticatedUserId,
+                                        breakdown
+                                )
+                        );
+                    }
                     if (!(request.getPayload() instanceof GenerateExamPayload payload)) {
                         throw new IllegalArgumentException("Automatic exam data is missing");
                     }
@@ -383,12 +397,13 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof ExamVersionPayload payload)) {
                         throw new IllegalArgumentException("Exam version data is missing");
                     }
-                    Object submittedExam = examManagementService
-                            .submitExamForApproval(authenticatedUserId, payload);
-                    publishEvent(new ServerEvent(
-                            ServerEventType.EXAM_APPROVAL_CHANGED, 0
-                    ));
-                    yield Response.success("Exam submitted for approval", submittedExam);
+                    yield Response.success(
+                            "Exam submitted for approval",
+                            examManagementService.submitExamForApproval(
+                                    authenticatedUserId,
+                                    payload
+                            )
+                    );
                 }
 
                 case APPROVE_EXAM -> {
@@ -497,12 +512,12 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof SubmissionIdPayload payload)) {
                         throw new IllegalArgumentException("Submission data is missing");
                     }
-                    Object submittedAttempt = requireExamExecutionService()
-                            .submitExam(authenticatedUserId, payload);
-                    publishEvent(new ServerEvent(ServerEventType.SUBMISSION_RECEIVED, 0));
                     yield Response.success(
                             "Exam submitted successfully",
-                            submittedAttempt
+                            requireExamExecutionService().submitExam(
+                                    authenticatedUserId,
+                                    payload
+                            )
                     );
                 }
 
