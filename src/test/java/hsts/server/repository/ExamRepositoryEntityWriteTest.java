@@ -140,10 +140,11 @@ public class ExamRepositoryEntityWriteTest {
         collisionDatabase.plan(INITIAL_POINTER).updateResults(1);
         ArrayDeque<String> codes = new ArrayDeque<>(List.of("010101", "020101"));
 
-        assertEquals(46, new ExamRepository(collisionDatabase, codes::removeFirst)
+        assertEquals(46, new ExamRepository(collisionDatabase,
+                (connection, courseId) -> codes.removeFirst())
                 .create(1002, unsavedDraft()));
-        assertEquals("AAAAAA", stable.updateExecutions.get(0).get(1));
-        assertEquals("BBBBBB", stable.updateExecutions.get(1).get(1));
+        assertEquals("010101", stable.updateExecutions.get(0).get(1));
+        assertEquals("020101", stable.updateExecutions.get(1).get(1));
 
         SQLException insertFailure = new SQLException("insert failed");
         SQLException rollbackFailure = new SQLException("rollback failed");
