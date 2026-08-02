@@ -85,6 +85,8 @@
                     <Button fx:id="updateButton" text="Save Versioned Update"
                             onAction="#handleUpdateQuestion"
                             style="-fx-background-color: #059669; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button fx:id="saveAsNewButton" text="Save as New Question"
+                            onAction="#handleSaveAsNewQuestion"/>
                     <Button fx:id="statusActionButton" text="Activate / Deactivate"
                             onAction="#handleToggleStatus"
                             style="-fx-background-color: #d97706; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>

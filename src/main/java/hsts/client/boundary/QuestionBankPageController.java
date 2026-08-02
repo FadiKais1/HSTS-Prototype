@@ -87,6 +87,7 @@ public class QuestionBankPageController {
     private boolean updatePending;
     private boolean statusPending;
     private boolean deletePending;
+    private boolean saveAsNewPending;
     private boolean historyPending;
     private boolean illustrationReadPending;
     private QuestionIllustrationUploadPayload illustrationUpload;
@@ -137,6 +138,7 @@ public class QuestionBankPageController {
     @FXML private Button updateButton;
     @FXML private Button statusActionButton;
     @FXML private Button historyButton;
+    @FXML private Button saveAsNewButton;
     @FXML private Button deleteButton;
     @FXML private Button clearSelectionButton;
 
@@ -739,6 +741,85 @@ public class QuestionBankPageController {
         );
     }
 
+    /**
+     * Saves the editor contents as a brand new question, leaving the selected
+     * one exactly as it was.
+     *
+     * <p>This is the branching alternative to Save Versioned Update. A versioned
+     * update refines a question in place, keeping one identifier and adding a
+     * version. This creates an independent question with its own five digit
+     * identifier, so both the original and the edited copy stand in the bank and
+     * can be used in different exams.</p>
+     */
+    @FXML
+    private void handleSaveAsNewQuestion() {
+        QuestionDTO selectedQuestion = requireSelectedQuestion();
+        if (selectedQuestion == null || saveAsNewPending) {
+            return;
+        }
+
+        CourseSummaryDTO course = courseById(selectedQuestion.getCourseId());
+        String validation = validateQuestionForm(
+                course,
+                contentArea.getText(), topicField.getText(),
+                parseDifficulty(difficultyComboBox.getValue()),
+                option1Field.getText(), option2Field.getText(), option3Field.getText(),
+                option4Field.getText(), getSelectedCorrectOptionNumber()
+        );
+        if (validation != null) {
+            setStatus(validation);
+            return;
+        }
+
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.setTitle("Save as a new question?");
+        confirmation.setHeaderText("Create a new question from these contents?");
+        confirmation.setContentText(
+                "Question " + questionCode(selectedQuestion) + " is left unchanged and "
+                        + "stays in the bank. A new question is created with its own "
+                        + "identifier, and exams already using the original are not affected."
+        );
+        if (confirmation.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
+            return;
+        }
+
+        CreateQuestionPayload payload = new CreateQuestionPayload(
+                selectedQuestion.getCourseId(),
+                contentArea.getText(),
+                topicField.getText(),
+                parseDifficulty(difficultyComboBox.getValue()),
+                "",
+                option1Field.getText(), option2Field.getText(), option3Field.getText(),
+                option4Field.getText(), getSelectedCorrectOptionNumber(),
+                illustrationUpload
+        );
+
+        saveAsNewPending = true;
+        updateActionState();
+        setStatus("Creating a new question from these contents...");
+        setCurrentAction("Creating question");
+
+        questionClientController.createQuestion(payload).whenComplete((created, error) ->
+                Platform.runLater(() -> {
+                    if (closed) {
+                        return;
+                    }
+                    saveAsNewPending = false;
+                    if (error != null) {
+                        setStatus(getCleanError(error));
+                        setCurrentAction("Create failed");
+                        updateActionState();
+                        return;
+                    }
+                    loadQuestions(
+                            created.getQuestionId(),
+                            "New question " + questionCode(created) + " created. "
+                                    + questionCode(selectedQuestion) + " is unchanged."
+                    );
+                })
+        );
+    }
+
     @FXML
     private void handleToggleStatus() {
         QuestionDTO selectedQuestion = requireSelectedQuestion();
@@ -1011,6 +1092,10 @@ public class QuestionBankPageController {
         if (deleteButton != null) {
             deleteButton.setDisable(!configured || !selected || deletePending
                     || statusPending || loadingQuestions);
+        }
+        if (saveAsNewButton != null) {
+            saveAsNewButton.setDisable(!configured || !selected || saveAsNewPending
+                    || updatePending || loadingQuestions);
         }
         historyButton.setDisable(!configured || !selected || historyPending);
         clearSelectionButton.setDisable(!selected);
