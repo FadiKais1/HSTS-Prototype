@@ -3,6 +3,9 @@ package hsts.client.boundary;
 import hsts.client.control.ExamClientController;
 import hsts.client.control.QuestionClientController;
 import hsts.client.net.Client;
+import hsts.client.net.ServerEventBus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.CourseSummaryDTO;
 import hsts.common.CreateExamPayload;
 import hsts.common.ExamDTO;
@@ -70,6 +73,15 @@ public class ExamBuilderPage {
     private ExamClientController examClientController;
     private QuestionClientController questionClientController;
     private ExamDTO loadedExam;
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    /**
+     * Set when the exam list moved while this teacher had unsaved edits. The
+     * reload waits until the editor is clean so their work is never discarded.
+     */
+    private boolean deferredExternalRefresh;
+
     private boolean closed;
     private boolean coursesLoading;
     private boolean examsLoading;
@@ -226,6 +238,13 @@ public class ExamBuilderPage {
         this.questionClientController = new QuestionClientController(client);
         this.closed = false;
         this.generationPending = false;
+        // Exams created or edited elsewhere, and coordinator approvals or
+        // rejections, reach this list without a manual refresh.
+        this.eventSubscription = client.getServerEventBus().subscribe(
+                this::onServerEvent,
+                ServerEventType.EXAM_CHANGED,
+                ServerEventType.EXAM_APPROVAL_CHANGED
+        );
         this.automaticRequestGeneration++;
         setStatus("Loading courses and exams...");
         updateActionState();
@@ -445,6 +464,9 @@ public class ExamBuilderPage {
         selectedQuestionItems.clear();
         showRejectionReason(null);
         examTable.getSelectionModel().clearSelection();
+        // The editor is clean again, so a refresh held back to protect unsaved
+        // work can safely run.
+        applyDeferredExternalRefresh();
         courseComboBox.setDisable(false);
         if (courseComboBox.getValue() == null && !assignedCourses.isEmpty()) {
             courseComboBox.setValue(assignedCourses.get(0));
@@ -1051,12 +1073,50 @@ public class ExamBuilderPage {
 
     private void closeForNavigation() {
         closed = true;
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
         courseRequestGeneration++;
         summaryRequestGeneration++;
         detailRequestGeneration++;
         questionRequestGeneration++;
         automaticRequestGeneration++;
         if (illustrationRenderer != null) illustrationRenderer.dispose();
+    }
+
+    /**
+     * Reacts to an exam created or edited by another user, or to a coordinator
+     * approving or rejecting one. Runs on the JavaFX thread.
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (closed || event == null) {
+            return;
+        }
+        ServerEventType type = event.getType();
+        if (type != ServerEventType.EXAM_CHANGED
+                && type != ServerEventType.EXAM_APPROVAL_CHANGED) {
+            return;
+        }
+
+        // Never discard unsaved work: hold the refresh until the editor is clean.
+        if (isDirty()) {
+            deferredExternalRefresh = true;
+            setStatus("The exam list changed elsewhere. Your unsaved changes are safe; "
+                    + "the list will refresh when you start a new exam or press Refresh.");
+            return;
+        }
+
+        deferredExternalRefresh = false;
+        loadExamSummaries(null, "Exam list updated.");
+    }
+
+    /** Applies a refresh held back while the editor had unsaved changes. */
+    private void applyDeferredExternalRefresh() {
+        if (deferredExternalRefresh && !closed && !isDirty()) {
+            deferredExternalRefresh = false;
+            loadExamSummaries(null, "Exam list updated.");
+        }
     }
 
     private boolean confirmDiscardIfDirty() {
