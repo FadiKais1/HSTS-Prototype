@@ -2,6 +2,9 @@ package hsts.client.boundary;
 
 import hsts.client.control.QuestionClientController;
 import hsts.client.net.Client;
+import hsts.client.net.ServerEventBus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.CourseSummaryDTO;
 import hsts.common.CreateQuestionPayload;
 import hsts.common.QuestionDTO;
@@ -68,6 +71,16 @@ public class QuestionBankPageController {
     private Client client;
     private Runnable backHandler;
     private long questionRequestGeneration;
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    /**
+     * Set when another user changed the bank while this teacher had a question
+     * open in the editor. The reload is deferred until the editor is clear, so
+     * half-typed edits are never discarded.
+     */
+    private boolean deferredExternalRefresh;
+
     private boolean closed;
     private boolean loadingQuestions;
     private boolean createPending;
@@ -156,6 +169,10 @@ public class QuestionBankPageController {
         this.backHandler = Objects.requireNonNull(backHandler, "backHandler");
         this.questionClientController = new QuestionClientController(client);
         this.closed = false;
+        // Another teacher's change to this course's bank reaches this screen
+        // without a manual refresh.
+        this.eventSubscription = client.getServerEventBus()
+                .subscribe(this::onServerEvent, ServerEventType.QUESTION_CHANGED);
 
         serverStatusValue.setText("Connected to " + client.getHost() + ":" + client.getPort());
         setStatus("Loading assigned courses...");
@@ -906,6 +923,9 @@ public class QuestionBankPageController {
     }
 
     private void clearEditor() {
+        // The editor is now free, so any refresh held back to protect typed
+        // work can safely run.
+        applyDeferredExternalRefresh();
         selectedIdValue.setText("-");
         selectedCourseValue.setText("-");
         selectedSubjectValue.setText("-");
@@ -955,6 +975,50 @@ public class QuestionBankPageController {
         difficultyFilterComboBox.setDisable(!configured);
         statusFilterComboBox.setDisable(!configured);
         updateActionState();
+    }
+
+    /**
+     * Reacts to a question created, edited or status-changed by another user.
+     *
+     * <p>Runs on the JavaFX thread; the bus marshals for us.</p>
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (closed || event == null
+                || event.getType() != ServerEventType.QUESTION_CHANGED) {
+            return;
+        }
+        refreshFromExternalChange();
+    }
+
+    private void refreshFromExternalChange() {
+        if (!isConfigured()) {
+            return;
+        }
+
+        // A mutation of our own is in flight, or this teacher is part way
+        // through editing. Reloading now would discard their work, so remember
+        // that the bank moved and reload when the editor is next clear.
+        if (createPending || updatePending || statusPending
+                || tableView.getSelectionModel().getSelectedItem() != null) {
+            deferredExternalRefresh = true;
+            setStatus("Another user changed the question bank. "
+                    + "Your changes are safe; the list will refresh when you clear the editor.");
+            return;
+        }
+
+        deferredExternalRefresh = false;
+        loadQuestions(null, "Question bank updated by another user.");
+    }
+
+    /**
+     * Applies a refresh that was deferred while the editor was busy. Called
+     * when the editor is cleared.
+     */
+    private void applyDeferredExternalRefresh() {
+        if (deferredExternalRefresh && isConfigured() && !closed) {
+            deferredExternalRefresh = false;
+            loadQuestions(null, "Question bank updated by another user.");
+        }
     }
 
     private boolean isConfigured() {
@@ -1095,6 +1159,10 @@ public class QuestionBankPageController {
 
     public void close() {
         closed = true;
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
         if (illustrationRenderer != null) illustrationRenderer.dispose();
         questionRequestGeneration++;
         questionClientController = null;

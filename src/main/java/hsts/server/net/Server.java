@@ -237,13 +237,12 @@ public class Server extends AbstractServer {
 
                 case UPDATE_QUESTION -> {
                     UpdateQuestionPayload payload = (UpdateQuestionPayload) request.getPayload();
-                    yield Response.success(
-                            "Question updated successfully",
-                            examManagementService.updateQuestion(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                    Object updatedQuestion = examManagementService.updateQuestion(
+                            authenticatedUserId,
+                            payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.QUESTION_CHANGED, 0));
+                    yield Response.success("Question updated successfully", updatedQuestion);
                 }
 
                 case GET_MY_COURSES -> Response.success(
@@ -270,31 +269,31 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof CreateQuestionPayload payload)) {
                         throw new IllegalArgumentException("Question data is required");
                     }
-                    yield Response.success(
-                            "Question created successfully",
-                            examManagementService.createQuestion(authenticatedUserId, payload)
-                    );
+                    Object createdQuestion =
+                            examManagementService.createQuestion(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.QUESTION_CHANGED, 0));
+                    yield Response.success("Question created successfully", createdQuestion);
                 }
 
                 case ACTIVATE_QUESTION -> {
                     int questionId = requireQuestionIdPayload(request).getQuestionId();
-                    yield Response.success(
-                            "Question activated successfully",
-                            examManagementService.activateQuestion(
-                                    authenticatedUserId,
-                                    questionId
-                            )
+                    Object activatedQuestion = examManagementService.activateQuestion(
+                            authenticatedUserId,
+                            questionId
                     );
+                    publishEvent(new ServerEvent(ServerEventType.QUESTION_CHANGED, questionId));
+                    yield Response.success("Question activated successfully", activatedQuestion);
                 }
 
                 case DEACTIVATE_QUESTION -> {
                     int questionId = requireQuestionIdPayload(request).getQuestionId();
+                    Object deactivatedQuestion = examManagementService.deactivateQuestion(
+                            authenticatedUserId,
+                            questionId
+                    );
+                    publishEvent(new ServerEvent(ServerEventType.QUESTION_CHANGED, questionId));
                     yield Response.success(
-                            "Question deactivated successfully",
-                            examManagementService.deactivateQuestion(
-                                    authenticatedUserId,
-                                    questionId
-                            )
+                            "Question deactivated successfully", deactivatedQuestion
                     );
                 }
 
@@ -332,10 +331,10 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof CreateExamPayload payload)) {
                         throw new IllegalArgumentException("Exam creation data is missing");
                     }
-                    yield Response.success(
-                            "Exam created successfully",
-                            examManagementService.createExam(authenticatedUserId, payload)
-                    );
+                    Object createdExam =
+                            examManagementService.createExam(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.EXAM_CHANGED, 0));
+                    yield Response.success("Exam created successfully", createdExam);
                 }
 
                 case GENERATE_EXAM -> {
@@ -344,24 +343,23 @@ public class Server extends AbstractServer {
                     // payload keeps the single topic and difficulty behaviour.
                     if (request.getPayload()
                             instanceof GenerateExamBreakdownPayload breakdown) {
-                        yield Response.success(
-                                "Exam generated successfully",
-                                examManagementService.generateAutomaticExamFromBreakdown(
+                        Object breakdownExam = examManagementService
+                                .generateAutomaticExamFromBreakdown(
                                         authenticatedUserId,
                                         breakdown
-                                )
-                        );
+                                );
+                        publishEvent(new ServerEvent(ServerEventType.EXAM_CHANGED, 0));
+                        yield Response.success("Exam generated successfully", breakdownExam);
                     }
                     if (!(request.getPayload() instanceof GenerateExamPayload payload)) {
                         throw new IllegalArgumentException("Automatic exam data is missing");
                     }
-                    yield Response.success(
-                            "Exam generated successfully",
-                            examManagementService.generateAutomaticExam(
-                                    authenticatedUserId,
-                                    payload
-                            )
+                    Object generatedExam = examManagementService.generateAutomaticExam(
+                            authenticatedUserId,
+                            payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.EXAM_CHANGED, 0));
+                    yield Response.success("Exam generated successfully", generatedExam);
                 }
 
                 case LIST_PENDING_EXAMS -> {
@@ -387,10 +385,10 @@ public class Server extends AbstractServer {
                     if (!(request.getPayload() instanceof UpdateExamPayload payload)) {
                         throw new IllegalArgumentException("Exam update data is missing");
                     }
-                    yield Response.success(
-                            "Exam updated successfully",
-                            examManagementService.updateExam(authenticatedUserId, payload)
-                    );
+                    Object updatedExam =
+                            examManagementService.updateExam(authenticatedUserId, payload);
+                    publishEvent(new ServerEvent(ServerEventType.EXAM_CHANGED, 0));
+                    yield Response.success("Exam updated successfully", updatedExam);
                 }
 
                 case SUBMIT_EXAM_FOR_APPROVAL -> {

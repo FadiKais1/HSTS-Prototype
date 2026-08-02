@@ -23,5 +23,17 @@ public enum ServerEventType {
     SUBMISSION_RECEIVED,
 
     /** A student started an exam attempt, so the live counters have moved. */
-    ATTEMPT_STARTED
+    ATTEMPT_STARTED,
+
+    /**
+     * A question was created, edited, activated, deactivated or deleted, so any
+     * open question bank is stale.
+     */
+    QUESTION_CHANGED,
+
+    /**
+     * An exam was created, generated or edited, so any open exam list is stale.
+     * Approval transitions use {@link #EXAM_APPROVAL_CHANGED} instead.
+     */
+    EXAM_CHANGED
 }
