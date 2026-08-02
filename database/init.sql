@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS questions (
     created_at DATETIME(6) NULL,
     updated_at DATETIME(6) NULL,
     question_code CHAR(5) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    -- Soft delete. A deleted question disappears from the question bank and
+    -- cannot be added to new exams, but its rows and versions survive so that
+    -- exams already containing it, and their graded submissions, are unaffected.
+    deleted_at DATETIME(6) NULL,
     KEY idx_questions_course_id (course_id),
     KEY idx_questions_created_by_user_id (created_by_user_id),
     CONSTRAINT uq_questions_question_code UNIQUE (question_code),

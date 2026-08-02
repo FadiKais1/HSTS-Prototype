@@ -2552,6 +2552,9 @@ public class DatabaseInitializer {
                     connection, "questions", "question_code",
                     "CHAR(5) CHARACTER SET ascii COLLATE ascii_bin NULL"
             );
+            addColumnIfMissing(
+                    connection, "questions", "deleted_at", "DATETIME(6) NULL"
+            );
 
             backfillOrganisationNumbers(connection, "subjects", "subject_id", "subject_number");
             backfillOrganisationNumbers(connection, "courses", "course_id", "course_number");

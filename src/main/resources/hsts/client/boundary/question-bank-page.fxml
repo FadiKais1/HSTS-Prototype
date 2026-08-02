@@ -91,6 +91,9 @@
                     <Button fx:id="historyButton" text="Version History"
                             onAction="#handleShowHistory"
                             style="-fx-background-color: #7c3aed; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>
+                    <Button fx:id="deleteButton" text="Delete Question"
+                            onAction="#handleDeleteQuestion"
+                            styleClass="danger-button"/>
                     <Button fx:id="clearSelectionButton" text="Clear Selection"
                             onAction="#handleClearSelection"
                             style="-fx-background-color: #e5e7eb; -fx-text-fill: #111827; -fx-font-weight: bold; -fx-padding: 9 15 9 15; -fx-background-radius: 8;"/>

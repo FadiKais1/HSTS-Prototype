@@ -13,6 +13,7 @@ public enum RequestType implements Serializable {
     CREATE_QUESTION,
     ACTIVATE_QUESTION,
     DEACTIVATE_QUESTION,
+    DELETE_QUESTION,
     GET_QUESTION_HISTORY,
     LIST_MY_EXAMS,
     GET_MY_EXAM,

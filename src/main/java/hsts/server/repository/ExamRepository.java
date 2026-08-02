@@ -344,6 +344,7 @@ public class ExamRepository {
             WHERE q.question_id = ?
               AND q.course_id = ?
               AND q.status = 'ACTIVE'
+              AND q.deleted_at IS NULL
               AND q.current_version_no = ?
             FOR UPDATE
             """;

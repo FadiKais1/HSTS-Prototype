@@ -142,6 +142,20 @@ public class QuestionClientController {
         );
     }
 
+    /**
+     * Hides a question from the bank. Exams already containing it keep it, so
+     * the server returns no question payload.
+     */
+    public CompletableFuture<Void> deleteQuestion(int questionId) {
+        return sendRequest(
+                new Request(
+                        RequestType.DELETE_QUESTION,
+                        new QuestionIdPayload(questionId)
+                ),
+                payload -> null
+        );
+    }
+
     public CompletableFuture<QuestionDTO> deactivateQuestion(int questionId) {
         return sendRequest(
                 new Request(

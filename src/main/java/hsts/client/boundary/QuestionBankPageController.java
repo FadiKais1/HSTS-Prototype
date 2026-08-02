@@ -86,6 +86,7 @@ public class QuestionBankPageController {
     private boolean createPending;
     private boolean updatePending;
     private boolean statusPending;
+    private boolean deletePending;
     private boolean historyPending;
     private boolean illustrationReadPending;
     private QuestionIllustrationUploadPayload illustrationUpload;
@@ -136,6 +137,7 @@ public class QuestionBankPageController {
     @FXML private Button updateButton;
     @FXML private Button statusActionButton;
     @FXML private Button historyButton;
+    @FXML private Button deleteButton;
     @FXML private Button clearSelectionButton;
 
     @FXML private Label statusLabel;
@@ -865,6 +867,52 @@ public class QuestionBankPageController {
     }
 
     @FXML
+    private void handleDeleteQuestion() {
+        QuestionDTO selected = tableView.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            setStatus("Select a question to delete.");
+            return;
+        }
+
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.setTitle("Delete question?");
+        confirmation.setHeaderText(
+                "Delete question " + questionCode(selected) + " from the bank?"
+        );
+        confirmation.setContentText(
+                "It will no longer appear in the question bank and cannot be added to "
+                        + "new exams. Exams that already contain it, and the results of "
+                        + "students who answered it, are not affected."
+        );
+        if (confirmation.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
+            return;
+        }
+
+        deletePending = true;
+        updateActionState();
+        setStatus("Deleting question...");
+        setCurrentAction("Deleting question");
+
+        int questionId = selected.getQuestionId();
+        questionClientController.deleteQuestion(questionId).whenComplete((ignored, error) ->
+                Platform.runLater(() -> {
+                    deletePending = false;
+                    if (closed) {
+                        return;
+                    }
+                    if (error != null) {
+                        updateActionState();
+                        setStatus(getCleanError(error));
+                        setCurrentAction("Idle");
+                        return;
+                    }
+                    clearEditor();
+                    loadQuestions(null, "Question deleted.");
+                })
+        );
+    }
+
+    @FXML
     private void handleClearSelection() {
         tableView.getSelectionModel().clearSelection();
         setStatus("Selection cleared.");
@@ -960,6 +1008,10 @@ public class QuestionBankPageController {
         createButton.setDisable(!configured || createPending);
         updateButton.setDisable(!configured || !selected || updatePending || loadingQuestions);
         statusActionButton.setDisable(!configured || !selected || statusPending || loadingQuestions);
+        if (deleteButton != null) {
+            deleteButton.setDisable(!configured || !selected || deletePending
+                    || statusPending || loadingQuestions);
+        }
         historyButton.setDisable(!configured || !selected || historyPending);
         clearSelectionButton.setDisable(!selected);
         chooseIllustrationButton.setDisable(!selected || illustrationReadPending);

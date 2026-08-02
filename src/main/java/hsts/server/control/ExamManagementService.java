@@ -208,6 +208,22 @@ public class ExamManagementService {
         return updateQuestionStatus(authenticatedUserId, questionId, QuestionStatus.INACTIVE);
     }
 
+    /**
+     * Hides a question from the bank. The question, its versions and every exam
+     * already containing it are left intact, so graded submissions still show
+     * exactly what each student was asked.
+     */
+    public void deleteQuestion(int authenticatedUserId, int questionId) {
+        requireQuestionBankDependencies();
+        authorizeQuestionManager(authenticatedUserId);
+
+        if (!questionRepository.softDelete(authenticatedUserId, questionId)) {
+            throw new IllegalArgumentException(
+                    "Question " + questionId + " is not available to delete"
+            );
+        }
+    }
+
     public List<QuestionVersionDTO> getQuestionHistory(int authenticatedUserId,
                                                        int questionId) {
         requireQuestionBankDependencies();
@@ -552,10 +568,6 @@ public class ExamManagementService {
     }
 
     public void activateQuestion(int questionId) {
-        throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
-    }
-
-    public void deleteQuestion(int questionId) {
         throw new UnsupportedOperationException("Not implemented in Assignment 2 skeleton");
     }
 

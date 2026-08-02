@@ -71,6 +71,7 @@ public class QuestionRepository {
             JOIN teacher_courses tc
               ON tc.course_id = q.course_id
              AND tc.teacher_user_id = ?
+             AND q.deleted_at IS NULL
             JOIN answer_options option_1
               ON option_1.question_id = qv.question_id
              AND option_1.version_no = qv.version_no
@@ -193,6 +194,20 @@ public class QuestionRepository {
      * Reads the two digit course number and the highest question number already
      * used inside that course (requirements 33, 34).
      */
+    /**
+     * Hides a question from the bank without removing any data, so exams that
+     * already contain it and their graded submissions are unaffected.
+     */
+    private static final String SOFT_DELETE_QUESTION_SQL = """
+            UPDATE questions q
+            JOIN teacher_courses tc
+              ON tc.course_id = q.course_id
+             AND tc.teacher_user_id = ?
+            SET q.deleted_at = ?
+            WHERE q.question_id = ?
+              AND q.deleted_at IS NULL
+            """;
+
     private static final String NEXT_QUESTION_NUMBER_SQL = """
             SELECT c.course_number,
                    COALESCE(
@@ -397,6 +412,25 @@ public class QuestionRepository {
 
     public QuestionRepository(DatabaseController databaseController) {
         this.databaseController = databaseController;
+    }
+
+    /**
+     * Soft-deletes a question the authenticated teacher is entitled to manage.
+     *
+     * @return {@code true} when a question was hidden, {@code false} when it
+     *         does not exist, is not the teacher's, or was already deleted
+     */
+    public boolean softDelete(int authenticatedUserId, int questionId) {
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement =
+                     connection.prepareStatement(SOFT_DELETE_QUESTION_SQL)) {
+            statement.setInt(1, authenticatedUserId);
+            statement.setObject(2, LocalDateTime.now());
+            statement.setInt(3, questionId);
+            return statement.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to delete question", e);
+        }
     }
 
     public int create(int authenticatedUserId, int courseId, Question question) {
