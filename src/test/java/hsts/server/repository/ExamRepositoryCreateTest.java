@@ -174,15 +174,15 @@ public class ExamRepositoryCreateTest {
         plans.version = database.plan(VERSION_MARKER).updateResults(1);
         plans.selection = database.plan(SELECTION_MARKER).updateResults(1, 1);
         plans.pointer = database.plan(POINTER_MARKER).updateResults(1);
-        Deque<String> codes = new ArrayDeque<>(List.of("AAAAAA", "BBBBBB"));
+        Deque<String> codes = new ArrayDeque<>(List.of("010101", "020101"));
 
-        int examId = new ExamRepository(database, codes::removeFirst)
+        int examId = new ExamRepository(database, (connection, courseId) -> codes.removeFirst())
                 .create(1002, exam());
 
         assertEquals(77, examId);
         assertEquals(2, plans.exam.updateExecutions.size());
-        assertEquals("AAAAAA", plans.exam.updateExecutions.get(0).get(1));
-        assertEquals("BBBBBB", plans.exam.updateExecutions.get(1).get(1));
+        assertEquals("010101", plans.exam.updateExecutions.get(0).get(1));
+        assertEquals("020101", plans.exam.updateExecutions.get(1).get(1));
         assertEquals(1, database.commitCount);
         assertEquals(0, database.rollbackCount);
     }
@@ -197,7 +197,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(database, () -> "ABC123").create(1002, exam())
+                () -> new ExamRepository(database, (connection, courseId) -> "010101").create(1002, exam())
         );
 
         assertEquals("Failed to create exam", thrown.getMessage());
@@ -216,7 +216,7 @@ public class ExamRepositoryCreateTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(database, () -> "ABC123").create(1002, exam())
+                () -> new ExamRepository(database, (connection, courseId) -> "010101").create(1002, exam())
         );
 
         assertEquals("Failed to create exam", thrown.getMessage());
@@ -254,7 +254,7 @@ public class ExamRepositoryCreateTest {
 
             IllegalStateException thrown = assertThrows(
                     IllegalStateException.class,
-                    () -> new ExamRepository(database, () -> "ABC123")
+                    () -> new ExamRepository(database, (connection, courseId) -> "010101")
                             .create(1002, exam())
             );
 

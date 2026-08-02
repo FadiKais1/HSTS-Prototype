@@ -1,5 +1,6 @@
 package hsts.server.repository;
 
+import hsts.common.EncodedIdentifiers;
 import hsts.common.ExamDTO;
 import hsts.common.ExamQuestionDTO;
 import hsts.common.ExamSummaryDTO;
@@ -14,7 +15,6 @@ import hsts.server.entity.ExamQuestion;
 import hsts.server.entity.Question;
 
 import java.math.BigDecimal;
-import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -28,14 +28,29 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
 
 public class ExamRepository {
-    private static final String EXAM_CODE_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final int EXAM_CODE_LENGTH = 6;
     private static final int MAX_EXAM_CODE_ATTEMPTS = 5;
     private static final int MYSQL_DUPLICATE_KEY_ERROR = 1062;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /**
+     * Reads the two digit course and subject numbers for a course and the
+     * highest exam number already used within it (requirements 38, 39).
+     */
+    private static final String NEXT_EXAM_NUMBER_SQL = """
+            SELECT c.course_number,
+                   s.subject_number,
+                   COALESCE(
+                       (SELECT MAX(CAST(SUBSTRING(taken.exam_code, 1, 2) AS UNSIGNED))
+                        FROM exams taken
+                        WHERE taken.course_id = c.course_id
+                          AND taken.exam_code REGEXP '^[0-9]{6}$'),
+                       0
+                   ) AS highest_exam_number
+            FROM courses c
+            JOIN subjects s ON s.subject_id = c.subject_id
+            WHERE c.course_id = ?
+            """;
 
     private static final String EXAM_SUMMARY_SELECT = """
             SELECT e.exam_id,
@@ -455,20 +470,30 @@ public class ExamRepository {
               AND status = 'PENDING_APPROVAL'
             """;
 
+    /**
+     * Produces the six digit identifier for a new exam. Allocation needs the
+     * course context, so this replaces the historic no-argument supplier of
+     * random codes.
+     */
+    @FunctionalInterface
+    interface ExamCodeAllocator {
+        String allocate(Connection connection, int courseId) throws SQLException;
+    }
+
     private final DatabaseController databaseController;
-    private final Supplier<String> examCodeGenerator;
+    private final ExamCodeAllocator examCodeAllocator;
 
     public ExamRepository() {
         this(new DatabaseController());
     }
 
     public ExamRepository(DatabaseController databaseController) {
-        this(databaseController, ExamRepository::generateExamCode);
+        this(databaseController, ExamRepository::allocateEncodedExamCode);
     }
 
-    ExamRepository(DatabaseController databaseController, Supplier<String> examCodeGenerator) {
+    ExamRepository(DatabaseController databaseController, ExamCodeAllocator examCodeAllocator) {
         this.databaseController = databaseController;
-        this.examCodeGenerator = examCodeGenerator;
+        this.examCodeAllocator = examCodeAllocator;
     }
 
     public List<ExamSummaryDTO> findCreatedByTeacher(int authenticatedUserId) {
@@ -1389,7 +1414,7 @@ public class ExamRepository {
             try {
                 return insertStableExam(
                         connection,
-                        examCodeGenerator.get(),
+                        examCodeAllocator.allocate(connection, courseId),
                         authenticatedUserId,
                         courseId
                 );
@@ -1778,14 +1803,52 @@ public class ExamRepository {
                 && message.toLowerCase(Locale.ROOT).contains("uq_exams_exam_code");
     }
 
-    private static String generateExamCode() {
-        StringBuilder code = new StringBuilder(EXAM_CODE_LENGTH);
-        for (int index = 0; index < EXAM_CODE_LENGTH; index++) {
-            code.append(EXAM_CODE_CHARACTERS.charAt(
-                    SECURE_RANDOM.nextInt(EXAM_CODE_CHARACTERS.length())
-            ));
+    /**
+     * Builds the next six digit exam identifier for a course: the lowest unused
+     * exam number in that course, followed by the course number and the subject
+     * number (requirements 38, 39).
+     *
+     * <p>Two teachers creating an exam in the same course at the same moment can
+     * both read the same highest number. The loser hits the unique constraint on
+     * {@code exam_code} and the caller retries, which re-reads the maximum.</p>
+     */
+    private static String allocateEncodedExamCode(Connection connection, int courseId)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(NEXT_EXAM_NUMBER_SQL)) {
+            statement.setInt(1, courseId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new IllegalArgumentException(
+                            "Cannot build an exam identifier: unknown course " + courseId
+                    );
+                }
+
+                String courseNumber = resultSet.getString("course_number");
+                String subjectNumber = resultSet.getString("subject_number");
+
+                if (!EncodedIdentifiers.isValidOrganisationNumber(courseNumber)
+                        || !EncodedIdentifiers.isValidOrganisationNumber(subjectNumber)) {
+                    throw new IllegalStateException(
+                            "Course " + courseId + " has no two digit course or subject"
+                                    + " number, so no exam identifier can be built"
+                    );
+                }
+
+                int nextExamNumber = resultSet.getInt("highest_exam_number") + 1;
+                if (nextExamNumber > EncodedIdentifiers.MAX_EXAM_NUMBER) {
+                    throw new IllegalStateException(
+                            "Course " + courseId + " already holds "
+                                    + EncodedIdentifiers.MAX_EXAM_NUMBER
+                                    + " exams; the two digit exam number is exhausted"
+                    );
+                }
+
+                return EncodedIdentifiers.formatExamCode(
+                        nextExamNumber, courseNumber, subjectNumber
+                );
+            }
         }
-        return code.toString();
     }
 
     private <T> T executeInTransaction(String failureMessage,

@@ -1,5 +1,6 @@
 package hsts.server.repository;
 
+import hsts.common.EncodedIdentifiers;
 import hsts.common.QuestionDTO;
 import hsts.common.QuestionIllustrationDTO;
 import hsts.common.QuestionFilterPayload;
@@ -24,6 +25,9 @@ import java.util.Locale;
 import java.util.Optional;
 
 public class QuestionRepository {
+    private static final int MAX_QUESTION_CODE_ATTEMPTS = 5;
+    private static final int MYSQL_DUPLICATE_KEY_ERROR = 1062;
+
     private static final String QUESTION_COLUMNS = """
             question_id, content, topic, type, difficulty, status, illustration_path,
             answer_option_1, answer_option_2, answer_option_3, answer_option_4, correct_option_number
@@ -33,6 +37,7 @@ public class QuestionRepository {
 
     private static final String NORMALIZED_QUESTION_SELECT = """
             SELECT q.question_id,
+                   q.question_code,
                    q.course_id,
                    c.subject_id,
                    qv.version_no,
@@ -178,9 +183,27 @@ public class QuestionRepository {
                 created_by_user_id,
                 current_version_no,
                 created_at,
-                updated_at
+                updated_at,
+                question_code
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+    /**
+     * Reads the two digit course number and the highest question number already
+     * used inside that course (requirements 33, 34).
+     */
+    private static final String NEXT_QUESTION_NUMBER_SQL = """
+            SELECT c.course_number,
+                   COALESCE(
+                       (SELECT MAX(CAST(SUBSTRING(taken.question_code, 1, 3) AS UNSIGNED))
+                        FROM questions taken
+                        WHERE taken.course_id = c.course_id
+                          AND taken.question_code REGEXP '^[0-9]{5}$'),
+                       0
+                   ) AS highest_question_number
+            FROM courses c
+            WHERE c.course_id = ?
             """;
 
     private static final String CREATE_QUESTION_VERSION_SQL = """
@@ -898,6 +921,12 @@ public class QuestionRepository {
     }
 
     private QuestionDTO mapRowToQuestionDto(ResultSet resultSet) throws SQLException {
+        QuestionDTO question = buildQuestionDto(resultSet);
+        question.setQuestionCode(resultSet.getString("question_code"));
+        return question;
+    }
+
+    private QuestionDTO buildQuestionDto(ResultSet resultSet) throws SQLException {
         return new QuestionDTO(
                 resultSet.getInt("question_id"),
                 resultSet.getString("content"),
@@ -1081,6 +1110,82 @@ public class QuestionRepository {
     private int insertCurrentQuestion(Connection connection, int createdByUserId,
                                       int courseId, QuestionPersistenceData data,
                                       LocalDateTime createdAt) throws SQLException {
+        SQLException lastCollision = null;
+
+        for (int attempt = 0; attempt < MAX_QUESTION_CODE_ATTEMPTS; attempt++) {
+            try {
+                return insertCurrentQuestion(
+                        connection,
+                        createdByUserId,
+                        courseId,
+                        data,
+                        createdAt,
+                        allocateQuestionCode(connection, courseId)
+                );
+            } catch (SQLException e) {
+                if (!isQuestionCodeCollision(e)) {
+                    throw e;
+                }
+                lastCollision = e;
+            }
+        }
+
+        throw lastCollision;
+    }
+
+    /**
+     * Builds the next five digit question identifier for a course: the lowest
+     * unused question number in that course followed by the two digit course
+     * number (requirements 33, 34).
+     */
+    private String allocateQuestionCode(Connection connection, int courseId)
+            throws SQLException {
+        try (PreparedStatement statement =
+                     connection.prepareStatement(NEXT_QUESTION_NUMBER_SQL)) {
+            statement.setInt(1, courseId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new IllegalArgumentException(
+                            "Cannot build a question identifier: unknown course " + courseId
+                    );
+                }
+
+                String courseNumber = resultSet.getString("course_number");
+                if (!EncodedIdentifiers.isValidOrganisationNumber(courseNumber)) {
+                    throw new IllegalStateException(
+                            "Course " + courseId + " has no two digit course number,"
+                                    + " so no question identifier can be built"
+                    );
+                }
+
+                int nextQuestionNumber = resultSet.getInt("highest_question_number") + 1;
+                if (nextQuestionNumber > EncodedIdentifiers.MAX_QUESTION_NUMBER) {
+                    throw new IllegalStateException(
+                            "Course " + courseId + " already holds "
+                                    + EncodedIdentifiers.MAX_QUESTION_NUMBER
+                                    + " questions; the three digit question number"
+                                    + " is exhausted"
+                    );
+                }
+
+                return EncodedIdentifiers.formatQuestionCode(nextQuestionNumber, courseNumber);
+            }
+        }
+    }
+
+    private static boolean isQuestionCodeCollision(SQLException exception) {
+        String message = exception.getMessage();
+        return exception.getErrorCode() == MYSQL_DUPLICATE_KEY_ERROR
+                && "23000".equals(exception.getSQLState())
+                && message != null
+                && message.toLowerCase(Locale.ROOT).contains("uq_questions_question_code");
+    }
+
+    private int insertCurrentQuestion(Connection connection, int createdByUserId,
+                                      int courseId, QuestionPersistenceData data,
+                                      LocalDateTime createdAt, String questionCode)
+            throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 CREATE_QUESTION_SQL,
                 Statement.RETURN_GENERATED_KEYS
@@ -1101,6 +1206,7 @@ public class QuestionRepository {
             statement.setInt(14, 1);
             statement.setObject(15, createdAt);
             statement.setObject(16, createdAt);
+            statement.setString(17, questionCode);
 
             if (statement.executeUpdate() != 1) {
                 throw new SQLException("Question insert did not affect exactly one row");

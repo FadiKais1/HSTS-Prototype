@@ -8,7 +8,13 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 public class DatabaseInitializer {
 
@@ -31,6 +37,7 @@ public class DatabaseInitializer {
         migrateCourseBotSchema();
         migrateExamSchema();
         migrateExecutionSchema();
+        migrateEncodedIdentifiers();
     }
 
     private void createUsersTable() {
@@ -2516,6 +2523,334 @@ public class DatabaseInitializer {
         try (Statement statement = connection.createStatement()) {
             statement.execute(createSql);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Encoded business identifiers (requirements 33, 34, 38, 39)
+    //
+    // questions.question_code  = 3 digit question number + 2 digit course number
+    // exams.exam_code          = 2 digit exam number + 2 digit course number
+    //                            + 2 digit subject number
+    //
+    // subjects.subject_number and courses.course_number are supplied by the
+    // external school administration system (requirement 19). Existing rows that
+    // predate this migration are given numbers here so that the encoded
+    // identifiers can be derived; new schools should load the real numbers.
+    // ------------------------------------------------------------------
+
+    private void migrateEncodedIdentifiers() {
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            addColumnIfMissing(
+                    connection, "subjects", "subject_number",
+                    "CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL"
+            );
+            addColumnIfMissing(
+                    connection, "courses", "course_number",
+                    "CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL"
+            );
+            addColumnIfMissing(
+                    connection, "questions", "question_code",
+                    "CHAR(5) CHARACTER SET ascii COLLATE ascii_bin NULL"
+            );
+
+            backfillOrganisationNumbers(connection, "subjects", "subject_id", "subject_number");
+            backfillOrganisationNumbers(connection, "courses", "course_id", "course_number");
+            backfillQuestionCodes(connection);
+            backfillExamCodes(connection);
+
+            ensureEncodedIdentifierConstraints(connection);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to migrate encoded identifiers", e);
+        }
+    }
+
+    /**
+     * Gives every subject or course a two digit number, preserving any number
+     * already present and never reusing one.
+     */
+    private void backfillOrganisationNumbers(Connection connection, String tableName,
+                                             String idColumn, String numberColumn)
+            throws SQLException {
+        Set<String> taken = new HashSet<>();
+        List<Integer> unnumbered = new ArrayList<>();
+
+        String selectSql = "SELECT " + idColumn + ", " + numberColumn
+                + " FROM " + tableName + " ORDER BY " + idColumn;
+
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(selectSql)) {
+            while (resultSet.next()) {
+                String number = resultSet.getString(numberColumn);
+                if (number == null || number.isBlank()) {
+                    unnumbered.add(resultSet.getInt(idColumn));
+                } else {
+                    taken.add(number);
+                }
+            }
+        }
+
+        if (unnumbered.isEmpty()) {
+            return;
+        }
+
+        String updateSql = "UPDATE " + tableName + " SET " + numberColumn + " = ?"
+                + " WHERE " + idColumn + " = ?";
+
+        try (PreparedStatement statement = connection.prepareStatement(updateSql)) {
+            int candidate = 1;
+            for (int rowId : unnumbered) {
+                while (candidate <= 99 && taken.contains(twoDigits(candidate))) {
+                    candidate++;
+                }
+                if (candidate > 99) {
+                    throw new IllegalStateException(
+                            "Cannot assign a two digit " + numberColumn + ": "
+                                    + tableName + " already uses all 100 numbers"
+                    );
+                }
+
+                String assigned = twoDigits(candidate);
+                statement.setString(1, assigned);
+                statement.setInt(2, rowId);
+                statement.executeUpdate();
+                taken.add(assigned);
+                candidate++;
+            }
+        }
+    }
+
+    /**
+     * Assigns the five digit identifier to every question that does not already
+     * carry one, continuing the numbering already in use within each course.
+     */
+    private void backfillQuestionCodes(Connection connection) throws SQLException {
+        Map<Integer, Integer> highestNumberPerCourse = new HashMap<>();
+
+        String usedSql = """
+                SELECT course_id, question_code
+                FROM questions
+                WHERE question_code IS NOT NULL AND course_id IS NOT NULL
+                """;
+
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(usedSql)) {
+            while (resultSet.next()) {
+                int courseId = resultSet.getInt("course_id");
+                String code = resultSet.getString("question_code");
+                if (code == null || code.length() != 5) {
+                    continue;
+                }
+                try {
+                    int questionNumber = Integer.parseInt(code.substring(0, 3));
+                    highestNumberPerCourse.merge(courseId, questionNumber, Math::max);
+                } catch (NumberFormatException ignored) {
+                    // A malformed legacy value cannot reserve a number.
+                }
+            }
+        }
+
+        String pendingSql = """
+                SELECT q.question_id, q.course_id, c.course_number
+                FROM questions q
+                JOIN courses c ON c.course_id = q.course_id
+                WHERE q.question_code IS NULL
+                  AND c.course_number IS NOT NULL
+                ORDER BY q.course_id, q.question_id
+                """;
+
+        String updateSql = "UPDATE questions SET question_code = ? WHERE question_id = ?";
+
+        try (Statement selectStatement = connection.createStatement();
+             ResultSet resultSet = selectStatement.executeQuery(pendingSql);
+             PreparedStatement updateStatement = connection.prepareStatement(updateSql)) {
+            while (resultSet.next()) {
+                int questionId = resultSet.getInt("question_id");
+                int courseId = resultSet.getInt("course_id");
+                String courseNumber = resultSet.getString("course_number");
+
+                int questionNumber = highestNumberPerCourse.getOrDefault(courseId, 0) + 1;
+                if (questionNumber > 999) {
+                    throw new IllegalStateException(
+                            "Course " + courseId + " already holds 999 questions;"
+                                    + " the three digit question number is exhausted"
+                    );
+                }
+                highestNumberPerCourse.put(courseId, questionNumber);
+
+                updateStatement.setString(1, threeDigits(questionNumber) + courseNumber);
+                updateStatement.setInt(2, questionId);
+                updateStatement.executeUpdate();
+            }
+        }
+    }
+
+    /**
+     * Re-encodes any exam whose code predates requirements 38 and 39, keeping
+     * codes that already have the required six digit shape.
+     */
+    private void backfillExamCodes(Connection connection) throws SQLException {
+        Map<Integer, Integer> highestNumberPerCourse = new HashMap<>();
+        List<int[]> pending = new ArrayList<>();
+        Map<Integer, String[]> courseAndSubjectNumbers = new HashMap<>();
+
+        String selectSql = """
+                SELECT e.exam_id, e.exam_code, e.course_id,
+                       c.course_number, s.subject_number
+                FROM exams e
+                JOIN courses c ON c.course_id = e.course_id
+                JOIN subjects s ON s.subject_id = c.subject_id
+                ORDER BY e.course_id, e.exam_id
+                """;
+
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(selectSql)) {
+            while (resultSet.next()) {
+                int examId = resultSet.getInt("exam_id");
+                int courseId = resultSet.getInt("course_id");
+                String examCode = resultSet.getString("exam_code");
+                String courseNumber = resultSet.getString("course_number");
+                String subjectNumber = resultSet.getString("subject_number");
+
+                if (courseNumber == null || subjectNumber == null) {
+                    continue;
+                }
+                courseAndSubjectNumbers.put(courseId, new String[]{courseNumber, subjectNumber});
+
+                String expectedSuffix = courseNumber + subjectNumber;
+                boolean alreadyEncoded = examCode != null
+                        && examCode.length() == 6
+                        && examCode.chars().allMatch(Character::isDigit)
+                        && examCode.endsWith(expectedSuffix);
+
+                if (alreadyEncoded) {
+                    highestNumberPerCourse.merge(
+                            courseId,
+                            Integer.parseInt(examCode.substring(0, 2)),
+                            Math::max
+                    );
+                } else {
+                    pending.add(new int[]{examId, courseId});
+                }
+            }
+        }
+
+        if (pending.isEmpty()) {
+            return;
+        }
+
+        String updateSql = "UPDATE exams SET exam_code = ? WHERE exam_id = ?";
+
+        try (PreparedStatement statement = connection.prepareStatement(updateSql)) {
+            for (int[] row : pending) {
+                int examId = row[0];
+                int courseId = row[1];
+                String[] numbers = courseAndSubjectNumbers.get(courseId);
+
+                int examNumber = highestNumberPerCourse.getOrDefault(courseId, 0) + 1;
+                if (examNumber > 99) {
+                    throw new IllegalStateException(
+                            "Course " + courseId + " already holds 99 exams;"
+                                    + " the two digit exam number is exhausted"
+                    );
+                }
+                highestNumberPerCourse.put(courseId, examNumber);
+
+                statement.setString(1, twoDigits(examNumber) + numbers[0] + numbers[1]);
+                statement.setInt(2, examId);
+                statement.executeUpdate();
+            }
+        }
+    }
+
+    private void ensureEncodedIdentifierConstraints(Connection connection) throws SQLException {
+        if (!indexExists(connection, "subjects", "uq_subjects_subject_number")) {
+            executeIgnoringDuplicateKey(
+                    connection,
+                    "ALTER TABLE subjects ADD CONSTRAINT uq_subjects_subject_number"
+                            + " UNIQUE (subject_number)"
+            );
+        }
+        if (!indexExists(connection, "courses", "uq_courses_course_number")) {
+            executeIgnoringDuplicateKey(
+                    connection,
+                    "ALTER TABLE courses ADD CONSTRAINT uq_courses_course_number"
+                            + " UNIQUE (course_number)"
+            );
+        }
+        if (!indexExists(connection, "questions", "uq_questions_question_code")) {
+            executeIgnoringDuplicateKey(
+                    connection,
+                    "ALTER TABLE questions ADD CONSTRAINT uq_questions_question_code"
+                            + " UNIQUE (question_code)"
+            );
+        }
+
+        ensureConstraint(
+                connection, "subjects", "chk_subjects_subject_number",
+                "ALTER TABLE subjects ADD CONSTRAINT chk_subjects_subject_number"
+                        + " CHECK (subject_number IS NULL OR subject_number REGEXP '^[0-9]{2}$')"
+        );
+        ensureConstraint(
+                connection, "courses", "chk_courses_course_number",
+                "ALTER TABLE courses ADD CONSTRAINT chk_courses_course_number"
+                        + " CHECK (course_number IS NULL OR course_number REGEXP '^[0-9]{2}$')"
+        );
+        ensureConstraint(
+                connection, "questions", "chk_questions_question_code",
+                "ALTER TABLE questions ADD CONSTRAINT chk_questions_question_code"
+                        + " CHECK (question_code IS NULL OR question_code REGEXP '^[0-9]{5}$')"
+        );
+
+        tightenExamCodeConstraint(connection);
+    }
+
+    /**
+     * Narrows the exam code constraint from the historic alphanumeric shape to
+     * the six digit shape required by requirement 38. The constraint is only
+     * replaced once every stored code conforms, so a database that still holds
+     * un-encodable rows keeps working rather than failing to start.
+     */
+    private void tightenExamCodeConstraint(Connection connection) throws SQLException {
+        String countSql = "SELECT COUNT(*) FROM exams WHERE exam_code NOT REGEXP '^[0-9]{6}$'";
+
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(countSql)) {
+            if (resultSet.next() && resultSet.getInt(1) > 0) {
+                return;
+            }
+        }
+
+        try (Statement statement = connection.createStatement()) {
+            if (constraintExists(connection, "exams", "chk_exams_exam_code")) {
+                statement.execute("ALTER TABLE exams DROP CHECK chk_exams_exam_code");
+            }
+            statement.execute(
+                    "ALTER TABLE exams ADD CONSTRAINT chk_exams_exam_code"
+                            + " CHECK (exam_code REGEXP '^[0-9]{6}$')"
+            );
+        }
+    }
+
+    private void executeIgnoringDuplicateKey(Connection connection, String sql)
+            throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        } catch (SQLException e) {
+            if (!"42000".equals(e.getSQLState()) && !"23000".equals(e.getSQLState())) {
+                throw e;
+            }
+        }
+    }
+
+    private static String twoDigits(int value) {
+        return value < 10 ? "0" + value : Integer.toString(value);
+    }
+
+    private static String threeDigits(int value) {
+        if (value < 10) {
+            return "00" + value;
+        }
+        return value < 100 ? "0" + value : Integer.toString(value);
     }
 
     private boolean indexExists(Connection connection, String tableName,

@@ -83,7 +83,7 @@ public class ExamRepositoryEntityWriteTest {
                 .updateResults(1);
         Exam exam = unsavedDraft();
 
-        int examId = new ExamRepository(database, () -> "ABC123")
+        int examId = new ExamRepository(database, (connection, courseId) -> "010101")
                 .create(1002, exam);
 
         assertEquals(45, examId);
@@ -138,7 +138,7 @@ public class ExamRepositoryEntityWriteTest {
         collisionDatabase.plan(VERSION_INSERT).updateResults(1);
         collisionDatabase.plan(SELECTION_INSERT).updateResults(1, 1);
         collisionDatabase.plan(INITIAL_POINTER).updateResults(1);
-        ArrayDeque<String> codes = new ArrayDeque<>(List.of("AAAAAA", "BBBBBB"));
+        ArrayDeque<String> codes = new ArrayDeque<>(List.of("010101", "020101"));
 
         assertEquals(46, new ExamRepository(collisionDatabase, codes::removeFirst)
                 .create(1002, unsavedDraft()));
@@ -159,7 +159,7 @@ public class ExamRepositoryEntityWriteTest {
 
         IllegalStateException thrown = assertThrows(
                 IllegalStateException.class,
-                () -> new ExamRepository(failed, () -> "ABC123")
+                () -> new ExamRepository(failed, (connection, courseId) -> "010101")
                         .create(1002, unsavedDraft())
         );
         assertEquals("Failed to create exam", thrown.getMessage());

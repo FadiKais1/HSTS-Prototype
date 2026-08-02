@@ -3,9 +3,11 @@ package hsts.common;
 import java.io.Serializable;
 
 public class QuestionDTO implements Serializable {
-    private static final long serialVersionUID = 2L;
+    private static final long serialVersionUID = 3L;
 
     private int questionId;
+    /** Encoded five digit identifier: question number + course number (req 33, 34). */
+    private String questionCode;
     private int courseId;
     private int subjectId;
     private int versionNo;
@@ -69,6 +71,8 @@ public class QuestionDTO implements Serializable {
 
     public int getQuestionId() { return questionId; }
     public void setQuestionId(int questionId) { this.questionId = questionId; }
+    public String getQuestionCode() { return questionCode; }
+    public void setQuestionCode(String questionCode) { this.questionCode = questionCode; }
     public int getCourseId() { return courseId; }
     public int getSubjectId() { return subjectId; }
     public int getVersionNo() { return versionNo; }

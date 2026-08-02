@@ -18,19 +18,27 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS subjects (
     subject_id INT AUTO_INCREMENT PRIMARY KEY,
     subject_code VARCHAR(30) NOT NULL UNIQUE,
+    subject_number CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL,
     name VARCHAR(100) NOT NULL,
-    description TEXT NULL
+    description TEXT NULL,
+    CONSTRAINT uq_subjects_subject_number UNIQUE (subject_number),
+    CONSTRAINT chk_subjects_subject_number
+        CHECK (subject_number IS NULL OR subject_number REGEXP '^[0-9]{2}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS courses (
     course_id INT AUTO_INCREMENT PRIMARY KEY,
     subject_id INT NOT NULL,
     course_code VARCHAR(30) NOT NULL,
+    course_number CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NULL,
     name VARCHAR(100) NOT NULL,
     grade_level VARCHAR(30) NOT NULL,
     school_year VARCHAR(20) NOT NULL,
     CONSTRAINT uq_courses_subject_code_year
         UNIQUE (subject_id, course_code, school_year),
+    CONSTRAINT uq_courses_course_number UNIQUE (course_number),
+    CONSTRAINT chk_courses_course_number
+        CHECK (course_number IS NULL OR course_number REGEXP '^[0-9]{2}$'),
     CONSTRAINT fk_courses_subject
         FOREIGN KEY (subject_id) REFERENCES subjects (subject_id)
 ) ENGINE=InnoDB;
@@ -64,8 +72,12 @@ CREATE TABLE IF NOT EXISTS questions (
     current_version_no INT NOT NULL DEFAULT 1,
     created_at DATETIME(6) NULL,
     updated_at DATETIME(6) NULL,
+    question_code CHAR(5) CHARACTER SET ascii COLLATE ascii_bin NULL,
     KEY idx_questions_course_id (course_id),
     KEY idx_questions_created_by_user_id (created_by_user_id),
+    CONSTRAINT uq_questions_question_code UNIQUE (question_code),
+    CONSTRAINT chk_questions_question_code
+        CHECK (question_code IS NULL OR question_code REGEXP '^[0-9]{5}$'),
     CONSTRAINT fk_questions_course
         FOREIGN KEY (course_id) REFERENCES courses (course_id),
     CONSTRAINT fk_questions_creator
@@ -306,7 +318,7 @@ CREATE TABLE IF NOT EXISTS exams (
     CONSTRAINT fk_exams_creator
         FOREIGN KEY (created_by_user_id) REFERENCES users (user_id),
     CONSTRAINT chk_exams_exam_code
-        CHECK (exam_code REGEXP '^[A-Z0-9]{6}$'),
+        CHECK (exam_code REGEXP '^[0-9]{6}$'),
     CONSTRAINT chk_exams_current_version
         CHECK (current_version_no IS NULL OR current_version_no > 0)
 ) ENGINE=InnoDB;
@@ -617,18 +629,28 @@ INSERT IGNORE INTO users (
 (1003, 'Development Coordinator', 'coordinator@hsts.local', 'pbkdf2-sha256$210000$z2td5VTlfecXVbzKsSNoNg==$6IRrphVP1zQ7OPFzc75VefR6BoE5DuS+7sAkuketFts=', 'COORDINATOR', 'ACTIVE'),
 (1004, 'Development Principal', 'principal@hsts.local', 'pbkdf2-sha256$210000$A9ZKGvD4BYtl7WgvJLOp7Q==$AN9mwp3khV/y69zCc8C539V4DVrtqEcdJ3TlolRQW10=', 'PRINCIPAL', 'ACTIVE');
 
-INSERT IGNORE INTO subjects (subject_id, subject_code, name, description)
-VALUES (1, 'LEGACY', 'Legacy Prototype', NULL);
+-- Subject and course numbers are supplied by the external school
+-- administration system (requirement 19). The legacy prototype rows take the
+-- reserved high numbers so that the demo data can own 01 upwards.
+INSERT IGNORE INTO subjects (subject_id, subject_code, subject_number, name, description)
+VALUES (1, 'LEGACY', '99', 'Legacy Prototype', NULL);
 
 INSERT IGNORE INTO courses (
     course_id,
     subject_id,
     course_code,
+    course_number,
     name,
     grade_level,
     school_year
 )
-VALUES (1, 1, 'LEGACY-101', 'Legacy Prototype Course', 'General', '2026');
+VALUES (1, 1, 'LEGACY-101', '99', 'Legacy Prototype Course', 'General', '2026');
+
+UPDATE subjects SET subject_number = '99'
+WHERE subject_id = 1 AND subject_number IS NULL;
+
+UPDATE courses SET course_number = '99'
+WHERE course_id = 1 AND course_number IS NULL;
 
 INSERT INTO question_bank_migration_guard (validation_result)
 SELECT CASE WHEN

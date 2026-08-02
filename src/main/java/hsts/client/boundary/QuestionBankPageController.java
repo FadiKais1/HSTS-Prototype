@@ -90,7 +90,7 @@ public class QuestionBankPageController {
     @FXML private Button clearFiltersButton;
 
     @FXML private TableView<QuestionDTO> tableView;
-    @FXML private TableColumn<QuestionDTO, Number> idColumn;
+    @FXML private TableColumn<QuestionDTO, String> idColumn;
     @FXML private TableColumn<QuestionDTO, String> contentColumn;
     @FXML private TableColumn<QuestionDTO, String> courseColumn;
     @FXML private TableColumn<QuestionDTO, String> subjectColumn;
@@ -221,7 +221,7 @@ public class QuestionBankPageController {
         tableView.setItems(questions);
         tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         idColumn.setCellValueFactory(data ->
-                new SimpleIntegerProperty(data.getValue().getQuestionId()));
+                new SimpleStringProperty(questionCode(data.getValue())));
         contentColumn.setCellValueFactory(data ->
                 new SimpleStringProperty(safe(data.getValue().getContent())));
         courseColumn.setCellValueFactory(data ->
@@ -243,7 +243,7 @@ public class QuestionBankPageController {
                         clearEditor();
                     } else {
                         showSelectedQuestion(selectedQuestion);
-                        setStatus("Question #" + selectedQuestion.getQuestionId() + " selected.");
+                        setStatus("Question " + questionCode(selectedQuestion) + " selected.");
                     }
                     updateActionState();
                 }
@@ -435,7 +435,7 @@ public class QuestionBankPageController {
                     statusFilterComboBox.setValue(ALL);
                     loadQuestions(
                             createdQuestion.getQuestionId(),
-                            "Question #" + createdQuestion.getQuestionId() + " created successfully."
+                            "Question " + questionCode(createdQuestion) + " created successfully."
                     );
                 })
         );
@@ -733,7 +733,7 @@ public class QuestionBankPageController {
         confirmation.setHeaderText("Confirm question " + action);
         confirmation.setContentText(
                 "Do you want to " + action + " question #"
-                        + selectedQuestion.getQuestionId() + "?"
+                        + questionCode(selectedQuestion) + "?"
         );
         if (confirmation.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
             return;
@@ -1064,6 +1064,21 @@ public class QuestionBankPageController {
 
     private String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * The five digit identifier required by requirements 33 and 34. Legacy rows
+     * that predate the encoding fall back to the surrogate key so the table
+     * still shows something recognisable.
+     */
+    private String questionCode(QuestionDTO question) {
+        if (question == null) {
+            return "";
+        }
+        String code = question.getQuestionCode();
+        return code == null || code.isBlank()
+                ? "#" + question.getQuestionId()
+                : code;
     }
 
     private String defaultIfBlank(String value, String defaultValue) {
