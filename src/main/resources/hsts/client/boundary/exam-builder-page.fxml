@@ -38,6 +38,8 @@
                 <Region HBox.hgrow="ALWAYS"/>
                 <Button fx:id="newButton" text="New" onAction="#handleNewExam"/>
                 <Button fx:id="openButton" text="Open / Edit" onAction="#handleOpenExam"/>
+                <Button fx:id="saveAsNewExamButton" text="Save as New Exam"
+                        onAction="#handleSaveAsNewExam"/>
                 <Button fx:id="saveButton" text="Save Draft" onAction="#handleSaveDraft"
                         style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold;"/>
                 <Button fx:id="submitButton" text="Submit for Approval"

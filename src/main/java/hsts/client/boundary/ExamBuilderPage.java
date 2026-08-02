@@ -88,6 +88,7 @@ public class ExamBuilderPage {
     private boolean questionsLoading;
     private boolean examLoading;
     private boolean savePending;
+    private boolean saveAsNewPending;
     private boolean submitPending;
     private boolean generationPending;
     private long courseRequestGeneration;
@@ -158,6 +159,7 @@ public class ExamBuilderPage {
     @FXML private Label statusLabel;
     @FXML private Button newButton;
     @FXML private Button openButton;
+    @FXML private Button saveAsNewExamButton;
     @FXML private Button saveButton;
     @FXML private Button submitButton;
     @FXML private Button refreshButton;
@@ -633,6 +635,83 @@ public class ExamBuilderPage {
         selectedQuestionItems.add(destination, item);
         renumberSelectedQuestions();
         selectedQuestionsTable.getSelectionModel().select(destination);
+    }
+
+    /**
+     * Saves the editor contents as a brand new exam, leaving the loaded one
+     * exactly as it is.
+     *
+     * <p>Saving a draft in place adds a version under the same exam identifier.
+     * This instead creates an independent exam with its own six digit
+     * identifier, starting as a DRAFT, and copies the title, duration, notes,
+     * instructions and every question selection with its score.</p>
+     *
+     * <p>An approved exam is read-only, so this is how a teacher branches from
+     * one: the copy arrives as a DRAFT that can be edited freely while the
+     * original keeps its approval and stays available for scheduling.</p>
+     */
+    @FXML
+    private void handleSaveAsNewExam() {
+        if (saveAsNewPending || savePending || isAutomaticMode() || loadedExam == null) {
+            return;
+        }
+
+        CourseSummaryDTO course = findCourse(loadedExam.getCourseId());
+        if (course == null) {
+            setStatus("The course for this exam is not available.");
+            return;
+        }
+        if (selectedQuestionItems.isEmpty()) {
+            setStatus("An exam needs at least one question.");
+            return;
+        }
+
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.setTitle("Save as a new exam?");
+        confirmation.setHeaderText("Create a new exam from these contents?");
+        confirmation.setContentText(
+                "Exam " + loadedExam.getExamCode() + " is left unchanged, keeping its "
+                        + loadedExam.getStatus() + " status. A new exam is created as a "
+                        + "DRAFT with its own identifier and the same questions, which "
+                        + "you can then edit and submit for approval."
+        );
+        if (confirmation.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
+            return;
+        }
+
+        CreateExamPayload payload = new CreateExamPayload(
+                course.getCourseId(),
+                titleField.getText(),
+                Integer.parseInt(durationField.getText().trim()),
+                teacherNotesArea.getText(),
+                studentInstructionsArea.getText(),
+                buildSelectionPayloads(selectedQuestionItems)
+        );
+
+        String originalCode = loadedExam.getExamCode();
+        saveAsNewPending = true;
+        updateActionState();
+        setStatus("Creating a new exam from these contents...");
+
+        examClientController.createExam(payload).whenComplete((created, error) ->
+                Platform.runLater(() -> {
+                    if (closed) {
+                        return;
+                    }
+                    saveAsNewPending = false;
+                    if (error != null) {
+                        setStatus(cleanError(error));
+                        updateActionState();
+                        return;
+                    }
+                    loadedExam = created;
+                    loadExamSummaries(
+                            created.getExamId(),
+                            "New exam " + created.getExamCode() + " created as a DRAFT. "
+                                    + originalCode + " is unchanged."
+                    );
+                })
+        );
     }
 
     @FXML
@@ -1358,6 +1437,11 @@ public class ExamBuilderPage {
         if (openButton != null) openButton.setDisable(!configured || busy || examLoading
                 || examTable.getSelectionModel().getSelectedItem() == null);
         if (saveButton != null) saveButton.setDisable(!editable);
+        if (saveAsNewExamButton != null) {
+            saveAsNewExamButton.setDisable(loadedExam == null || saveAsNewPending
+                    || savePending || isAutomaticMode()
+                    || selectedQuestionItems.isEmpty());
+        }
         if (submitButton != null) submitButton.setDisable(!configured || submitPending
                 || loadedExam == null || loadedExam.getStatus() != ExamStatus.DRAFT);
         if (refreshButton != null) refreshButton.setDisable(!configured
