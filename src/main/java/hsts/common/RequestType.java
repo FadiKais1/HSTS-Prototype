@@ -13,7 +13,6 @@ public enum RequestType implements Serializable {
     CREATE_QUESTION,
     ACTIVATE_QUESTION,
     DEACTIVATE_QUESTION,
-    DELETE_QUESTION,
     GET_QUESTION_HISTORY,
     LIST_MY_EXAMS,
     GET_MY_EXAM,
@@ -70,5 +69,8 @@ public enum RequestType implements Serializable {
     LIST_ALL_EXECUTIONS,
     LIST_EXECUTION_RESULTS_FOR_PRINCIPAL,
     GET_SUBMISSION_RESULT_FOR_PRINCIPAL,
-    GET_MY_PUBLISHED_EXAM_REVIEW
+    GET_MY_PUBLISHED_EXAM_REVIEW,
+
+    /** Hides a question from the bank without affecting exams that use it. */
+    DELETE_QUESTION
 }
