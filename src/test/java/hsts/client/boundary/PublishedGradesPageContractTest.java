@@ -171,10 +171,14 @@ public class PublishedGradesPageContractTest {
         assertTrue(content.contains("publishedgradedto"));
         assertTrue(content.contains("publishedexamreviewdto"));
         assertTrue(content.contains("publishedexamquestionreviewdto"));
+        // The grade-adjustment reason is deliberately student-visible: the teacher
+        // writes it for the student when changing a grade by hand (requirement 39).
+        // The manager-private grading details below remain forbidden.
+        assertTrue(content.contains("manualchangereason"));
         for (String forbidden : List.of(
                 "executionsubmissionsummarydto", "submissionreviewdto",
                 "submissionanswerreviewdto", "automaticscore",
-                "adjustmentreason", "revieweruserid", "publisheruserid",
+                "revieweruserid", "publisheruserid",
                 "studentanswer", "examsubmission", "hsts.server.entity",
                 "hsts.server.repository", "hsts.server.control"
         )) {

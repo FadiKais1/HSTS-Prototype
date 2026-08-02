@@ -198,9 +198,14 @@ public class ExamSubmissionRepositoryPublishedReviewTest {
         assertTrue(value.contains("SUBMISSION.STATUS = 'PUBLISHED'"));
         assertTrue(value.contains("VERSION.VERSION_NO = EXECUTION.EXAM_VERSION_NO"));
         assertFalse(value.contains("CURRENT_VERSION_NO"));
+        // MANUAL_CHANGE_REASON is deliberately allowed: requirement 39 makes the
+        // teacher's justification mandatory when a grade is changed by hand, and
+        // it is written for the student, who reads it with the published result.
+        // Everything else about the internal grading process stays hidden.
+        assertTrue(value.contains("MANUAL_CHANGE_REASON"));
         for (String forbidden : List.of(
                 "PASSWORD_HASH", "IDENTITY_NUMBER_HASH", "AUTOMATIC_SCORE",
-                "MANUAL_CHANGE_REASON", "REVIEWED_BY_USER_ID", "PUBLISHED_BY_USER_ID"
+                "REVIEWED_BY_USER_ID", "PUBLISHED_BY_USER_ID"
         )) assertFalse(value.contains(forbidden));
     }
 
