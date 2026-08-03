@@ -592,6 +592,20 @@ public class ExamExecutionService {
         return mapSafeAttempt(safeAttempt, persistedSubmission);
     }
 
+    /**
+     * Advances stored execution statuses to match the clock.
+     *
+     * <p>Runs on the same periodic cycle as automatic submission. Without it the
+     * status column stays SCHEDULED after an exam has opened, so screens that
+     * derive the status disagree with anything that reads the column.</p>
+     *
+     * @return the number of executions whose stored status changed
+     */
+    public int refreshExecutionStatuses() {
+        requireDependencies();
+        return examExecutionRepository.refreshStatuses(currentTime());
+    }
+
     public int autoSubmitExpired() {
         requireDependencies();
         requireFinalizationDependencies();

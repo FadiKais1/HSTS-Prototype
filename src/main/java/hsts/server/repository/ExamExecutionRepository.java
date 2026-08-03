@@ -136,6 +136,22 @@ public class ExamExecutionRepository {
              AND enrollment.course_id = exam.course_id
             """;
 
+    // updated_at maintains itself through ON UPDATE CURRENT_TIMESTAMP.
+    private static final String OPEN_DUE_SQL = """
+            UPDATE exam_executions
+            SET status = 'OPEN'
+            WHERE status = 'SCHEDULED'
+              AND opening_time <= ?
+              AND closing_time > ?
+            """;
+
+    private static final String CLOSE_DUE_SQL = """
+            UPDATE exam_executions
+            SET status = 'CLOSED', closed_at = COALESCE(closed_at, ?)
+            WHERE status IN ('SCHEDULED', 'OPEN')
+              AND closing_time <= ?
+            """;
+
     private static final String STUDENT_EXECUTION_ENTITY_SQL =
             STUDENT_EXECUTION_ENTITY_SELECT + """
             WHERE execution.execution_code = ?
@@ -388,6 +404,42 @@ public class ExamExecutionRepository {
             throw new IllegalStateException(
                     "Failed to load manager exam execution entity",
                     exception
+            );
+        }
+    }
+
+    /**
+     * Advances stored execution statuses to match the clock.
+     *
+     * <p>An execution moves from SCHEDULED to OPEN and from OPEN to CLOSED
+     * purely because time passed, so nothing in the request path ever wrote
+     * those transitions. Screens that derived the status showed the truth while
+     * anything reading the column still saw SCHEDULED long after an exam had
+     * opened. This makes the stored column authoritative so every reader agrees.</p>
+     *
+     * @return the number of executions whose stored status changed
+     */
+    public int refreshStatuses(LocalDateTime currentTime) {
+        if (currentTime == null) {
+            throw new IllegalArgumentException("Current time is required");
+        }
+
+        int changed = 0;
+        try (Connection connection = databaseController.getConnection()) {
+            try (PreparedStatement statement = connection.prepareStatement(OPEN_DUE_SQL)) {
+                statement.setObject(1, currentTime);
+                statement.setObject(2, currentTime);
+                changed += statement.executeUpdate();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(CLOSE_DUE_SQL)) {
+                statement.setObject(1, currentTime);
+                statement.setObject(2, currentTime);
+                changed += statement.executeUpdate();
+            }
+            return changed;
+        } catch (SQLException exception) {
+            throw new IllegalStateException(
+                    "Failed to refresh exam execution statuses", exception
             );
         }
     }

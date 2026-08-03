@@ -35,5 +35,12 @@ public enum ServerEventType {
      * An exam was created, generated or edited, so any open exam list is stale.
      * Approval transitions use {@link #EXAM_APPROVAL_CHANGED} instead.
      */
-    EXAM_CHANGED
+    EXAM_CHANGED,
+
+    /**
+     * One or more executions crossed their opening or closing time, so their
+     * stored status changed. Nobody acts to cause this; the server publishes it
+     * after advancing the statuses on its periodic cycle.
+     */
+    EXAM_SCHEDULE_CHANGED
 }

@@ -1326,6 +1326,15 @@ public class Server extends AbstractServer {
             return;
         }
         try {
+            // Advance stored statuses first, so an execution that has just opened
+            // is OPEN everywhere before anything else in this cycle reads it.
+            if (examExecutionService.refreshExecutionStatuses() > 0) {
+                publishEvent(new ServerEvent(ServerEventType.EXAM_SCHEDULE_CHANGED, 0));
+            }
+        } catch (RuntimeException exception) {
+            System.out.println("Exam execution status refresh failed");
+        }
+        try {
             examExecutionService.autoSubmitExpired();
         } catch (RuntimeException exception) {
             System.out.println("Automatic exam submission cycle failed");

@@ -665,7 +665,8 @@ public class ExamSchedulingPage {
         ServerEventType type = event.getType();
         if (type != ServerEventType.ATTEMPT_STARTED
                 && type != ServerEventType.SUBMISSION_RECEIVED
-                && type != ServerEventType.EXAM_TIME_EXTENDED) {
+                && type != ServerEventType.EXAM_TIME_EXTENDED
+                && type != ServerEventType.EXAM_SCHEDULE_CHANGED) {
             return;
         }
         Platform.runLater(() -> {
