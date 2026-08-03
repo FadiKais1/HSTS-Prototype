@@ -20,16 +20,34 @@ public class ExamAttemptDTO implements Serializable {
     private final LocalDateTime deadline;
     private final int allocatedDurationMinutes;
     private final int extraMinutes;
+    /** Why the teacher changed this student's time (SUC-9). Null when unchanged. */
+    private final String extensionReason;
     private final long remainingSeconds;
     private final SubmissionStatus status;
     private final List<StudentExamQuestionDTO> questions;
     private final List<StudentAnswerDTO> answers;
+
+    /** Retained so existing callers and the Assignment 2 contract stay valid. */
+    public ExamAttemptDTO(int submissionId, int executionId,
+                          String executionCode, int examId, int examVersionNo,
+                          String examTitle, String studentInstructions,
+                          LocalDateTime startedAt, LocalDateTime deadline,
+                          int allocatedDurationMinutes, int extraMinutes,
+                          long remainingSeconds, SubmissionStatus status,
+                          List<StudentExamQuestionDTO> questions,
+                          List<StudentAnswerDTO> answers) {
+        this(submissionId, executionId, executionCode, examId, examVersionNo,
+                examTitle, studentInstructions, startedAt, deadline,
+                allocatedDurationMinutes, extraMinutes, null, remainingSeconds,
+                status, questions, answers);
+    }
 
     public ExamAttemptDTO(int submissionId, int executionId,
                           String executionCode, int examId, int examVersionNo,
                           String examTitle, String studentInstructions,
                           LocalDateTime startedAt, LocalDateTime deadline,
                           int allocatedDurationMinutes, int extraMinutes,
+                          String extensionReason,
                           long remainingSeconds, SubmissionStatus status,
                           List<StudentExamQuestionDTO> questions,
                           List<StudentAnswerDTO> answers) {
@@ -44,6 +62,7 @@ public class ExamAttemptDTO implements Serializable {
         this.deadline = deadline;
         this.allocatedDurationMinutes = allocatedDurationMinutes;
         this.extraMinutes = extraMinutes;
+        this.extensionReason = extensionReason;
         this.remainingSeconds = remainingSeconds;
         this.status = status;
         this.questions = List.copyOf(questions);
@@ -60,6 +79,7 @@ public class ExamAttemptDTO implements Serializable {
     public LocalDateTime getStartedAt() { return startedAt; }
     public LocalDateTime getDeadline() { return deadline; }
     public int getAllocatedDurationMinutes() { return allocatedDurationMinutes; }
+    public String getExtensionReason() { return extensionReason; }
     public int getExtraMinutes() { return extraMinutes; }
     public long getRemainingSeconds() { return remainingSeconds; }
     public SubmissionStatus getStatus() { return status; }

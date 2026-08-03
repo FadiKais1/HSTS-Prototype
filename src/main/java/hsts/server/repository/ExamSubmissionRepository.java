@@ -127,6 +127,7 @@ public class ExamSubmissionRepository {
                    submission.status,
                    submission.allocated_duration_minutes,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    execution.execution_id,
                    execution.execution_code,
                    execution.exam_id,
@@ -159,6 +160,7 @@ public class ExamSubmissionRepository {
                    submission.status,
                    submission.allocated_duration_minutes,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    execution.execution_id,
                    execution.execution_code,
                    execution.exam_id,
@@ -191,6 +193,7 @@ public class ExamSubmissionRepository {
                    submission.status,
                    submission.allocated_duration_minutes,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    execution.execution_id,
                    execution.execution_code,
                    execution.exam_id,
@@ -320,6 +323,7 @@ public class ExamSubmissionRepository {
                    submission.status,
                    submission.allocated_duration_minutes,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    execution.opening_time AS execution_opening_time,
                    execution.closing_time AS execution_closing_time,
                    execution.status AS execution_status
@@ -421,6 +425,7 @@ public class ExamSubmissionRepository {
                    submission.status,
                    submission.allocated_duration_minutes,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    submission.extension_reason,
                    submission.actual_duration_minutes,
                    submission.automatic_score,
@@ -659,6 +664,7 @@ public class ExamSubmissionRepository {
                        submission.allocated_duration_minutes + submission.extra_minutes,
                        submission.started_at) AS authoritative_deadline,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    submission.submitted_at,
                    submission.reviewed_at,
                    submission.published_at
@@ -721,6 +727,7 @@ public class ExamSubmissionRepository {
                        submission.allocated_duration_minutes + submission.extra_minutes,
                        submission.started_at) AS authoritative_deadline,
                    submission.extra_minutes,
+                   submission.extension_reason,
                    submission.submitted_at,
                    submission.reviewed_at, submission.published_at
             FROM exam_submissions submission
@@ -1699,7 +1706,9 @@ public class ExamSubmissionRepository {
                         "Exam time extended",
                         target.examTitle + " (execution " + target.executionCode
                                 + ") received " + addedMinutes
-                                + " additional minutes.",
+                                + " additional minutes."
+                                + (reason == null || reason.isBlank()
+                                        ? "" : " Reason: " + reason.trim()),
                         target.examId, executionId, null,
                         "execution-extension:" + extensionId + ":" + recipientId,
                         currentTime
@@ -1844,7 +1853,8 @@ public class ExamSubmissionRepository {
                         resultSet.getObject("started_at", LocalDateTime.class),
                         SubmissionStatus.valueOf(resultSet.getString("status")),
                         resultSet.getInt("allocated_duration_minutes"),
-                        resultSet.getInt("extra_minutes")
+                        resultSet.getInt("extra_minutes"),
+                        resultSet.getString("extension_reason")
                 ));
             }
         }
@@ -1977,7 +1987,8 @@ public class ExamSubmissionRepository {
                 resultSet.getObject("started_at", LocalDateTime.class),
                 SubmissionStatus.valueOf(resultSet.getString("status")),
                 resultSet.getInt("allocated_duration_minutes"),
-                resultSet.getInt("extra_minutes")
+                resultSet.getInt("extra_minutes"),
+                resultSet.getString("extension_reason")
         );
     }
 
@@ -2009,6 +2020,7 @@ public class ExamSubmissionRepository {
                 deadline,
                 submission.allocatedDurationMinutes,
                 submission.extraMinutes,
+                submission.extensionReason,
                 remainingSeconds,
                 submission.status,
                 questions,
@@ -3615,11 +3627,22 @@ public class ExamSubmissionRepository {
         private final SubmissionStatus status;
         private final int allocatedDurationMinutes;
         private final int extraMinutes;
+        private final String extensionReason;
 
         private SubmissionRecord(int submissionId, LockedExecution execution,
                                  int studentUserId,
                                  LocalDateTime startedAt, SubmissionStatus status,
                                  int allocatedDurationMinutes, int extraMinutes) {
+            this(submissionId, execution, studentUserId, startedAt, status,
+                    allocatedDurationMinutes, extraMinutes, null);
+        }
+
+        private SubmissionRecord(int submissionId, LockedExecution execution,
+                                 int studentUserId,
+                                 LocalDateTime startedAt, SubmissionStatus status,
+                                 int allocatedDurationMinutes, int extraMinutes,
+                                 String extensionReason) {
+            this.extensionReason = extensionReason;
             this.submissionId = submissionId;
             this.execution = execution;
             this.studentUserId = studentUserId;

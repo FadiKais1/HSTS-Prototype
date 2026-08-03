@@ -81,6 +81,10 @@ public class ExamExecutionPage {
     private String validatedExecutionCode;
     private String validationRequestCode;
     private int submissionId;
+
+    /** The teacher's stated reason for changing this student's time (SUC-9). */
+    private String extensionReason;
+    private int extraMinutes;
     private LocalDateTime deadline;
     private SubmissionStatus submissionStatus;
     private List<StudentExamQuestionDTO> questions = List.of();
@@ -489,8 +493,9 @@ public class ExamExecutionPage {
             if (submissionStatus != SubmissionStatus.IN_PROGRESS) {
                 return;
             }
-            setFeedback("Your teacher updated the exam time. The remaining time was refreshed.");
+            // Refresh first so the reason read below is the freshly stored one.
             refreshAttempt(false);
+            setFeedback(extensionNotice());
         });
     }
 
@@ -583,6 +588,38 @@ public class ExamExecutionPage {
         }));
     }
 
+    /**
+     * The wording shown when a teacher changes this student's time.
+     *
+     * <p>The reason travels on the student's own attempt rather than in the
+     * pushed event, so a student can only ever read the reason recorded against
+     * her own submission. An extension granted to one student is never
+     * described to another.</p>
+     */
+    private String extensionNotice() {
+        StringBuilder notice = new StringBuilder("Your teacher updated the exam time");
+        if (extraMinutes > 0) {
+            notice.append(" by ").append(extraMinutes).append(" minute")
+                    .append(extraMinutes == 1 ? "" : "s");
+        }
+        notice.append(". The remaining time was refreshed.");
+        if (extensionReason != null && !extensionReason.isBlank()) {
+            notice.append("  Reason: ").append(extensionReason.trim());
+        }
+        return notice.toString();
+    }
+
+    /** A short summary appended to the attempt header while the time stands changed. */
+    private String extensionSuffix() {
+        if (extraMinutes <= 0) {
+            return "";
+        }
+        String suffix = "  |  +" + extraMinutes + " min";
+        return extensionReason == null || extensionReason.isBlank()
+                ? suffix
+                : suffix + " (" + extensionReason.trim() + ")";
+    }
+
     private boolean applyAttempt(ExamAttemptDTO attempt) {
         Objects.requireNonNull(attempt, "attempt");
         stopCountdown();
@@ -604,6 +641,8 @@ public class ExamExecutionPage {
         submissionId = attempt.getSubmissionId();
         deadline = attempt.getDeadline();
         submissionStatus = attempt.getStatus();
+        extensionReason = attempt.getExtensionReason();
+        extraMinutes = attempt.getExtraMinutes();
         questions = loadedQuestions;
         answerState.reset(restoreSelections(attempt.getAnswers()));
         currentQuestionIndex = questions.isEmpty() ? -1 : 0;
@@ -615,6 +654,7 @@ public class ExamExecutionPage {
                 "Execution " + safe(attempt.getExecutionCode())
                         + "  |  Version " + attempt.getExamVersionNo()
         );
+        attemptDetailsLabel.setText(attemptDetailsLabel.getText() + extensionSuffix());
         instructionsLabel.setText(safe(attempt.getStudentInstructions()));
         submissionStatusLabel.setText(statusText(submissionStatus));
         showAttemptPane(true);
