@@ -332,6 +332,9 @@ public class CourseBotService {
         if (existing.getStatus() != BotSourceStatus.ACTIVE) {
             throw new IllegalStateException(SOURCE_CHANGED_ELSEWHERE);
         }
+        if (payload.getExpectedVersionNo() <= 0) {
+            throw new IllegalArgumentException("Bot source version is required");
+        }
 
         ExtractedBotSource extracted = sourceExtractor.extractFreeText(
                 payload.getDisplayName(), payload.getText()
@@ -342,7 +345,7 @@ public class CourseBotService {
                     authenticatedUserId,
                     payload.getBotId(),
                     payload.getSourceId(),
-                    existing.getCurrentVersionNo(),
+                    payload.getExpectedVersionNo(),
                     extracted.getDisplayName(),
                     extracted.getExtractedText(),
                     extracted.getContentSha256()
@@ -709,12 +712,14 @@ public class CourseBotService {
     }
 
     private static BotSourceDTO toSourceDto(BotSource source) {
-        return new BotSourceDTO(
+        BotSourceDTO dto = new BotSourceDTO(
                 source.getSourceId(), source.getBotId(), source.getSourceType(),
                 source.getDisplayName(), source.getQuestionId(),
                 source.getQuestionVersionNo(), source.getStatus(),
                 source.getCreatedAt(), source.getRemovedAt()
         );
+        dto.setCurrentVersionNo(source.getCurrentVersionNo());
+        return dto;
     }
 
     private static BotMessageDTO toMessageDto(BotMessage message) {

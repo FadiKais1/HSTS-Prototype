@@ -98,6 +98,12 @@ public final class CourseBotManagementPage {
 
     /** The source being revised, or null when the editor creates a new one. */
     private Integer editingSourceId;
+
+    /**
+     * The version loaded into the editor. Sent with the save so a colleague's
+     * change is detected however long ago it happened.
+     */
+    private int editingVersionNo;
     @FXML private Button addTextButton;
     @FXML private Button uploadButton;
     @FXML private ListView<QuestionDTO> questionList;
@@ -399,6 +405,7 @@ public final class CourseBotManagementPage {
                 return;
             }
             editingSourceId = source.getSourceId();
+            editingVersionNo = source.getCurrentVersionNo();
             textDisplayNameField.setText(source.getDisplayName());
             sourceTextArea.setText(text);
             showEditingState(source.getDisplayName());
@@ -425,15 +432,75 @@ public final class CourseBotManagementPage {
         if (name == null || name.isBlank()) { showStatus("Display name is required"); return; }
         if (text == null || text.isBlank()) { showStatus("Source text is required"); return; }
 
-        mutate(botController.editSource(new EditBotSourcePayload(
-                        bot.getBotId(), editingSourceId, name, text)),
-                "Source updated", false, this::clearEditingState);
+        int sourceId = editingSourceId;
+        setMutationActive(true);
+        botController.editSource(new EditBotSourcePayload(
+                bot.getBotId(), sourceId, name, text, editingVersionNo)
+        ).whenComplete((updated, failure) -> Platform.runLater(() -> {
+            if (disposed) return;
+            setMutationActive(false);
+            if (failure != null) {
+                handleEditFailure(failure, bot.getBotId(), sourceId);
+                return;
+            }
+            clearEditingState();
+            showStatus("Source updated");
+            selectBot();
+            refreshBotSummaries();
+        }));
     }
 
     /**
      * Keeps the source being edited exactly as it is and adds the revised text
      * as an independent new source, so both stand in the bot's material.
      */
+    /**
+     * Recovers from a colleague having saved the same source first.
+     *
+     * <p>The first attempt is refused so their work is not overwritten by
+     * accident. Her typed text is kept and the source list reloaded, so pressing
+     * Save changes again now replaces their version deliberately, Save as new
+     * source keeps both, and Cancel edit discards hers. The overwrite becomes a
+     * decision rather than a mistake.</p>
+     */
+    private void handleEditFailure(Throwable failure, int botId, int sourceId) {
+        String reason = message(failure, "Request failed");
+        if (!reason.contains("changed by another teacher")) {
+            showStatus(reason);
+            return;
+        }
+
+        botController.getBotSources(botId).whenComplete((sources, listFailure) ->
+                Platform.runLater(() -> {
+                    if (disposed) return;
+                    if (listFailure != null || sources == null) {
+                        showStatus(reason);
+                        return;
+                    }
+                    sourceList.setItems(FXCollections.observableArrayList(sources));
+
+                    boolean stillPresent = sources.stream().anyMatch(candidate ->
+                            candidate.getSourceId() == sourceId
+                                    && candidate.getStatus() == BotSourceStatus.ACTIVE);
+                    if (!stillPresent) {
+                        showStatus("Another teacher removed this source. Your text is "
+                                + "unchanged; use Save as new source to keep it.");
+                        editingSourceId = null;
+                        return;
+                    }
+
+                    sources.stream()
+                            .filter(candidate -> candidate.getSourceId() == sourceId)
+                            .findFirst()
+                            .ifPresent(candidate ->
+                                    editingVersionNo = candidate.getCurrentVersionNo());
+                    showStatus("Another teacher changed this source and the list now "
+                            + "shows their version. Save changes again to replace it, "
+                            + "or Save as new source to keep both.");
+                })
+        );
+    }
+
     @FXML private void handleSaveAsNewSource() {
         CourseBotSummaryDTO bot = botBox.getValue();
         if (bot == null) { showStatus("Select a Course Bot first"); return; }
@@ -467,6 +534,7 @@ public final class CourseBotManagementPage {
 
     private void clearEditingState() {
         editingSourceId = null;
+        editingVersionNo = 0;
         textDisplayNameField.clear();
         sourceTextArea.clear();
         toggle(editingSourceLabel, false);

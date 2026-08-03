@@ -19,6 +19,12 @@ public final class BotSourceDTO implements Serializable {
     private final LocalDateTime createdAt;
     private final LocalDateTime removedAt;
 
+    /**
+     * Which revision of this source is in use. Sent back when a teacher saves an
+     * edit, so a colleague's change is detected.
+     */
+    private int currentVersionNo = 1;
+
     public BotSourceDTO(int sourceId, int botId, BotSourceType sourceType,
                         String displayName, Integer questionId,
                         Integer questionVersionNo, BotSourceStatus status,
@@ -55,6 +61,12 @@ public final class BotSourceDTO implements Serializable {
         this.status = status;
         this.createdAt = createdAt;
         this.removedAt = removedAt;
+    }
+
+    public int getCurrentVersionNo() { return currentVersionNo; }
+
+    public void setCurrentVersionNo(int currentVersionNo) {
+        this.currentVersionNo = currentVersionNo <= 0 ? 1 : currentVersionNo;
     }
 
     public int getSourceId() { return sourceId; }

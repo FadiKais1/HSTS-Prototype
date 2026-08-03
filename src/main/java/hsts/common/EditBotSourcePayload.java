@@ -18,12 +18,28 @@ public final class EditBotSourcePayload implements Serializable {
     private final String displayName;
     private final String text;
 
+    /**
+     * The version this teacher was looking at when she began editing.
+     *
+     * <p>It travels from the client rather than being re-read when the change is
+     * saved. Re-reading would only detect edits that interleave within
+     * milliseconds; carrying the loaded version detects a colleague's change
+     * however long ago it happened.</p>
+     */
+    private final int expectedVersionNo;
+
     public EditBotSourcePayload(int botId, int sourceId,
-                                String displayName, String text) {
+                                String displayName, String text,
+                                int expectedVersionNo) {
         this.botId = botId;
         this.sourceId = sourceId;
         this.displayName = displayName;
         this.text = text;
+        this.expectedVersionNo = expectedVersionNo;
+    }
+
+    public int getExpectedVersionNo() {
+        return expectedVersionNo;
     }
 
     public int getBotId() {
