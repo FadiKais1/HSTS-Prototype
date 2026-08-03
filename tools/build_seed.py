@@ -663,11 +663,18 @@ def build():
                 f"{automatic}, {final}, {feedback}, {reason}, {reviewed_by}, "
                 f"{reviewed_at}, {published_by}, {published_at})"
             )
+            # An attempt still in progress has answers saved but not marked.
+            # Grading happens when it is submitted, and the grader refuses a
+            # submission whose answers already carry a mark.
+            in_progress = sub_status == "IN_PROGRESS"
             for question, chosen, right in student_answers:
+                correct_value = "NULL" if in_progress else ("TRUE" if right else "FALSE")
+                score_value = (
+                    "NULL" if in_progress else f"{share if right else 0:.2f}"
+                )
                 answer_rows.append(
                     f"  ({answer_id}, {submission_id}, {question}, 1, {chosen}, "
-                    f"{'TRUE' if right else 'FALSE'}, "
-                    f"{share if right else 0:.2f})"
+                    f"{correct_value}, {score_value})"
                 )
                 answer_id += 1
 
