@@ -43,6 +43,7 @@ import hsts.server.repository.UserRepository;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -549,8 +550,21 @@ public class CourseBotService {
                 ));
     }
 
+    /**
+     * The current time at the precision the database stores.
+     *
+     * <p>Bot timestamps live in DATETIME(6) columns, which hold microseconds.
+     * A clock can supply nanoseconds, and MySQL rounds rather than truncates
+     * when storing them, so a message written as ...123456789 comes back as
+     * ...123457 &mdash; later than the value still held in memory. Rehydration
+     * then sees a message created after its own conversation and rejects the
+     * conversation as out of date.</p>
+     *
+     * <p>Truncating here keeps what Java holds and what the database stores
+     * identical, so the comparison is exact in both directions.</p>
+     */
     private LocalDateTime now() {
-        return LocalDateTime.now(clock);
+        return LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
     }
 
     private String nextProviderSubject() {

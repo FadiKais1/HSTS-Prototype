@@ -294,11 +294,20 @@ public class BotConversationRepository {
                 }
             }
 
-            ConversationRow updated = new ConversationRow(
-                    current.conversationId(), current.botId(), current.studentUserId(),
-                    current.providerSubjectId(), current.createdAt(), message.getCreatedAt()
-            );
-            return hydrateConversation(updated, loadMessages(connection, current.conversationId()));
+            // Re-read the conversation rather than assuming the value written.
+            // The column is DATETIME(6) and the database may round a more precise
+            // timestamp, so the stored instant is the only authoritative one; using
+            // the in-memory value could leave a message looking newer than its own
+            // conversation and make rehydration reject it.
+            ConversationRow stored = findConversation(
+                    connection, LOCK_CONVERSATION_BY_ID_SQL,
+                    authenticatedStudentUserId,
+                    current.conversationId(),
+                    authenticatedStudentUserId
+            ).orElseThrow(() -> new IllegalStateException(
+                    "Bot conversation not found or access denied"
+            ));
+            return hydrateConversation(stored, loadMessages(connection, current.conversationId()));
         });
     }
 
