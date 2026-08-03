@@ -71,7 +71,8 @@ public class ExamSubmissionRepository {
                    submission.started_at,
                    submission.status,
                    submission.allocated_duration_minutes,
-                   submission.extra_minutes
+                   submission.extra_minutes,
+                   submission.extension_reason
             FROM exam_submissions submission
             WHERE submission.execution_id = ?
               AND submission.student_user_id = ?
