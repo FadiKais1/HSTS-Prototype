@@ -1,5 +1,6 @@
 package hsts.server.repository;
 
+import hsts.common.ReportTargetOptionDTO;
 import hsts.server.entity.Report;
 
 import java.math.BigDecimal;
@@ -123,6 +124,47 @@ public class ReportRepository {
 
     private final DatabaseController databaseController;
 
+    /**
+     * Teachers and coordinators the Principal may report on. Coordinators are
+     * included because they author exams too, and getTeacherExamsReport already
+     * accepts either role.
+     */
+    private static final String REPORT_TEACHERS_SQL = """
+            SELECT user_id, full_name, email
+            FROM users
+            WHERE role IN ('TEACHER', 'COORDINATOR')
+              AND status = 'ACTIVE'
+            ORDER BY full_name
+            """;
+
+    private static final String REPORT_COURSES_SQL = """
+            SELECT course.course_id, course.name, course.course_code,
+                   subject.name AS subject_name
+            FROM courses course
+            JOIN subjects subject ON subject.subject_id = course.subject_id
+            ORDER BY subject.name, course.name
+            """;
+
+    private static final String REPORT_STUDENTS_SQL = """
+            SELECT user_id, full_name, email
+            FROM users
+            WHERE role = 'STUDENT'
+              AND status = 'ACTIVE'
+            ORDER BY full_name
+            """;
+
+    private static final String REPORT_EXECUTIONS_SQL = """
+            SELECT execution.execution_id, execution.execution_code,
+                   version.title AS exam_title, course.name AS course_name
+            FROM exam_executions execution
+            JOIN exam_versions version
+              ON version.exam_id = execution.exam_id
+             AND version.version_no = execution.exam_version_no
+            JOIN exams exam ON exam.exam_id = execution.exam_id
+            JOIN courses course ON course.course_id = exam.course_id
+            ORDER BY execution.created_at DESC, execution.execution_id DESC
+            """;
+
     public ReportRepository() {
         this(new DatabaseController());
     }
@@ -132,6 +174,44 @@ public class ReportRepository {
             throw new IllegalArgumentException("Database controller is required");
         }
         this.databaseController = databaseController;
+    }
+
+    public List<ReportTargetOptionDTO> findReportTeachers() {
+        return findTargets(REPORT_TEACHERS_SQL, "user_id", "full_name", "email");
+    }
+
+    public List<ReportTargetOptionDTO> findReportStudents() {
+        return findTargets(REPORT_STUDENTS_SQL, "user_id", "full_name", "email");
+    }
+
+    public List<ReportTargetOptionDTO> findReportCourses() {
+        return findTargets(REPORT_COURSES_SQL, "course_id", "name", "course_code");
+    }
+
+    public List<ReportTargetOptionDTO> findReportExecutions() {
+        return findTargets(
+                REPORT_EXECUTIONS_SQL, "execution_id", "exam_title", "execution_code"
+        );
+    }
+
+    private List<ReportTargetOptionDTO> findTargets(String sql, String idColumn,
+                                                    String nameColumn,
+                                                    String detailColumn) {
+        List<ReportTargetOptionDTO> options = new ArrayList<>();
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                options.add(new ReportTargetOptionDTO(
+                        resultSet.getInt(idColumn),
+                        resultSet.getString(nameColumn),
+                        resultSet.getString(detailColumn)
+                ));
+            }
+            return List.copyOf(options);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Failed to load report targets", exception);
+        }
     }
 
     public List<Report.ExecutionStatistics> findByExamAuthor(int teacherUserId) {

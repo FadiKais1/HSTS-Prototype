@@ -180,7 +180,7 @@ public class Server extends AbstractServer {
                 case LOGOUT -> Response.error("Connection context required");
 
                 case UPDATE_QUESTION, GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION,
-                        DELETE_QUESTION,
+                        DELETE_QUESTION, LIST_REPORT_TARGETS,
                      ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY,
                      LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM, GENERATE_EXAM,
                      LIST_PENDING_EXAMS, GET_PENDING_EXAM, UPDATE_EXAM,
@@ -672,6 +672,14 @@ public class Server extends AbstractServer {
                             requireReportService().getMyAuthoredExamsReport(
                                     authenticatedUserId
                             )
+                    );
+                }
+
+                case LIST_REPORT_TARGETS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Report targets loaded",
+                            requireReportService().getReportTargets(authenticatedUserId)
                     );
                 }
 

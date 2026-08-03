@@ -3,6 +3,7 @@ package hsts.client.control;
 import hsts.client.net.Client;
 import hsts.common.ReportSummaryDTO;
 import hsts.common.ReportTargetPayload;
+import hsts.common.ReportTargetsDTO;
 import hsts.common.ReportExportPayload;
 import hsts.common.ReportExportResult;
 import hsts.common.Request;
@@ -106,6 +107,28 @@ public class ReportClientController {
             );
         }
         return sendRequest(new Request(type, new ReportTargetPayload(targetId)));
+    }
+
+    /** The teachers, courses, students and executions the Principal may report on. */
+    public CompletableFuture<ReportTargetsDTO> getReportTargets() {
+        return CompletableFuture.supplyAsync(() -> {
+            Response response = requestSender.apply(
+                    new Request(RequestType.LIST_REPORT_TARGETS, null)
+            );
+            if (response == null) {
+                throw new IllegalStateException(NULL_RESPONSE);
+            }
+            if (!response.isSuccess()) {
+                String message = response.getMessage();
+                throw new IllegalStateException(
+                        message == null || message.isBlank() ? REQUEST_FAILED : message
+                );
+            }
+            if (!(response.getPayload() instanceof ReportTargetsDTO targets)) {
+                throw new IllegalStateException(INVALID_RESPONSE);
+            }
+            return targets;
+        });
     }
 
     private CompletableFuture<ReportSummaryDTO> sendRequest(Request request) {

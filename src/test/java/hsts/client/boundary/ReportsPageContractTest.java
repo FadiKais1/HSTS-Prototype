@@ -95,11 +95,16 @@ public class ReportsPageContractTest {
         assertEquals(42, ReportsPage.parseTargetId(" 42 "));
 
         String source = Files.readString(SOURCE);
-        int parse = source.indexOf("targetId = parseTargetId(targetIdField.getText())");
+        // The Principal now picks a target by name, so the guard is a null check
+        // on the selection rather than parsing hand-typed text. It must still run
+        // before any controller call.
+        int guard = source.indexOf("ReportTargetOptionDTO target = targetComboBox.getValue()");
         int teacher = source.indexOf("getTeacherExamsReport(targetId)");
         int course = source.indexOf("getCourseExamsReport(targetId)");
         int student = source.indexOf("getStudentExamsReport(targetId)");
-        assertTrue(parse >= 0 && parse < teacher && parse < course && parse < student);
+        int execution = source.indexOf("getExamExecutionReport(targetId)");
+        assertTrue(guard >= 0 && guard < teacher && guard < course
+                && guard < student && guard < execution);
     }
 
     @Test
@@ -298,7 +303,7 @@ public class ReportsPageContractTest {
         collectIds(document.getDocumentElement(), ids);
         for (String required : List.of(
                 "roleContextLabel", "principalControls", "comparisonModeComboBox",
-                "targetIdField", "loadButton", "refreshButton", "backButton",
+                "targetComboBox", "loadButton", "refreshButton", "backButton",
                 "loadingIndicator", "statusLabel", "errorLabel", "reportTitleLabel",
                 "targetNameLabel", "generatedAtLabel", "executionCountLabel",
                 "executionTable", "executionCodeColumn", "examTitleColumn",

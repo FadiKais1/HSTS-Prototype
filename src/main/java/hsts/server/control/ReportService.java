@@ -3,6 +3,7 @@ package hsts.server.control;
 import hsts.common.CourseSummaryDTO;
 import hsts.common.ExamStatisticsDTO;
 import hsts.common.ReportSummaryDTO;
+import hsts.common.ReportTargetsDTO;
 import hsts.common.ReportExportPayload;
 import hsts.common.ReportExportResult;
 import hsts.common.ScoreBandDTO;
@@ -281,6 +282,23 @@ public class ReportService {
                     "Report access requires teacher or coordinator role"
             );
         }
+    }
+
+    /**
+     * Everything the Principal may run a report about, by name.
+     *
+     * <p>The Reports page used to require a numeric id typed by hand. This backs
+     * pickers instead, so the Principal chooses "Rania Haddad" rather than
+     * remembering that she is user 1005.</p>
+     */
+    public ReportTargetsDTO getReportTargets(int authenticatedPrincipalId) {
+        requirePrincipal(authenticatedPrincipalId);
+        return new ReportTargetsDTO(
+                reportRepository.findReportTeachers(),
+                reportRepository.findReportCourses(),
+                reportRepository.findReportStudents(),
+                reportRepository.findReportExecutions()
+        );
     }
 
     private User requirePrincipal(int userId) {

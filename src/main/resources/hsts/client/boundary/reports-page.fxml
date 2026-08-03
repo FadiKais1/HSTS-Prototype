@@ -59,9 +59,9 @@
                           style="-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #dbe3ef; -fx-border-radius: 12; -fx-padding: 14;">
                         <Label text="Comparison:" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
                         <ComboBox fx:id="comparisonModeComboBox" prefWidth="150"/>
-                        <Label text="Positive target ID:" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
-                        <TextField fx:id="targetIdField" promptText="Teacher, course, or student ID"
-                                   prefWidth="240" onAction="#handleLoadReport"/>
+                        <Label text="Target:" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+                        <ComboBox fx:id="targetComboBox" prefWidth="300"
+                                  promptText="Choose a teacher, course, student or execution"/>
                         <Button fx:id="loadButton" text="Load Report" onAction="#handleLoadReport"
                                 style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 16;"/>
                     </HBox>

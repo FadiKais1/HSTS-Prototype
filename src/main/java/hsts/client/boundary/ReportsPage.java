@@ -5,6 +5,8 @@ import hsts.client.net.Client;
 import hsts.common.ExamStatisticsDTO;
 import hsts.common.LoginResult;
 import hsts.common.ReportSummaryDTO;
+import hsts.common.ReportTargetOptionDTO;
+import hsts.common.ReportTargetsDTO;
 import hsts.common.ReportExportPayload;
 import hsts.common.ReportExportResult;
 import hsts.common.ScoreBandDTO;
@@ -75,7 +77,10 @@ public class ReportsPage {
     @FXML private Label roleContextLabel;
     @FXML private HBox principalControls;
     @FXML private ComboBox<String> comparisonModeComboBox;
-    @FXML private TextField targetIdField;
+    @FXML private ComboBox<ReportTargetOptionDTO> targetComboBox;
+
+    /** Every target the Principal may report on, loaded once when the page opens. */
+    private ReportTargetsDTO reportTargets;
     @FXML private Button loadButton;
     @FXML private Button refreshButton;
     @FXML private Button backButton;
@@ -134,9 +139,13 @@ public class ReportsPage {
     @FXML
     private void initialize() {
         comparisonModeComboBox.setItems(FXCollections.observableArrayList(
-                "Teacher", "Course", "Student"
+                "Teacher", "Course", "Student", "Execution"
         ));
         comparisonModeComboBox.getSelectionModel().selectFirst();
+        // Changing the scope refills the target picker from the loaded lists.
+        comparisonModeComboBox.getSelectionModel().selectedItemProperty().addListener(
+                (observable, previous, selected) -> populateTargets(selected)
+        );
         configureTable();
         executionTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         executionTable.setItems(executions);
@@ -172,15 +181,17 @@ public class ReportsPage {
         boolean principal = role == UserRole.PRINCIPAL;
         principalControls.setManaged(principal);
         principalControls.setVisible(principal);
-        targetIdField.setDisable(!principal);
+        targetComboBox.setDisable(!principal);
         comparisonModeComboBox.setDisable(!principal);
         setError("");
         setStatus(principal
-                ? "Choose a comparison type and enter a positive target ID."
+                ? "Choose a report type and target, then press Load Report."
                 : "Loading your authored exam report...");
         updateControlState();
 
-        if (!principal && !automaticLoadStarted) {
+        if (principal) {
+            loadReportTargets();
+        } else if (!automaticLoadStarted) {
             automaticLoadStarted = true;
             loadReport(reportClientController.getMyAuthoredExamsReport());
         }
@@ -336,22 +347,62 @@ public class ReportsPage {
         if (loading) {
             return;
         }
-        final int targetId;
-        try {
-            targetId = parseTargetId(targetIdField.getText());
-        } catch (IllegalArgumentException exception) {
-            setError(exception.getMessage());
+        ReportTargetOptionDTO target = targetComboBox.getValue();
+        if (target == null) {
+            setError("Choose a target for the report.");
             return;
         }
+        int targetId = target.getTargetId();
 
         String mode = comparisonModeComboBox.getValue();
         CompletableFuture<ReportSummaryDTO> request = switch (mode) {
             case "Teacher" -> reportClientController.getTeacherExamsReport(targetId);
             case "Course" -> reportClientController.getCourseExamsReport(targetId);
             case "Student" -> reportClientController.getStudentExamsReport(targetId);
+            case "Execution" -> reportClientController.getExamExecutionReport(targetId);
             default -> throw new IllegalStateException("Report comparison type is required");
         };
         loadReport(request);
+    }
+
+    /**
+     * Loads every target the Principal may report on, once, so the picker can
+     * offer real names instead of asking for a numeric id.
+     */
+    private void loadReportTargets() {
+        if (reportClientController == null) {
+            return;
+        }
+        reportClientController.getReportTargets().whenComplete((targets, error) ->
+                Platform.runLater(() -> {
+                    if (disposed) {
+                        return;
+                    }
+                    if (error != null) {
+                        setError("Unable to load report targets.");
+                        return;
+                    }
+                    reportTargets = targets;
+                    populateTargets(comparisonModeComboBox.getValue());
+                })
+        );
+    }
+
+    private void populateTargets(String mode) {
+        if (reportTargets == null || mode == null) {
+            return;
+        }
+        List<ReportTargetOptionDTO> options = switch (mode) {
+            case "Teacher" -> reportTargets.getTeachers();
+            case "Course" -> reportTargets.getCourses();
+            case "Student" -> reportTargets.getStudents();
+            case "Execution" -> reportTargets.getExecutions();
+            default -> List.of();
+        };
+        targetComboBox.setItems(FXCollections.observableArrayList(options));
+        if (!options.isEmpty()) {
+            targetComboBox.getSelectionModel().selectFirst();
+        }
     }
 
     private void loadReport(CompletableFuture<ReportSummaryDTO> request) {
@@ -529,7 +580,7 @@ public class ReportsPage {
         if (comparisonModeComboBox != null) {
             comparisonModeComboBox.setDisable(!principal || loading);
         }
-        if (targetIdField != null) targetIdField.setDisable(!principal || loading);
+        if (targetComboBox != null) targetComboBox.setDisable(!principal || loading);
         if (loadingIndicator != null) {
             loadingIndicator.setManaged(loading);
             loadingIndicator.setVisible(loading);

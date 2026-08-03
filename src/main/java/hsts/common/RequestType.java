@@ -72,5 +72,8 @@ public enum RequestType implements Serializable {
     GET_MY_PUBLISHED_EXAM_REVIEW,
 
     /** Hides a question from the bank without affecting exams that use it. */
-    DELETE_QUESTION
+    DELETE_QUESTION,
+
+    /** Lists the teachers, courses, students and executions a report may target. */
+    LIST_REPORT_TARGETS
 }
