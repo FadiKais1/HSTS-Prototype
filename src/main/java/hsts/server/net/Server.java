@@ -827,12 +827,11 @@ public class Server extends AbstractServer {
                                 "Create Course Bot payload is required"
                         );
                     }
-                    yield Response.success(
-                            "Course Bot created",
-                            requireCourseBotService().createCourseBot(
-                                    authenticatedUserId, payload
-                            )
+                    Object createdBot = requireCourseBotService().createCourseBot(
+                            authenticatedUserId, payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Course Bot created", createdBot);
                 }
 
                 case UPDATE_COURSE_BOT -> {
@@ -841,12 +840,11 @@ public class Server extends AbstractServer {
                                 "Update Course Bot payload is required"
                         );
                     }
-                    yield Response.success(
-                            "Course Bot updated",
-                            requireCourseBotService().updateCourseBot(
-                                    authenticatedUserId, payload
-                            )
+                    Object updatedBot = requireCourseBotService().updateCourseBot(
+                            authenticatedUserId, payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Course Bot updated", updatedBot);
                 }
 
                 case GET_BOT_SOURCES -> {
@@ -869,12 +867,11 @@ public class Server extends AbstractServer {
                                 "Bot text source payload is required"
                         );
                     }
-                    yield Response.success(
-                            "Bot text source added",
-                            requireCourseBotService().addTextSource(
-                                    authenticatedUserId, payload
-                            )
+                    Object textSource = requireCourseBotService().addTextSource(
+                            authenticatedUserId, payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Bot text source added", textSource);
                 }
 
                 case UPLOAD_BOT_SOURCE -> {
@@ -883,12 +880,11 @@ public class Server extends AbstractServer {
                                 "Bot file source payload is required"
                         );
                     }
-                    yield Response.success(
-                            "Bot file source added",
-                            requireCourseBotService().uploadSource(
-                                    authenticatedUserId, payload
-                            )
+                    Object fileSource = requireCourseBotService().uploadSource(
+                            authenticatedUserId, payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Bot file source added", fileSource);
                 }
 
                 case ADD_BOT_QUESTION_SOURCES -> {
@@ -898,12 +894,11 @@ public class Server extends AbstractServer {
                                 "Bot question sources payload is required"
                         );
                     }
-                    yield Response.success(
-                            "Bot question sources added",
-                            requireCourseBotService().addQuestionSources(
-                                    authenticatedUserId, payload
-                            )
+                    Object questionSources = requireCourseBotService().addQuestionSources(
+                            authenticatedUserId, payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Bot question sources added", questionSources);
                 }
 
                 case REMOVE_BOT_SOURCE -> {
@@ -912,12 +907,11 @@ public class Server extends AbstractServer {
                                 "Remove Bot source payload is required"
                         );
                     }
-                    yield Response.success(
-                            "Bot source removed",
-                            requireCourseBotService().removeSource(
-                                    authenticatedUserId, payload
-                            )
+                    Object removedSource = requireCourseBotService().removeSource(
+                            authenticatedUserId, payload
                     );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Bot source removed", removedSource);
                 }
 
                 case GET_BOT_USAGE -> {

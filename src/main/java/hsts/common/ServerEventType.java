@@ -42,5 +42,12 @@ public enum ServerEventType {
      * stored status changed. Nobody acts to cause this; the server publishes it
      * after advancing the statuses on its periodic cycle.
      */
-    EXAM_SCHEDULE_CHANGED
+    EXAM_SCHEDULE_CHANGED,
+
+    /**
+     * A Course Bot was created or renamed, or its knowledge sources changed.
+     * A course may be taught by several teachers and any of them may edit the
+     * bot (requirement 45), so an open management screen is stale.
+     */
+    COURSE_BOT_CHANGED
 }

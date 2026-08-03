@@ -3,6 +3,9 @@ package hsts.client.boundary;
 import hsts.client.control.CourseBotClientController;
 import hsts.client.control.QuestionClientController;
 import hsts.client.net.Client;
+import hsts.client.net.ServerEventBus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.AddBotQuestionSourcesPayload;
 import hsts.common.AddBotTextSourcePayload;
 import hsts.common.BotQuestionVersionReference;
@@ -60,6 +63,16 @@ public final class CourseBotManagementPage {
     private CourseBotClientController botController;
     private QuestionClientController questionController;
     private Runnable backHandler;
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
+    /**
+     * Set when a colleague changed the bot while this teacher had text typed
+     * into the source editor. The reload waits until that text is clear so her
+     * work is never discarded.
+     */
+    private boolean deferredExternalRefresh;
+
     private boolean disposed = true;
     private boolean mutationActive;
     private final AtomicInteger refreshGeneration = new AtomicInteger();
@@ -98,6 +111,13 @@ public final class CourseBotManagementPage {
         questionController = new QuestionClientController(sharedClient);
         disposed = false;
         identityLabel.setText(loginResult.getFullName() + " · " + role);
+        // A course may be taught by several teachers and any of them may edit
+        // the bot (requirement 45), so a colleague's change arrives here without
+        // a manual refresh.
+        closeEventSubscription();
+        eventSubscription = sharedClient.getServerEventBus().subscribe(
+                this::onServerEvent, ServerEventType.COURSE_BOT_CHANGED
+        );
         refreshAll();
     }
 
@@ -163,6 +183,51 @@ public final class CourseBotManagementPage {
     }
 
     @FXML private void handleRefresh() { refreshAll(); }
+
+    /**
+     * Reacts to another teacher creating, renaming or re-sourcing this course's
+     * bot. Runs on the JavaFX thread; the bus marshals for us.
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (disposed || event == null
+                || event.getType() != ServerEventType.COURSE_BOT_CHANGED) {
+            return;
+        }
+
+        // A change of our own is in flight, or this teacher is part way through
+        // typing a source. Reloading now would discard her text, so remember the
+        // change and apply it once the editor is clear.
+        if (mutationActive || hasUnsavedSourceText()) {
+            deferredExternalRefresh = true;
+            showStatus("Another teacher changed this bot. Your text is safe; "
+                    + "the list will refresh once you add or clear it.");
+            return;
+        }
+
+        deferredExternalRefresh = false;
+        refreshAll();
+    }
+
+    private boolean hasUnsavedSourceText() {
+        return (sourceTextArea != null && !sourceTextArea.getText().isBlank())
+                || (textDisplayNameField != null
+                        && !textDisplayNameField.getText().isBlank());
+    }
+
+    /** Applies a refresh held back while the source editor had text in it. */
+    private void applyDeferredExternalRefresh() {
+        if (deferredExternalRefresh && !disposed && !hasUnsavedSourceText()) {
+            deferredExternalRefresh = false;
+            refreshAll();
+        }
+    }
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
 
     private void refreshAll() {
         if (disposed) return;
@@ -259,6 +324,9 @@ public final class CourseBotManagementPage {
                 "Text source added", false, () -> {
                     textDisplayNameField.clear();
                     sourceTextArea.clear();
+                    // The editor is free again, so a refresh held back to
+                    // protect typed text can safely run.
+                    applyDeferredExternalRefresh();
                 });
     }
 
@@ -413,6 +481,7 @@ public final class CourseBotManagementPage {
 
     public void dispose() {
         disposed = true;
+        closeEventSubscription();
         refreshGeneration.incrementAndGet();
         detailGeneration.incrementAndGet();
     }
