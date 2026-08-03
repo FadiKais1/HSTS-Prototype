@@ -213,7 +213,30 @@ public class Server extends AbstractServer {
             };
 
         } catch (Exception e) {
+            logRequestFailure(request, e);
             return Response.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Prints the failure and its full cause chain to the server console.
+     *
+     * <p>Only the top message is returned to the client, and several services
+     * deliberately replace an internal message with wording the user can act on.
+     * Without this the original cause reached nobody, which made a user-facing
+     * message the only evidence of a fault.</p>
+     */
+    private void logRequestFailure(Request request, Throwable failure) {
+        String type = request == null || request.getType() == null
+                ? "unknown request"
+                : request.getType().name();
+        System.err.println("Request failed: " + type);
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            System.err.println("    caused by " + current.getClass().getSimpleName()
+                    + ": " + current.getMessage());
+            if (current.getCause() == null) {
+                current.printStackTrace();
+            }
         }
     }
 
@@ -1167,6 +1190,7 @@ public class Server extends AbstractServer {
     }
 
     private Response errorResponse(Exception exception) {
+        logRequestFailure(null, exception);
         String message = exception.getMessage();
         return Response.error(
                 message == null || message.isBlank() ? "Request failed" : message
