@@ -246,7 +246,11 @@ public class ReportsPageContractTest {
         assertTrue(source.contains("getTeacherExamsReport(targetId)"));
         assertTrue(source.contains("getCourseExamsReport(targetId)"));
         assertTrue(source.contains("getStudentExamsReport(targetId)"));
-        assertFalse(source.contains("getExamExecutionReport("));
+        // The execution report is now a fourth top-level type the Principal can
+        // choose from the picker, alongside reaching it by clicking a row in the
+        // Execution Statistics table. The route, service and export already
+        // existed; only the interface withheld it.
+        assertTrue(source.contains("getExamExecutionReport(targetId)"));
         for (String forbidden : List.of(
                 "client.sendRequest", "new Client(", "client.close(",
                 "client.connect(", "client.disconnect(", "hsts.common.Request",
