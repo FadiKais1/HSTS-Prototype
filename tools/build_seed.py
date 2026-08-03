@@ -443,10 +443,14 @@ def build():
                 QUESTIONS[course_id], start=1):
             code = f"{course_number[course_id]}{position:03d}"
             author = course_teacher[course_id]
+            # The questions table names the column "type" and stores the four
+            # options inline; question_versions uses "question_type" and keeps
+            # its options in answer_options.
+            inline = ", ".join(f"'{sql_text(option)}'" for option in options)
             question_rows.append(
                 f"  ({question_id}, '{code}', '{sql_text(text)}', '{topic}', "
-                f"'MULTIPLE_CHOICE', '{difficulty}', 'ACTIVE', {correct}, "
-                f"{course_id}, {author}, 1, @seed_now, @seed_now)"
+                f"'MULTIPLE_CHOICE', '{difficulty}', 'ACTIVE', NULL, {inline}, "
+                f"{correct}, {course_id}, {author}, 1, @seed_now, @seed_now)"
             )
             version_rows.append(
                 f"  ({question_id}, 1, '{sql_text(text)}', '{topic}', "
@@ -462,9 +466,10 @@ def build():
     add("-- ---------- Questions (requirements 33, 34) ----------")
     add("-- question_code = 2 digit course number + 3 digit question number.")
     add("INSERT IGNORE INTO questions")
-    add("    (question_id, question_code, content, topic, question_type, difficulty,")
-    add("     status, correct_option_number, course_id, created_by_user_id,")
-    add("     current_version_no, created_at, updated_at) VALUES")
+    add("    (question_id, question_code, content, topic, type, difficulty,")
+    add("     status, illustration_path, answer_option_1, answer_option_2,")
+    add("     answer_option_3, answer_option_4, correct_option_number, course_id,")
+    add("     created_by_user_id, current_version_no, created_at, updated_at) VALUES")
     add(",\n".join(question_rows) + ";")
     add("")
 
@@ -477,7 +482,7 @@ def build():
 
     add("-- ---------- Answer options ----------")
     add("INSERT IGNORE INTO answer_options")
-    add("    (question_id, question_version_no, option_number, option_text) VALUES")
+    add("    (question_id, version_no, option_number, option_text) VALUES")
     add(",\n".join(option_rows) + ";")
     add("")
 
@@ -862,12 +867,59 @@ def build():
     return out
 
 
+def check_against_schema(sql_text_out, schema_path):
+    """Fails loudly if an insert names a column the schema does not declare.
+
+    A mismatch here is only discovered when the seed is loaded, which is late
+    and easy to misread as a data problem rather than a column-name one.
+    """
+    import re as _re
+
+    schema = open(schema_path, encoding="utf-8").read()
+    declared = {}
+    for match in _re.finditer(
+            r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\) ENGINE", schema, _re.S):
+        columns = []
+        for line in match.group(2).splitlines():
+            line = line.strip()
+            if not line or line.startswith((
+                    "--", "CONSTRAINT", "PRIMARY", "KEY", "UNIQUE",
+                    "FOREIGN", "CHECK", "REFERENCES", ")")):
+                continue
+            token = line.split()[0]
+            if token.isidentifier():
+                columns.append(token)
+        declared[match.group(1)] = columns
+
+    problems = []
+    for match in _re.finditer(
+            r"INSERT IGNORE INTO (\w+)\s*\n?\s*\((.*?)\)\s*VALUES",
+            sql_text_out, _re.S):
+        table = match.group(1)
+        used = [
+            column.strip()
+            for column in _re.sub(r"--.*", "", match.group(2)).replace("\n", " ").split(",")
+            if column.strip()
+        ]
+        unknown = [c for c in used if c not in declared.get(table, [])]
+        if unknown:
+            problems.append(f"{table}: {unknown}")
+
+    if problems:
+        raise SystemExit("Seed does not match the schema:\n  " + "\n  ".join(problems))
+
+
 if __name__ == "__main__":
     lines = build()
     target = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "database", "seed_demo_data.sql",
     )
+    body = "\n".join(lines) + "\n"
+    check_against_schema(
+        body,
+        os.path.join(os.path.dirname(target), "init.sql"),
+    )
     with open(target, "w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines) + "\n")
+        handle.write(body)
     print(f"wrote {target} ({len(lines)} statements/blocks)")
