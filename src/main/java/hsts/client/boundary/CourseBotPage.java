@@ -43,6 +43,13 @@ public class CourseBotPage {
     /** This screen's own push registration; closing it affects no other screen. */
     private ServerEventBus.Subscription eventSubscription;
 
+    /**
+     * Set while the bot list is repopulated. Re-selecting a bot then hands the
+     * combo a fresh object, which fires the action handler and would clear the
+     * conversation even though the same bot is still chosen.
+     */
+    private boolean suppressBotSelection;
+
     private boolean disposed = true;
     private boolean sending;
     private boolean lockedOut;
@@ -81,7 +88,11 @@ public class CourseBotPage {
     private void initialize() {
         botBox.setCellFactory(ignored -> botCell());
         botBox.setButtonCell(botCell());
-        botBox.setOnAction(event -> loadSelectedHistory());
+        botBox.setOnAction(event -> {
+            if (!suppressBotSelection) {
+                loadSelectedHistory();
+            }
+        });
         historyList.setCellFactory(ignored -> new ListCell<>() {
             @Override protected void updateItem(BotMessageDTO item, boolean empty) {
                 super.updateItem(item, empty);
@@ -122,10 +133,13 @@ public class CourseBotPage {
         if (sending || lockedOut) return;
         sending = true;
         updateSendState();
-        int generation = historyGeneration.get();
-        controller.askCourseBot(new AskCourseBotPayload(bot.getCourseId(), question))
+        int courseId = bot.getCourseId();
+        controller.askCourseBot(new AskCourseBotPayload(courseId, question))
                 .whenComplete((result, failure) -> Platform.runLater(() -> {
-                    if (disposed || generation != historyGeneration.get()) return;
+                    if (disposed) return;
+                    // Always clear the busy flag, even when this answer is no
+                    // longer wanted. Leaving it set locked the Send button and
+                    // was part of why an answer seemed to arrive a question late.
                     sending = false;
                     updateSendState();
                     if (failure != null) {
@@ -134,8 +148,23 @@ public class CourseBotPage {
                         if (LOCKOUT.equals(message)) handleLockout();
                         return;
                     }
+                    CourseBotSummaryDTO current = botBox.getValue();
+                    if (current == null || current.getCourseId() != courseId) {
+                        // She changed bot while waiting; her history for this one
+                        // will be correct when she returns to it.
+                        return;
+                    }
                     questionArea.clear();
-                    loadSelectedHistory();
+                    // The server returned the answer, so show it directly. Reloading
+                    // the whole history instead meant a second round trip that could
+                    // be discarded by any other refresh, leaving the answer to
+                    // appear only when the next question arrived.
+                    if (result != null && result.getMessage() != null) {
+                        appendMessage(result.getMessage());
+                        showStatus("");
+                    } else {
+                        loadSelectedHistory();
+                    }
                 }));
     }
 
@@ -169,10 +198,20 @@ public class CourseBotPage {
         controller.getMyAvailableBots().whenComplete((bots, failure) -> Platform.runLater(() -> {
             if (disposed || generation != botGeneration.get()) return;
             if (failure != null) { showStatus(message(failure, "Unable to load Course Bots")); return; }
-            botBox.setItems(FXCollections.observableArrayList(bots));
-            CourseBotSummaryDTO selected = bots.stream()
-                    .filter(bot -> bot.getCourseId() == selectedCourse).findFirst().orElse(null);
-            botBox.getSelectionModel().select(selected);
+            boolean sameBot = bots.stream()
+                    .anyMatch(bot -> bot.getCourseId() == selectedCourse);
+            // Only a change of bot should discard the conversation on screen.
+            suppressBotSelection = sameBot;
+            try {
+                botBox.setItems(FXCollections.observableArrayList(bots));
+                CourseBotSummaryDTO chosen = bots.stream()
+                        .filter(bot -> bot.getCourseId() == selectedCourse)
+                        .findFirst().orElse(null);
+                botBox.getSelectionModel().select(chosen);
+            } finally {
+                suppressBotSelection = false;
+            }
+            CourseBotSummaryDTO selected = botBox.getValue();
             if (bots.isEmpty()) {
                 historyGeneration.incrementAndGet();
                 historyList.getItems().clear();
@@ -207,6 +246,13 @@ public class CourseBotPage {
                     showStatus("");
                     updateSendState();
                 }));
+    }
+
+    /** Adds one exchange to the end of the conversation and scrolls to it. */
+    private void appendMessage(BotMessageDTO message) {
+        historyList.getItems().add(message);
+        historyList.setPlaceholder(new Label("No personal Course Bot history yet"));
+        historyList.scrollTo(historyList.getItems().size() - 1);
     }
 
     private void displayHistory(BotHistoryDTO history) {
