@@ -211,7 +211,9 @@ public class QuestionRepository {
     private static final String NEXT_QUESTION_NUMBER_SQL = """
             SELECT c.course_number,
                    COALESCE(
-                       (SELECT MAX(CAST(SUBSTRING(taken.question_code, 1, 3) AS UNSIGNED))
+                       -- The question number is the last three digits; the first
+                       -- two are the course number.
+                       (SELECT MAX(CAST(SUBSTRING(taken.question_code, 3, 3) AS UNSIGNED))
                         FROM questions taken
                         WHERE taken.course_id = c.course_id
                           AND taken.question_code REGEXP '^[0-9]{5}$'),

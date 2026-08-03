@@ -327,8 +327,8 @@ INSERT IGNORE INTO questions (question_id, content, topic, type, difficulty, sta
   (164, 'Revising means to...', 'Writing', 'MULTIPLE_CHOICE', 'EASY', 'ACTIVE', NULL, 'copy', 'improve', 'delete', 'print', 2, 5, 1006, 1, @seed_now, @seed_now);
 
 -- ---------- Question identifiers (requirements 33, 34) ----------
--- question_code = 3 digit question number within the course + 2 digit course
--- number. Numbers are handed out in question_id order so the mapping is stable
+-- question_code = 2 digit course number + 3 digit question number within that
+-- course. Numbers are handed out in question_id order so the mapping is stable
 -- across re-seeds.
 UPDATE questions q
 JOIN (
@@ -339,7 +339,7 @@ JOIN (
     WHERE course_id IS NOT NULL
 ) ranked ON ranked.question_id = q.question_id
 JOIN courses c ON c.course_id = ranked.course_id
-SET q.question_code = CONCAT(LPAD(ranked.question_number, 3, '0'), c.course_number)
+SET q.question_code = CONCAT(c.course_number, LPAD(ranked.question_number, 3, '0'))
 WHERE q.question_code IS NULL
   AND c.course_number IS NOT NULL
   AND ranked.question_number <= 999;
@@ -675,14 +675,14 @@ INSERT IGNORE INTO answer_options (question_id, version_no, option_number, optio
 -- ---------- Exams ----------
 INSERT IGNORE INTO exams (exam_id, exam_code, course_id, created_by_user_id,
     current_version_no, created_at, updated_at) VALUES
--- exam_code = 2 digit exam number + 2 digit course number + 2 digit subject
+-- exam_code = 2 digit subject number + 2 digit course number + 2 digit exam
 -- number (requirements 38, 39). The exam number runs 01..99 within a course.
-  (1, '010101', 2, 1002, 1, @seed_now, @seed_now),   -- exam 01, course 01, subject 01
-  (2, '020101', 2, 1002, 1, @seed_now, @seed_now),   -- exam 02, course 01, subject 01
-  (3, '010201', 3, 1002, 1, @seed_now, @seed_now),   -- exam 01, course 02, subject 01
-  (4, '010302', 4, 1005, 1, @seed_now, @seed_now),   -- exam 01, course 03, subject 02
-  (5, '010403', 5, 1006, 1, @seed_now, @seed_now),   -- exam 01, course 04, subject 03
-  (6, '030101', 2, 1005, 1, @seed_now, @seed_now);   -- exam 03, course 01, subject 01
+  (1, '010101', 2, 1002, 1, @seed_now, @seed_now),   -- subject 01, course 01, exam 01
+  (2, '010102', 2, 1002, 1, @seed_now, @seed_now),   -- subject 01, course 01, exam 02
+  (3, '010201', 3, 1002, 1, @seed_now, @seed_now),   -- subject 01, course 02, exam 01
+  (4, '020301', 4, 1005, 1, @seed_now, @seed_now),   -- subject 02, course 03, exam 01
+  (5, '030401', 5, 1006, 1, @seed_now, @seed_now),   -- subject 03, course 04, exam 01
+  (6, '010103', 2, 1005, 1, @seed_now, @seed_now);   -- subject 01, course 01, exam 03
 
 -- ---------- Exam versions (all APPROVED by the coordinator) ----------
 INSERT IGNORE INTO exam_versions (exam_id, version_no, title, duration_minutes,

@@ -41,7 +41,9 @@ public class ExamRepository {
             SELECT c.course_number,
                    s.subject_number,
                    COALESCE(
-                       (SELECT MAX(CAST(SUBSTRING(taken.exam_code, 1, 2) AS UNSIGNED))
+                       -- The exam number is the last two digits; the first four
+                       -- are the subject and course numbers.
+                       (SELECT MAX(CAST(SUBSTRING(taken.exam_code, 5, 2) AS UNSIGNED))
                         FROM exams taken
                         WHERE taken.course_id = c.course_id
                           AND taken.exam_code REGEXP '^[0-9]{6}$'),

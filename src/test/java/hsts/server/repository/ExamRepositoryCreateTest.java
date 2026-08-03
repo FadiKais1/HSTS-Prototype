@@ -175,7 +175,7 @@ public class ExamRepositoryCreateTest {
         plans.version = database.plan(VERSION_MARKER).updateResults(1);
         plans.selection = database.plan(SELECTION_MARKER).updateResults(1, 1);
         plans.pointer = database.plan(POINTER_MARKER).updateResults(1);
-        Deque<String> codes = new ArrayDeque<>(List.of("010101", "020101"));
+        Deque<String> codes = new ArrayDeque<>(List.of("010101", "010102"));
 
         int examId = new ExamRepository(database, (connection, courseId) -> codes.removeFirst())
                 .create(1002, exam());
@@ -183,7 +183,7 @@ public class ExamRepositoryCreateTest {
         assertEquals(77, examId);
         assertEquals(2, plans.exam.updateExecutions.size());
         assertEquals("010101", plans.exam.updateExecutions.get(0).get(1));
-        assertEquals("020101", plans.exam.updateExecutions.get(1).get(1));
+        assertEquals("010102", plans.exam.updateExecutions.get(1).get(1));
         assertEquals(1, database.commitCount);
         assertEquals(0, database.rollbackCount);
     }

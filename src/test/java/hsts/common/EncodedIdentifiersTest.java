@@ -10,23 +10,24 @@ import static org.junit.Assert.assertTrue;
 public class EncodedIdentifiersTest {
 
     // ---------------------------------------------------- requirements 33, 34
+    // Course number first, then the question number within that course.
 
     @Test
     public void buildsFiveDigitQuestionCodeFromQuestionNumberAndCourseNumber() {
-        assertEquals("04201", EncodedIdentifiers.formatQuestionCode(42, "01"));
-        assertEquals("00101", EncodedIdentifiers.formatQuestionCode(1, "01"));
+        assertEquals("01042", EncodedIdentifiers.formatQuestionCode(42, "01"));
+        assertEquals("01001", EncodedIdentifiers.formatQuestionCode(1, "01"));
         assertEquals("99999", EncodedIdentifiers.formatQuestionCode(999, "99"));
     }
 
     @Test
     public void questionCodeAcceptsIntegerCourseNumbers() {
-        assertEquals("11503", EncodedIdentifiers.formatQuestionCode(115, 3));
+        assertEquals("03115", EncodedIdentifiers.formatQuestionCode(115, 3));
     }
 
     @Test
     public void splitsQuestionCodeBackIntoItsParts() {
-        assertEquals(42, EncodedIdentifiers.questionNumberOf("04201"));
-        assertEquals("01", EncodedIdentifiers.courseNumberOfQuestionCode("04201"));
+        assertEquals(42, EncodedIdentifiers.questionNumberOf("01042"));
+        assertEquals("01", EncodedIdentifiers.courseNumberOfQuestionCode("01042"));
     }
 
     @Test
@@ -54,19 +55,20 @@ public class EncodedIdentifiersTest {
     }
 
     // ---------------------------------------------------- requirements 38, 39
+    // Subject, then course within it, then exam within that course.
 
     @Test
     public void buildsSixDigitExamCodeFromExamCourseAndSubjectNumbers() {
         assertEquals("010101", EncodedIdentifiers.formatExamCode(1, "01", "01"));
-        assertEquals("030102", EncodedIdentifiers.formatExamCode(3, "01", "02"));
+        assertEquals("020103", EncodedIdentifiers.formatExamCode(3, "01", "02"));
         assertEquals("999999", EncodedIdentifiers.formatExamCode(99, "99", "99"));
     }
 
     @Test
     public void splitsExamCodeBackIntoItsParts() {
-        assertEquals(3, EncodedIdentifiers.examNumberOf("030102"));
-        assertEquals("01", EncodedIdentifiers.courseNumberOfExamCode("030102"));
-        assertEquals("02", EncodedIdentifiers.subjectNumberOfExamCode("030102"));
+        assertEquals(3, EncodedIdentifiers.examNumberOf("020103"));
+        assertEquals("01", EncodedIdentifiers.courseNumberOfExamCode("020103"));
+        assertEquals("02", EncodedIdentifiers.subjectNumberOfExamCode("020103"));
     }
 
     @Test
@@ -85,9 +87,9 @@ public class EncodedIdentifiersTest {
 
     @Test
     public void validatesCodeShapes() {
-        assertTrue(EncodedIdentifiers.isValidQuestionCode("04201"));
-        assertFalse(EncodedIdentifiers.isValidQuestionCode("4201"));
-        assertFalse(EncodedIdentifiers.isValidQuestionCode("A4201"));
+        assertTrue(EncodedIdentifiers.isValidQuestionCode("01042"));
+        assertFalse(EncodedIdentifiers.isValidQuestionCode("1042"));
+        assertFalse(EncodedIdentifiers.isValidQuestionCode("A1042"));
         assertFalse(EncodedIdentifiers.isValidQuestionCode(null));
 
         assertTrue(EncodedIdentifiers.isValidExamCode("010101"));

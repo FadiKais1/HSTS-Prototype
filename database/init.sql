@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS questions (
     created_at DATETIME(6) NULL,
     updated_at DATETIME(6) NULL,
     question_code CHAR(5) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    -- question_code = 2 digit course number + 3 digit question number.
     -- Soft delete. A deleted question disappears from the question bank and
     -- cannot be added to new exams, but its rows and versions survive so that
     -- exams already containing it, and their graded submissions, are unaffected.

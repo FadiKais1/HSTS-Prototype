@@ -2679,7 +2679,7 @@ public class DatabaseInitializer {
                     continue;
                 }
                 try {
-                    int questionNumber = Integer.parseInt(code.substring(0, 3));
+                    int questionNumber = Integer.parseInt(code.substring(2));
                     highestNumberPerCourse.merge(courseId, questionNumber, Math::max);
                 } catch (NumberFormatException ignored) {
                     // A malformed legacy value cannot reserve a number.
@@ -2715,7 +2715,7 @@ public class DatabaseInitializer {
                 }
                 highestNumberPerCourse.put(courseId, questionNumber);
 
-                updateStatement.setString(1, threeDigits(questionNumber) + courseNumber);
+                updateStatement.setString(1, courseNumber + threeDigits(questionNumber));
                 updateStatement.setInt(2, questionId);
                 updateStatement.executeUpdate();
             }
@@ -2754,16 +2754,16 @@ public class DatabaseInitializer {
                 }
                 courseAndSubjectNumbers.put(courseId, new String[]{courseNumber, subjectNumber});
 
-                String expectedSuffix = courseNumber + subjectNumber;
+                String expectedPrefix = subjectNumber + courseNumber;
                 boolean alreadyEncoded = examCode != null
                         && examCode.length() == 6
                         && examCode.chars().allMatch(Character::isDigit)
-                        && examCode.endsWith(expectedSuffix);
+                        && examCode.startsWith(expectedPrefix);
 
                 if (alreadyEncoded) {
                     highestNumberPerCourse.merge(
                             courseId,
-                            Integer.parseInt(examCode.substring(0, 2)),
+                            Integer.parseInt(examCode.substring(4)),
                             Math::max
                     );
                 } else {
@@ -2793,7 +2793,7 @@ public class DatabaseInitializer {
                 }
                 highestNumberPerCourse.put(courseId, examNumber);
 
-                statement.setString(1, twoDigits(examNumber) + numbers[0] + numbers[1]);
+                statement.setString(1, numbers[1] + numbers[0] + twoDigits(examNumber));
                 statement.setInt(2, examId);
                 statement.executeUpdate();
             }

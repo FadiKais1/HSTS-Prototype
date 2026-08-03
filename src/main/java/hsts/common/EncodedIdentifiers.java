@@ -7,12 +7,16 @@ import java.util.regex.Pattern;
  * customer story.
  *
  * <p>Requirements 33 and 34 &mdash; every question carries a unique five digit
- * identifier. The first three digits are the question number within its course;
- * the last two digits are the course number.</p>
+ * identifier. The first two digits are the course number; the last three are the
+ * question number within that course.</p>
  *
  * <p>Requirements 38 and 39 &mdash; every exam carries a unique six digit
- * identifier built from a two digit exam number, the two digit course number and
- * the two digit subject number, in that order.</p>
+ * identifier built from the two digit subject number, the two digit course
+ * number and the two digit exam number, in that order.</p>
+ *
+ * <p>Both read from the broadest container inwards: a subject holds courses, a
+ * course holds questions and exams. Reading an identifier left to right narrows
+ * from where the material lives to which item it is.</p>
  *
  * <p>Course and subject numbers originate in the external school administration
  * system (requirement 19); this class never invents them. Question and exam
@@ -79,7 +83,7 @@ public final class EncodedIdentifiers {
     public static String formatQuestionCode(int questionNumber, String courseNumber) {
         requireQuestionNumber(questionNumber);
         requireOrganisationNumber(courseNumber, "Course number");
-        return pad(questionNumber, QUESTION_NUMBER_DIGITS) + courseNumber;
+        return courseNumber + pad(questionNumber, QUESTION_NUMBER_DIGITS);
     }
 
     /** Convenience overload taking the course number as an integer. */
@@ -95,13 +99,13 @@ public final class EncodedIdentifiers {
     /** Extracts the three digit question number from a question identifier. */
     public static int questionNumberOf(String questionCode) {
         requireQuestionCode(questionCode);
-        return Integer.parseInt(questionCode.substring(0, QUESTION_NUMBER_DIGITS));
+        return Integer.parseInt(questionCode.substring(COURSE_NUMBER_DIGITS));
     }
 
     /** Extracts the two digit course number from a question identifier. */
     public static String courseNumberOfQuestionCode(String questionCode) {
         requireQuestionCode(questionCode);
-        return questionCode.substring(QUESTION_NUMBER_DIGITS);
+        return questionCode.substring(0, COURSE_NUMBER_DIGITS);
     }
 
     // -------------------------------------------------------------------- exams
@@ -114,7 +118,7 @@ public final class EncodedIdentifiers {
         requireExamNumber(examNumber);
         requireOrganisationNumber(courseNumber, "Course number");
         requireOrganisationNumber(subjectNumber, "Subject number");
-        return pad(examNumber, EXAM_NUMBER_DIGITS) + courseNumber + subjectNumber;
+        return subjectNumber + courseNumber + pad(examNumber, EXAM_NUMBER_DIGITS);
     }
 
     /** Convenience overload taking course and subject numbers as integers. */
@@ -134,22 +138,24 @@ public final class EncodedIdentifiers {
     /** Extracts the two digit exam number from an exam identifier. */
     public static int examNumberOf(String examCode) {
         requireExamCode(examCode);
-        return Integer.parseInt(examCode.substring(0, EXAM_NUMBER_DIGITS));
+        return Integer.parseInt(examCode.substring(
+                SUBJECT_NUMBER_DIGITS + COURSE_NUMBER_DIGITS
+        ));
     }
 
     /** Extracts the two digit course number from an exam identifier. */
     public static String courseNumberOfExamCode(String examCode) {
         requireExamCode(examCode);
         return examCode.substring(
-                EXAM_NUMBER_DIGITS,
-                EXAM_NUMBER_DIGITS + COURSE_NUMBER_DIGITS
+                SUBJECT_NUMBER_DIGITS,
+                SUBJECT_NUMBER_DIGITS + COURSE_NUMBER_DIGITS
         );
     }
 
     /** Extracts the two digit subject number from an exam identifier. */
     public static String subjectNumberOfExamCode(String examCode) {
         requireExamCode(examCode);
-        return examCode.substring(EXAM_NUMBER_DIGITS + COURSE_NUMBER_DIGITS);
+        return examCode.substring(0, SUBJECT_NUMBER_DIGITS);
     }
 
     // ------------------------------------------------------- shared formatting
