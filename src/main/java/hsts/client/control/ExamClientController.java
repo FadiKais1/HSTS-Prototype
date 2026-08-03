@@ -41,6 +41,22 @@ public class ExamClientController {
         );
     }
 
+    /**
+     * Approved exams this teacher may schedule, including exams written by other
+     * teachers of the same course. Wider than {@link #getMyExams()}, which stays
+     * scoped to what she authored because that list drives editing.
+     */
+    public CompletableFuture<List<ExamSummaryDTO>> getSchedulableExams() {
+        return sendRequest(
+                new Request(RequestType.LIST_SCHEDULABLE_EXAMS, null),
+                payload -> requireListPayload(
+                        payload,
+                        ExamSummaryDTO.class,
+                        "Invalid schedulable exam list response from server"
+                )
+        );
+    }
+
     public CompletableFuture<ExamDTO> getMyExam(int examId) {
         return sendRequest(
                 new Request(RequestType.GET_MY_EXAM, examId),

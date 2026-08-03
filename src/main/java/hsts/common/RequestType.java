@@ -75,5 +75,8 @@ public enum RequestType implements Serializable {
     DELETE_QUESTION,
 
     /** Lists the teachers, courses, students and executions a report may target. */
-    LIST_REPORT_TARGETS
+    LIST_REPORT_TARGETS,
+
+    /** Approved exams a teacher may schedule, including colleagues' exams. */
+    LIST_SCHEDULABLE_EXAMS
 }

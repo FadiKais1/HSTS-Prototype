@@ -103,7 +103,8 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.GET_SUBMISSION_RESULT_FOR_PRINCIPAL,
                         RequestType.GET_MY_PUBLISHED_EXAM_REVIEW,
                         RequestType.DELETE_QUESTION,
-                        RequestType.LIST_REPORT_TARGETS
+                        RequestType.LIST_REPORT_TARGETS,
+                        RequestType.LIST_SCHEDULABLE_EXAMS
                 },
                 RequestType.values()
         );

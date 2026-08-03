@@ -493,7 +493,9 @@ public class ExamSchedulingPage {
         long generation = ++examRequestGeneration;
         examsLoading = true;
         updateActionState();
-        examClientController.getMyExams().whenComplete((summaries, error) ->
+        // Scheduling covers every approved exam in this teacher's courses, not
+        // only the ones she wrote.
+        examClientController.getSchedulableExams().whenComplete((summaries, error) ->
                 Platform.runLater(() -> {
                     if (isStale(closed, generation, examRequestGeneration)) {
                         return;

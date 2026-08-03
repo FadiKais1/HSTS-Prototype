@@ -245,6 +245,16 @@ public class ExamManagementService {
         return examRepository.findCreatedByTeacher(authenticatedUserId);
     }
 
+    /**
+     * Approved exams this teacher may schedule, including those written by other
+     * teachers of the same course (requirement 15, §7.2).
+     */
+    public List<ExamSummaryDTO> getSchedulableExams(int authenticatedUserId) {
+        authorizeExamManager(authenticatedUserId);
+        requireExamRepository();
+        return examRepository.findSchedulableForTeacher(authenticatedUserId);
+    }
+
     public List<ExamSummaryDTO> getPendingExams(int authenticatedUserId) {
         authorizeCoordinator(authenticatedUserId);
         requireExamRepository();

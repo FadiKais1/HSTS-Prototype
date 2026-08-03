@@ -181,6 +181,7 @@ public class Server extends AbstractServer {
 
                 case UPDATE_QUESTION, GET_MY_COURSES, LIST_QUESTIONS, CREATE_QUESTION,
                         DELETE_QUESTION, LIST_REPORT_TARGETS,
+                        LIST_SCHEDULABLE_EXAMS,
                      ACTIVATE_QUESTION, DEACTIVATE_QUESTION, GET_QUESTION_HISTORY,
                      LIST_MY_EXAMS, GET_MY_EXAM, CREATE_EXAM, GENERATE_EXAM,
                      LIST_PENDING_EXAMS, GET_PENDING_EXAM, UPDATE_EXAM,
@@ -391,6 +392,14 @@ public class Server extends AbstractServer {
                     );
                     publishEvent(new ServerEvent(ServerEventType.EXAM_CHANGED, 0));
                     yield Response.success("Exam generated successfully", generatedExam);
+                }
+
+                case LIST_SCHEDULABLE_EXAMS -> {
+                    requireEmptyPayload(request);
+                    yield Response.success(
+                            "Schedulable exams loaded",
+                            examManagementService.getSchedulableExams(authenticatedUserId)
+                    );
                 }
 
                 case LIST_PENDING_EXAMS -> {

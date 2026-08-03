@@ -87,6 +87,23 @@ public class ExamRepository {
             ORDER BY e.created_at DESC, e.exam_id DESC
             """;
 
+    /**
+     * Every approved exam in a course this teacher teaches, whoever wrote it.
+     *
+     * <p>Scheduling is wider than editing. A course may be taught by more than
+     * one teacher (requirement 15), and §7.2 expects an exam to be executed by a
+     * teacher other than its author, so the scheduling list is scoped by course
+     * rather than by authorship. Editing remains restricted to the author
+     * through TEACHER_EXAM_LIST_SQL.</p>
+     */
+    private static final String SCHEDULABLE_EXAM_LIST_SQL = EXAM_SUMMARY_SELECT + """
+            JOIN teacher_courses tc
+              ON tc.course_id = e.course_id
+             AND tc.teacher_user_id = ?
+            WHERE ev.status = 'APPROVED'
+            ORDER BY e.created_at DESC, e.exam_id DESC
+            """;
+
     private static final String COORDINATOR_PENDING_LIST_SQL = EXAM_SUMMARY_SELECT + """
             JOIN subject_coordinators sc
               ON sc.subject_id = s.subject_id
@@ -513,6 +530,29 @@ public class ExamRepository {
             return exams;
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load teacher exams", e);
+        }
+    }
+
+    /**
+     * Approved exams this teacher may schedule: everything in the courses she
+     * teaches, including exams written by her colleagues.
+     */
+    public List<ExamSummaryDTO> findSchedulableForTeacher(int authenticatedUserId) {
+        List<ExamSummaryDTO> exams = new ArrayList<>();
+
+        try (Connection connection = databaseController.getConnection();
+             PreparedStatement statement =
+                     connection.prepareStatement(SCHEDULABLE_EXAM_LIST_SQL)) {
+            statement.setInt(1, authenticatedUserId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    exams.add(mapExamSummary(resultSet));
+                }
+            }
+            return exams;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to load schedulable exams", e);
         }
     }
 
