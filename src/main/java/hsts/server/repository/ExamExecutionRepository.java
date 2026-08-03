@@ -206,7 +206,12 @@ public class ExamExecutionRepository {
                    exam.exam_code, version.title AS exam_title,
                    exam.course_id, course.name AS course_name,
                    execution.opening_time, execution.closing_time,
-                   execution.duration_minutes, execution.status,
+                   execution.duration_minutes,
+                   -- mapSummary reads this column. It was missing here while the
+                   -- manager queries built from EXECUTION_SUMMARY_SELECT had it,
+                   -- so only the Principal's Results tab failed to load.
+                   execution.cumulative_extension_minutes,
+                   execution.status,
                    execution.created_by_user_id,
                    creator.full_name AS creator_name, execution.created_at,
                    execution.started_count, execution.submitted_count,
