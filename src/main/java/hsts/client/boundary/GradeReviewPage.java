@@ -317,6 +317,32 @@ public class GradeReviewPage {
                 }));
     }
 
+    /**
+     * Updates the submission list without disturbing the review beside it.
+     *
+     * <p>Used when a student submits or is graded while the teacher has a review
+     * open. The rows are replaced so statuses and scores are current, the same
+     * submission stays selected, and the detail pane is deliberately left as it
+     * is so unsaved feedback survives.</p>
+     */
+    private void refreshSubmissionStatuses(int executionId) {
+        int keepSelected = selectedSubmissionId();
+        executionClientController.getExecutionSubmissions(executionId)
+                .whenComplete((loaded, error) -> Platform.runLater(() -> {
+                    if (disposed || error != null || loaded == null) {
+                        return;
+                    }
+                    if (selectedExecutionId() != executionId
+                            || selectedSubmissionId() != keepSelected) {
+                        // The teacher moved on while this was in flight.
+                        return;
+                    }
+                    submissions.setAll(loaded);
+                    selectSubmission(keepSelected);
+                    updateControlState();
+                }));
+    }
+
     private void loadSubmissionDetail(int submissionId, String completionMessage) {
         long generation = ++detailRequestGeneration;
         detailLoading = true;
@@ -477,16 +503,20 @@ public class GradeReviewPage {
             if (disposed || !isConfigured() || mutationInProgress) {
                 return;
             }
-            if (selectedSubmissionId() > 0) {
-                // A review is open; leave it untouched.
+            int executionId = selectedExecutionId();
+            if (executionId <= 0) {
+                loadExecutions(null);
                 return;
             }
-            int executionId = selectedExecutionId();
-            if (executionId > 0) {
-                loadSubmissions(executionId, null, null);
-            } else {
-                loadExecutions(null);
+            if (selectedSubmissionId() > 0) {
+                // A review is open. Its pane must not be reloaded, or typed
+                // feedback would be discarded, but the list beside it still has
+                // to follow the students: an attempt that has just been handed
+                // in should stop reading IN_PROGRESS while the teacher watches.
+                refreshSubmissionStatuses(executionId);
+                return;
             }
+            loadSubmissions(executionId, null, null);
         });
     }
 
