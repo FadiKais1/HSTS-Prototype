@@ -44,7 +44,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionException;
 
@@ -61,6 +63,14 @@ public class ExamSchedulingPage {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+    /**
+     * Every approved exam this teacher may schedule, whoever wrote it. The
+     * subject and course pickers narrow this into {@link #approvedExams}, which
+     * is what the exam dropdown shows.
+     */
+    private final ObservableList<ExamSummaryDTO> schedulableExams =
+            FXCollections.observableArrayList();
 
     private final ObservableList<ExamSummaryDTO> approvedExams =
             FXCollections.observableArrayList();
@@ -109,6 +119,8 @@ public class ExamSchedulingPage {
 
     @FXML private Label userLabel;
     @FXML private Label roleLabel;
+    @FXML private ComboBox<ExamSummaryDTO> subjectComboBox;
+    @FXML private ComboBox<ExamSummaryDTO> courseComboBox;
     @FXML private ComboBox<ExamSummaryDTO> approvedExamComboBox;
     @FXML private DatePicker openingDatePicker;
     @FXML private Spinner<Integer> openingHourSpinner;
@@ -257,6 +269,34 @@ public class ExamSchedulingPage {
     }
 
     private void configureExamSelector() {
+        subjectComboBox.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(ExamSummaryDTO exam) {
+                return exam == null ? "All subjects" : exam.getSubjectName();
+            }
+
+            @Override
+            public ExamSummaryDTO fromString(String text) {
+                return null;
+            }
+        });
+        courseComboBox.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(ExamSummaryDTO exam) {
+                return exam == null ? "All courses" : exam.getCourseName();
+            }
+
+            @Override
+            public ExamSummaryDTO fromString(String text) {
+                return null;
+            }
+        });
+        subjectComboBox.valueProperty().addListener(
+                (observable, previous, subject) -> onSubjectChosen(subject)
+        );
+        courseComboBox.valueProperty().addListener(
+                (observable, previous, course) -> applyExamFilter()
+        );
         approvedExamComboBox.setItems(approvedExams);
         approvedExamComboBox.setConverter(new StringConverter<>() {
             @Override
@@ -507,9 +547,13 @@ public class ExamSchedulingPage {
                         return;
                     }
 
-                    ExamSummaryDTO previous = approvedExamComboBox.getValue();
-                    approvedExams.setAll(approvedOnly(summaries));
-                    selectApprovedExam(previous);
+                    schedulableExams.setAll(approvedOnly(summaries));
+                    ExamSummaryDTO previousSubject = subjectComboBox.getValue();
+                    subjectComboBox.setItems(uniqueBy(
+                            schedulableExams, exam -> true, ExamSummaryDTO::getSubjectId
+                    ));
+                    subjectComboBox.setValue(previousSubject);
+                    onSubjectChosen(previousSubject);
                     if (approvedExams.isEmpty()) {
                         setFeedback("No approved exams are available for scheduling.");
                     } else if (!executionsLoading) {
@@ -518,6 +562,66 @@ public class ExamSchedulingPage {
                     updateActionState();
                 })
         );
+    }
+
+    /** Rebuilds the course list for a subject, then re-filters the exams. */
+    private void onSubjectChosen(ExamSummaryDTO subject) {
+        ExamSummaryDTO previousCourse = courseComboBox.getValue();
+        courseComboBox.setItems(uniqueBy(
+                schedulableExams,
+                exam -> subject == null || exam.getSubjectId() == subject.getSubjectId(),
+                ExamSummaryDTO::getCourseId
+        ));
+
+        boolean keepCourse = previousCourse != null
+                && (subject == null || previousCourse.getSubjectId() == subject.getSubjectId());
+        courseComboBox.setValue(keepCourse ? previousCourse : null);
+        applyExamFilter();
+    }
+
+    /**
+     * Narrows the exam dropdown to the chosen subject and course.
+     *
+     * <p>Both pickers are optional, so a teacher who knows the exam can ignore
+     * them, and a teacher with courses across several subjects can work down
+     * from subject to course to exam.</p>
+     */
+    private void applyExamFilter() {
+        ExamSummaryDTO subject = subjectComboBox.getValue();
+        ExamSummaryDTO course = courseComboBox.getValue();
+        ExamSummaryDTO previousExam = approvedExamComboBox.getValue();
+
+        List<ExamSummaryDTO> visible = new ArrayList<>();
+        for (ExamSummaryDTO exam : schedulableExams) {
+            if (subject != null && exam.getSubjectId() != subject.getSubjectId()) {
+                continue;
+            }
+            if (course != null && exam.getCourseId() != course.getCourseId()) {
+                continue;
+            }
+            visible.add(exam);
+        }
+        approvedExams.setAll(visible);
+        selectApprovedExam(previousExam);
+        updateActionState();
+    }
+
+    /** One entry per distinct key, with a leading null meaning "no filter". */
+    private ObservableList<ExamSummaryDTO> uniqueBy(
+            List<ExamSummaryDTO> source,
+            java.util.function.Predicate<ExamSummaryDTO> include,
+            java.util.function.ToIntFunction<ExamSummaryDTO> key
+    ) {
+        Map<Integer, ExamSummaryDTO> distinct = new LinkedHashMap<>();
+        for (ExamSummaryDTO exam : source) {
+            if (include.test(exam)) {
+                distinct.putIfAbsent(key.applyAsInt(exam), exam);
+            }
+        }
+        ObservableList<ExamSummaryDTO> options = FXCollections.observableArrayList();
+        options.add(null);
+        options.addAll(distinct.values());
+        return options;
     }
 
     /** The execution currently selected, so a reload can restore it. */

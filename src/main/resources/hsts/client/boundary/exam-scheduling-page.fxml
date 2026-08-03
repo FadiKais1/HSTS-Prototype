@@ -57,6 +57,18 @@
                                style="-fx-font-size: 19px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
                         <Label text="Choose the immutable approved version and set its opening and closing times."
                                wrapText="true" style="-fx-text-fill: #6b7280;"/>
+                        <HBox spacing="14">
+                            <VBox spacing="6" HBox.hgrow="ALWAYS">
+                                <Label text="Subject" style="-fx-font-weight: bold;"/>
+                                <ComboBox fx:id="subjectComboBox" maxWidth="Infinity"
+                                          promptText="All subjects"/>
+                            </VBox>
+                            <VBox spacing="6" HBox.hgrow="ALWAYS">
+                                <Label text="Course" style="-fx-font-weight: bold;"/>
+                                <ComboBox fx:id="courseComboBox" maxWidth="Infinity"
+                                          promptText="All courses"/>
+                            </VBox>
+                        </HBox>
                         <VBox spacing="6">
                             <Label text="Approved exam" style="-fx-font-weight: bold;"/>
                             <ComboBox fx:id="approvedExamComboBox" maxWidth="Infinity"
