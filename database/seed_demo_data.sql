@@ -9,6 +9,8 @@
 --              yosef.mizrahi@hsts.local          /  Teacher!2026
 --   (development accounts from init.sql remain valid)
 -- Student identity confirmation number = 30000NNNN (see users list)
+-- Study bots: Mathematics Grade 10 (MATH-10A) and Physics Grade 10 (PHYS-10A);
+--   students 2001-2008 already hold conversations with them.
 -- =============================================================
 
 USE hsts_prototype;
@@ -2265,6 +2267,125 @@ INSERT IGNORE INTO student_answers (submission_id, question_id, question_version
   (132, 106, 1, 2, NULL, 1, 9.00),
   (132, 109, 1, 1, NULL, 0, 0.00);
 
+-- ---------- Course Bots (requirements 42-50) ----------
+-- One study bot per course, as the schema allows a single bot per course.
+INSERT IGNORE INTO course_bots
+    (bot_id, course_id, name, status, created_by_user_id,
+     external_provider, external_bot_id, created_at, updated_at) VALUES
+  (1, 2, 'Mathematics Grade 10 Study Bot', 'ACTIVE', 1002,
+   'deterministic', 'bot-math-10a', @seed_now, @seed_now),
+  (2, 4, 'Physics Grade 10 Study Bot', 'ACTIVE', 1005,
+   'deterministic', 'bot-phys-10a', @seed_now, @seed_now);
+
+-- ---------- Bot knowledge sources (requirements 43, 45) ----------
+-- Requirement 45: a second teacher on the course may add sources, so the
+-- Geometry sheet and the Physics handout are added by Rania Haddad.
+INSERT IGNORE INTO bot_sources
+    (source_id, bot_id, source_type, display_name, extracted_text,
+     content_sha256, added_by_user_id, status, created_at) VALUES
+  (1, 1, 'FREE_TEXT', 'Algebra revision notes',
+   'Linear equations. To solve an equation of the form ax + b = c, subtract b from both sides and then divide by a. Always perform the same operation on both sides so the equality is preserved. Example: 3x + 7 = 22 gives 3x = 15 and therefore x = 5.\nQuadratic equations. A quadratic has the form ax^2 + bx + c = 0. Its roots are given by the quadratic formula x = (-b +/- sqrt(b^2 - 4ac)) / 2a. The expression under the square root is called the discriminant. A positive discriminant gives two real roots, zero gives one repeated root, and a negative discriminant gives no real roots.',
+   'd705255561f00869a04406cb93fe9e77250a09f95b25f02cd47b8c0523d009d1', 1002, 'ACTIVE', @seed_now),
+  (2, 1, 'TXT', 'Geometry formula sheet',
+   'Triangles. The interior angles of any triangle sum to 180 degrees. In a right triangle the Pythagorean theorem states that the square of the hypotenuse equals the sum of the squares of the other two sides.\nCircles. The circumference of a circle is 2*pi*r and its area is pi*r^2, where r is the radius. The diameter is twice the radius.',
+   'f305acfef74dc08f53ee157539c1f1e3b87cc207a987103d144accdfe5268bf9', 1005, 'ACTIVE', @seed_now),
+  (3, 1, 'QUESTION_BANK', 'Grade 10 algebra question bank',
+   'Imported from the course question bank: solving linear equations, quadratic roots and simplification exercises with their worked answers.',
+   '035a3dc8e6bfc0ceb6f655e1053962f57247b602257b95268a7b47b7372dd625', 1002, 'ACTIVE', @seed_now),
+  (4, 2, 'FREE_TEXT', 'Mechanics revision notes',
+   'Newton''s laws of motion. An object stays at rest or in uniform motion unless acted on by a net force. The acceleration of a body is proportional to the net force and inversely proportional to its mass, written F = ma. For every action there is an equal and opposite reaction.\nUniform acceleration. For constant acceleration a, velocity after time t is v = u + at, and displacement is s = ut + 0.5*a*t^2.',
+   '83a6a56f0fa48ba019d6c2e1120b3cbbfeace03e59ef0c24c9517722dd5e7660', 1005, 'ACTIVE', @seed_now),
+  (5, 2, 'DOCX', 'Exam technique handout',
+   'Exam revision guidance. Read every question twice before answering. Where a calculation is required, write the intermediate steps so that a small arithmetic slip does not cost the whole answer. Leave difficult questions until the end and return to them once the straightforward marks are secured.',
+   '3edfedf19c0bc3e48047cf9bd1bb795e8338e8b66b28b30ad7a988f4983158a6', 1005, 'ACTIVE', @seed_now);
+
+-- ---------- Bot conversations (requirement 49) ----------
+-- Each student sees only her own conversation; the provider subject id is a
+-- pseudonym so the external bot never receives a student's identity.
+INSERT IGNORE INTO bot_conversations
+    (conversation_id, bot_id, student_user_id, provider_subject_id,
+     created_at, updated_at) VALUES
+  (1, 1, 2001, '6513270e-269e-4d37-b2a7-4de452e6b438',
+   DATE_SUB(@seed_now, INTERVAL 37 DAY), DATE_SUB(@seed_now, INTERVAL 36 DAY)),
+  (2, 1, 2002, 'd23f0824-128b-4f33-8c5c-7fd0a6a3a450',
+   DATE_SUB(@seed_now, INTERVAL 34 DAY), DATE_SUB(@seed_now, INTERVAL 33 DAY)),
+  (3, 1, 2003, '9531985d-5d9d-49f8-9818-e811892f902b',
+   DATE_SUB(@seed_now, INTERVAL 31 DAY), DATE_SUB(@seed_now, INTERVAL 30 DAY)),
+  (4, 1, 2004, '36f675cc-81e7-4ef5-a8e2-5d940ed90475',
+   DATE_SUB(@seed_now, INTERVAL 28 DAY), DATE_SUB(@seed_now, INTERVAL 27 DAY)),
+  (5, 2, 2005, '6b0d549b-6f03-475a-9600-a35a099950d8',
+   DATE_SUB(@seed_now, INTERVAL 25 DAY), DATE_SUB(@seed_now, INTERVAL 24 DAY)),
+  (6, 2, 2006, '8d116ece-1738-47d9-bd9c-172411e20b8f',
+   DATE_SUB(@seed_now, INTERVAL 22 DAY), DATE_SUB(@seed_now, INTERVAL 21 DAY)),
+  (7, 1, 2007, '90c192cf-d3ac-44af-8f21-ddb66cad4a26',
+   DATE_SUB(@seed_now, INTERVAL 19 DAY), DATE_SUB(@seed_now, INTERVAL 18 DAY)),
+  (8, 1, 2008, 'a170b338-3926-4059-b28c-105d1fb17c23',
+   DATE_SUB(@seed_now, INTERVAL 16 DAY), DATE_SUB(@seed_now, INTERVAL 15 DAY));
+
+-- ---------- Bot messages (requirements 48, 49) ----------
+-- Questions the bot could not answer are stored with NO_SUITABLE_ANSWER, which
+-- is what requirement 48 asks the interface to report to the student.
+INSERT IGNORE INTO bot_messages
+    (message_id, conversation_id, sequence_no, question_text,
+     normalized_question, answer_text, answer_status,
+     provider_request_id, created_at) VALUES
+  (1, 1, 1, 'How do I solve 3x + 7 = 22?',
+   'how do i solve 3x + 7 = 22',
+   'Subtract 7 from both sides to get 3x = 15, then divide both sides by 3, which gives x = 5. Always apply the same operation to both sides so the equality still holds.',
+   'ANSWERED', 'seed-req-0001', DATE_SUB(@seed_now, INTERVAL 886 HOUR)),
+  (2, 1, 2, 'What is the discriminant used for?',
+   'what is the discriminant used for',
+   'The discriminant is the expression b^2 - 4ac under the square root in the quadratic formula. If it is positive the equation has two real roots, if it is zero there is one repeated root, and if it is negative there are no real roots.',
+   'ANSWERED', 'seed-req-0002', DATE_SUB(@seed_now, INTERVAL 884 HOUR)),
+  (3, 1, 3, 'Will this be on the exam?',
+   'will this be on the exam',
+   'I could not find an answer to that in this course''s materials. Try asking about a topic covered in the course, or ask your teacher.',
+   'NO_SUITABLE_ANSWER', 'seed-req-0003', DATE_SUB(@seed_now, INTERVAL 882 HOUR)),
+  (4, 2, 1, 'Explain the quadratic formula step by step.',
+   'explain the quadratic formula step by step.',
+   'For an equation ax^2 + bx + c = 0, the roots are x = (-b +/- sqrt(b^2 - 4ac)) / 2a. First identify a, b and c, then compute the discriminant b^2 - 4ac, take its square root, and finally substitute into the formula to obtain both roots.',
+   'ANSWERED', 'seed-req-0004', DATE_SUB(@seed_now, INTERVAL 814 HOUR)),
+  (5, 2, 2, 'What is the area of a circle with radius 4?',
+   'what is the area of a circle with radius 4',
+   'The area of a circle is pi*r^2. With r = 4 the area is pi * 16, which is approximately 50.27 square units.',
+   'ANSWERED', 'seed-req-0005', DATE_SUB(@seed_now, INTERVAL 812 HOUR)),
+  (6, 3, 1, 'Do the angles in a triangle always add to 180?',
+   'do the angles in a triangle always add to 180',
+   'Yes. The interior angles of any triangle sum to 180 degrees. This holds for every triangle, whether it is acute, right or obtuse.',
+   'ANSWERED', 'seed-req-0006', DATE_SUB(@seed_now, INTERVAL 742 HOUR)),
+  (7, 4, 1, 'Can you tell me my grade for the Algebra Midterm?',
+   'can you tell me my grade for the algebra midterm',
+   'I could not find an answer to that in this course''s materials. Try asking about a topic covered in the course, or ask your teacher.',
+   'NO_SUITABLE_ANSWER', 'seed-req-0007', DATE_SUB(@seed_now, INTERVAL 670 HOUR)),
+  (8, 4, 2, 'How do I use the Pythagorean theorem?',
+   'how do i use the pythagorean theorem',
+   'In a right triangle the square of the hypotenuse equals the sum of the squares of the other two sides. If the two shorter sides are 3 and 4, the hypotenuse is sqrt(9 + 16) = sqrt(25) = 5.',
+   'ANSWERED', 'seed-req-0008', DATE_SUB(@seed_now, INTERVAL 668 HOUR)),
+  (9, 5, 1, 'What does F = ma actually mean?',
+   'what does f = ma actually mean',
+   'It states that the acceleration of a body is proportional to the net force acting on it and inversely proportional to its mass. Doubling the force doubles the acceleration; doubling the mass halves it.',
+   'ANSWERED', 'seed-req-0009', DATE_SUB(@seed_now, INTERVAL 598 HOUR)),
+  (10, 5, 2, 'How do I find displacement under constant acceleration?',
+   'how do i find displacement under constant acceleration',
+   'Use s = ut + 0.5*a*t^2, where u is the initial velocity, a is the constant acceleration and t is the elapsed time.',
+   'ANSWERED', 'seed-req-0010', DATE_SUB(@seed_now, INTERVAL 596 HOUR)),
+  (11, 6, 1, 'What is Newton''s third law?',
+   'what is newton''s third law',
+   'For every action there is an equal and opposite reaction. When one body exerts a force on a second body, the second exerts a force of equal magnitude in the opposite direction on the first.',
+   'ANSWERED', 'seed-req-0011', DATE_SUB(@seed_now, INTERVAL 526 HOUR)),
+  (12, 6, 2, 'Give me the answers to tomorrow''s test.',
+   'give me the answers to tomorrow''s test.',
+   'I could not find an answer to that in this course''s materials. Try asking about a topic covered in the course, or ask your teacher.',
+   'NO_SUITABLE_ANSWER', 'seed-req-0012', DATE_SUB(@seed_now, INTERVAL 524 HOUR)),
+  (13, 7, 1, 'How do I simplify fractions?',
+   'how do i simplify fractions',
+   'Divide the numerator and the denominator by their greatest common divisor. For example, 12/18 has a greatest common divisor of 6, so it simplifies to 2/3.',
+   'ANSWERED', 'seed-req-0013', DATE_SUB(@seed_now, INTERVAL 454 HOUR)),
+  (14, 8, 1, 'What is the circumference formula?',
+   'what is the circumference formula',
+   'The circumference of a circle is 2*pi*r, where r is the radius. If you know the diameter instead, the circumference is pi times the diameter.',
+   'ANSWERED', 'seed-req-0014', DATE_SUB(@seed_now, INTERVAL 382 HOUR));
+
 -- ---------- Persisted decile distributions ----------
 INSERT IGNORE INTO exam_execution_deciles (execution_id, decile_number, submission_count) VALUES
   (1, 1, 0),
@@ -2337,5 +2458,9 @@ UNION ALL SELECT 'questions',    COUNT(*) FROM questions
 UNION ALL SELECT 'exams',        COUNT(*) FROM exams
 UNION ALL SELECT 'executions',   COUNT(*) FROM exam_executions
 UNION ALL SELECT 'submissions',  COUNT(*) FROM exam_submissions
-UNION ALL SELECT 'answers',      COUNT(*) FROM student_answers;
+UNION ALL SELECT 'answers',      COUNT(*) FROM student_answers
+UNION ALL SELECT 'bots',         COUNT(*) FROM course_bots
+UNION ALL SELECT 'bot_sources',  COUNT(*) FROM bot_sources
+UNION ALL SELECT 'bot_convos',   COUNT(*) FROM bot_conversations
+UNION ALL SELECT 'bot_messages', COUNT(*) FROM bot_messages;
 
