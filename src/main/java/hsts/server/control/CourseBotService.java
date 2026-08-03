@@ -712,14 +712,13 @@ public class CourseBotService {
     }
 
     private static BotSourceDTO toSourceDto(BotSource source) {
-        BotSourceDTO dto = new BotSourceDTO(
+        return new BotSourceDTO(
                 source.getSourceId(), source.getBotId(), source.getSourceType(),
                 source.getDisplayName(), source.getQuestionId(),
                 source.getQuestionVersionNo(), source.getStatus(),
-                source.getCreatedAt(), source.getRemovedAt()
+                source.getCreatedAt(), source.getRemovedAt(),
+                source.getCurrentVersionNo()
         );
-        dto.setCurrentVersionNo(source.getCurrentVersionNo());
-        return dto;
     }
 
     private static BotMessageDTO toMessageDto(BotMessage message) {

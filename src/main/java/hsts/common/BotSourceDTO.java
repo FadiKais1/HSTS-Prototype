@@ -23,12 +23,23 @@ public final class BotSourceDTO implements Serializable {
      * Which revision of this source is in use. Sent back when a teacher saves an
      * edit, so a colleague's change is detected.
      */
-    private int currentVersionNo = 1;
+    private final int currentVersionNo;
 
+    /** Retained so existing callers and the Assignment 2 contract stay valid. */
     public BotSourceDTO(int sourceId, int botId, BotSourceType sourceType,
                         String displayName, Integer questionId,
                         Integer questionVersionNo, BotSourceStatus status,
                         LocalDateTime createdAt, LocalDateTime removedAt) {
+        this(sourceId, botId, sourceType, displayName, questionId,
+                questionVersionNo, status, createdAt, removedAt, 1);
+    }
+
+    public BotSourceDTO(int sourceId, int botId, BotSourceType sourceType,
+                        String displayName, Integer questionId,
+                        Integer questionVersionNo, BotSourceStatus status,
+                        LocalDateTime createdAt, LocalDateTime removedAt,
+                        int currentVersionNo) {
+        this.currentVersionNo = currentVersionNo <= 0 ? 1 : currentVersionNo;
         this.sourceId = BotContractSupport.requirePositive(
                 sourceId, "Source ID must be positive"
         );
@@ -64,10 +75,6 @@ public final class BotSourceDTO implements Serializable {
     }
 
     public int getCurrentVersionNo() { return currentVersionNo; }
-
-    public void setCurrentVersionNo(int currentVersionNo) {
-        this.currentVersionNo = currentVersionNo <= 0 ? 1 : currentVersionNo;
-    }
 
     public int getSourceId() { return sourceId; }
     public int getBotId() { return botId; }
