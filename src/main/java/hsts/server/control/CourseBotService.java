@@ -61,6 +61,22 @@ public class CourseBotService {
     private final QuestionRepository questionRepository;
     private final CourseRepository courseRepository;
     private final UserRepository userRepository;
+    /**
+     * Shown when the study bot itself could not be reached or replied with
+     * nothing usable. Requirement 48 asks for a message whenever there is no
+     * answer, and this is the student's wording of that.
+     */
+    private static final String STUDENT_PROVIDER_FAILURE =
+            "The study bot could not answer right now. Please try again in a moment.";
+
+    /**
+     * Shown when the answer arrived but could not be recorded in the
+     * conversation. The underlying rule is kept as the exception cause so it
+     * still reaches the server log.
+     */
+    private static final String STUDENT_SAVE_FAILURE =
+            "The study bot's answer could not be saved. Please ask your question again.";
+
     private final ExamSubmissionRepository examSubmissionRepository;
     private final BotSourceExtractor sourceExtractor;
     private final ExternalBotSystem externalBotSystem;
@@ -320,13 +336,13 @@ public class CourseBotService {
         try {
             providerResponse = externalBotSystem.answer(request);
         } catch (RuntimeException exception) {
-            throw new IllegalStateException("Unable to obtain a Course Bot answer", exception);
+            throw new IllegalStateException(STUDENT_PROVIDER_FAILURE, exception);
         }
         if (providerResponse == null || providerResponse.getAnswerStatus() == null
                 || (providerResponse.getAnswerStatus() == BotAnswerStatus.ANSWERED
                 && (providerResponse.getAnswerText() == null
                 || providerResponse.getAnswerText().isBlank()))) {
-            throw new IllegalStateException("Course Bot did not return a valid response");
+            throw new IllegalStateException(STUDENT_PROVIDER_FAILURE);
         }
 
         BotMessage message = BotMessage.create(
@@ -345,10 +361,19 @@ public class CourseBotService {
                     && (exception.getMessage().contains("sequence conflict")
                     || exception.getMessage().contains("was modified"))) {
                 throw new IllegalStateException(
-                        "Bot conversation was modified; retry the question", exception
+                        "Your question was not saved because the conversation changed. "
+                                + "Please ask it again.",
+                        exception
                 );
             }
-            throw exception;
+            throw new IllegalStateException(STUDENT_SAVE_FAILURE, exception);
+        } catch (IllegalArgumentException exception) {
+            // BotConversation enforces its own integrity rules: message order,
+            // identity and timestamps. Those messages describe the rule that was
+            // broken and are written for developers. A student needs to know what
+            // to do next instead, so the rule is kept as the cause for the server
+            // log while she is told plainly that the answer was not recorded.
+            throw new IllegalStateException(STUDENT_SAVE_FAILURE, exception);
         }
         BotMessage authoritative = persisted.getMessages().get(
                 persisted.getMessages().size() - 1

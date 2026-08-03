@@ -60,6 +60,44 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class CourseBotServiceTest {
+
+    /**
+     * Requirement 48 asks for a message when the study bot has no answer, and
+     * that message is read by a student. BotConversation and the provider guard
+     * describe broken rules in developer language, and the server returns every
+     * exception message to the caller, so those strings would otherwise reach
+     * her screen.
+     *
+     * <p>This pins the student wording and forbids the internal vocabulary that
+     * previously leaked, such as "Conversation update time cannot precede
+     * message creation".</p>
+     */
+    @Test
+    public void studentFacingBotFailuresAvoidInternalRuleVocabulary() throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/hsts/server/control/CourseBotService.java"
+        ));
+
+        assertTrue(source.contains(
+                "The study bot could not answer right now. Please try again in a moment."
+        ));
+        assertTrue(source.contains(
+                "The study bot's answer could not be saved. Please ask your question again."
+        ));
+
+        // An internal rule must never be thrown on for the student to read.
+        for (String leaked : java.util.List.of(
+                "\"Unable to obtain a Course Bot answer\"",
+                "\"Course Bot did not return a valid response\"",
+                "cannot precede message creation",
+                "sequence must be contiguous"
+        )) {
+            assertFalse(
+                    "Internal wording reaches the student: " + leaked,
+                    source.contains(leaked)
+            );
+        }
+    }
     private static final int TEACHER = 1002;
     private static final int COORDINATOR = 1003;
     private static final int STUDENT = 1001;
