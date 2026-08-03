@@ -352,6 +352,7 @@ public class DatabaseInitializer {
                     external_source_id VARCHAR(255) NULL,
                     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
                     removed_at DATETIME(6) NULL,
+                    current_version_no INT NOT NULL DEFAULT 1,
                     active_content_sha256 CHAR(64)
                         GENERATED ALWAYS AS (
                             CASE WHEN status = 'ACTIVE' THEN content_sha256 ELSE NULL END
