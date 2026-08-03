@@ -175,7 +175,12 @@ public class ExamSchedulingPageContractTest {
 
         assertTrue(source.contains("new ExamClientController(client)"));
         assertTrue(source.contains("new ExamExecutionClientController(client)"));
-        assertTrue(source.contains(".getMyExams()"));
+        // Scheduling covers every approved exam in this teacher's courses, not
+        // only the ones she wrote, so the page asks for the wider list.
+        // getMyExams stays scoped to the author and still drives the Exam
+        // Builder, so this page must not use it.
+        assertTrue(source.contains(".getSchedulableExams()"));
+        assertFalse(source.contains(".getMyExams()"));
         assertTrue(source.contains(".getMyExamExecutions()"));
         assertTrue(source.contains(".scheduleExamExecution(payload)"));
         assertTrue(source.contains("Platform.runLater("));
