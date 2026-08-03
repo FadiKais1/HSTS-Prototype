@@ -83,8 +83,35 @@
     -fx-text-fill: #111827;
 }
 
+/*
+ * Column headers carry white text, so they need a dark background of their own.
+ * Without one JavaFX falls back to its default light grey and the headings are
+ * almost invisible. Every table in the application takes its styling from here,
+ * so the background belongs beside the text colour rather than in each screen.
+ */
+.table-view .column-header-background {
+    -fx-background-color: #334155;
+    -fx-background-radius: 6 6 0 0;
+}
+
+.table-view .column-header,
+.table-view .filler {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent #475569 transparent transparent;
+    -fx-border-width: 0 1 0 0;
+    -fx-size: 34;
+}
+
 .table-view .column-header .label {
     -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 0 6 0 6;
+}
+
+/* The sort arrow is drawn in the same white as the heading it belongs to. */
+.table-view .column-header .sort-order-dot,
+.table-view .column-header .arrow {
+    -fx-background-color: white;
 }
 
 .table-row-cell:selected .table-cell,
