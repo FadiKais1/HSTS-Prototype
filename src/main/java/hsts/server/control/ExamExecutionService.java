@@ -430,16 +430,11 @@ public class ExamExecutionService {
                 authenticatedStudentId,
                 payload.getExecutionId()
         ).orElseThrow(() -> new IllegalStateException("Execution not available"));
-        // Surrounding spaces are easy to introduce in a nine digit number,
-        // especially when it is pasted, and must not be treated as a mismatch.
         if (!studentProfileRepository.matchesIdentity(
                 authenticatedStudentId,
-                payload.getIdentityConfirmation().trim()
+                payload.getIdentityConfirmation()
         )) {
-            throw new IllegalArgumentException(
-                    "That identity number does not match your record. "
-                            + "Check the digits and try again."
-            );
+            throw new IllegalArgumentException("Invalid identity confirmation");
         }
 
         LocalDateTime currentTime = currentTime();

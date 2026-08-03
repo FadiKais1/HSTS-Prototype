@@ -321,26 +321,20 @@ public class ExamExecutionPage {
 
         executionController.startExamAttempt(payload).whenComplete((attempt, error) ->
                 Platform.runLater(() -> {
+                    clearIdentityInput();
                     if (isStale(closed, lifecycle, lifecycleGeneration,
                             generation, startGeneration)) {
-                        clearIdentityInput();
                         return;
                     }
                     starting = false;
                     if (error != null || attempt == null) {
-                        // Keep what she typed. Clearing it made a single wrong
-                        // digit cost the whole nine, which is why starting an
-                        // exam felt like it took several attempts.
                         setFeedback(error == null
                                 ? "Unable to start exam attempt"
                                 : cleanError(error));
-                        identityField.selectAll();
-                        identityField.requestFocus();
                         updateActionState();
                         return;
                     }
 
-                    clearIdentityInput();
                     if (applyAttempt(attempt)) {
                         setFeedback("Exam attempt loaded.");
                     }
