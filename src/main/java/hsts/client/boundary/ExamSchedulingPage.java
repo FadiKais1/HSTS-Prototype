@@ -17,7 +17,6 @@ import hsts.common.type.UserRole;
 import hsts.common.type.SubmissionStatus;
 import hsts.common.ServerEvent;
 import hsts.common.ServerEventType;
-import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
@@ -77,14 +76,24 @@ public class ExamSchedulingPage {
     private ExamClientController examClientController;
     private ExamExecutionClientController executionClientController;
     /**
-     * An execution moves from SCHEDULED to OPEN, and from OPEN to CLOSED, purely
-     * because the clock passed its opening or closing time. No user acts, so the
-     * server has nothing to push. This local ticker re-reads the executions
-     * while the page is open so the status column follows the clock.
+     * A single pending refresh, armed for the next moment a status could change.
+     * Replaced whenever the execution list is reloaded, and cancelled when the
+     * page closes.
      */
     private Timeline statusTicker;
 
-    private static final int STATUS_TICK_SECONDS = 15;
+    /**
+     * Guards against a boundary that has just passed but whose refresh has not
+     * yet been reflected, so the page cannot schedule a run of zero-length waits.
+     */
+    private static final int MINIMUM_WAIT_SECONDS = 2;
+
+    /**
+     * How far ahead a single wait may reach. A boundary further away than this is
+     * approached in stages, so a clock correction or a long-running window cannot
+     * leave the page asleep indefinitely.
+     */
+    private static final int MAXIMUM_WAIT_SECONDS = 600;
 
     private boolean closed;
     private boolean examsLoading;
@@ -170,21 +179,74 @@ public class ExamSchedulingPage {
         updateActionState();
         loadApprovedExams();
         loadExecutions(null, null);
-        startStatusTicker();
+        scheduleNextStatusChange();
     }
 
-    private void startStatusTicker() {
+    /**
+     * Schedules a single refresh for the next moment a status could change.
+     *
+     * <p>Everything else on this page arrives as a pushed event: a student
+     * entering the exam, a submission, a time extension. Only the SCHEDULED to
+     * OPEN and OPEN to CLOSED transitions have no event behind them, because
+     * they are derived from the clock rather than caused by anyone.</p>
+     *
+     * <p>Those transitions happen at times the page already knows, so rather
+     * than polling it waits for the earliest one and refreshes once. When no
+     * execution has a boundary ahead, nothing is scheduled at all.</p>
+     */
+    private void scheduleNextStatusChange() {
         stopStatusTicker();
+        if (closed) {
+            return;
+        }
+
+        Long waitSeconds = secondsUntilNextBoundary(LocalDateTime.now());
+        if (waitSeconds == null) {
+            return;
+        }
+
         statusTicker = new Timeline(new KeyFrame(
-                Duration.seconds(STATUS_TICK_SECONDS),
+                Duration.seconds(waitSeconds),
                 event -> {
                     if (!closed) {
                         reloadPreservingSelection();
                     }
                 }
         ));
-        statusTicker.setCycleCount(Animation.INDEFINITE);
+        statusTicker.setCycleCount(1);
         statusTicker.play();
+    }
+
+    /**
+     * Seconds until the earliest opening or closing time still ahead, or null
+     * when no execution has one.
+     */
+    private Long secondsUntilNextBoundary(LocalDateTime from) {
+        LocalDateTime earliest = null;
+        for (ExamExecutionSummaryDTO execution : executions) {
+            earliest = earlier(earliest, laterThan(from, execution.getOpeningTime()));
+            earliest = earlier(earliest, laterThan(from, execution.getClosingTime()));
+        }
+        if (earliest == null) {
+            return null;
+        }
+
+        long seconds = java.time.Duration.between(from, earliest).toSeconds();
+        return Math.min(
+                Math.max(seconds, MINIMUM_WAIT_SECONDS),
+                MAXIMUM_WAIT_SECONDS
+        );
+    }
+
+    private static LocalDateTime laterThan(LocalDateTime from, LocalDateTime candidate) {
+        return candidate != null && candidate.isAfter(from) ? candidate : null;
+    }
+
+    private static LocalDateTime earlier(LocalDateTime current, LocalDateTime candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        return current == null || candidate.isBefore(current) ? candidate : current;
     }
 
     private void stopStatusTicker() {
@@ -486,6 +548,9 @@ public class ExamSchedulingPage {
 
                     executions.setAll(loaded);
                     selectExecution(selectExecutionId);
+                    // The boundaries just changed, so the next wake-up is
+                    // recalculated from the list that is now on screen.
+                    scheduleNextStatusChange();
                     if (completionMessage != null) {
                         setFeedback(completionMessage);
                     } else if (loaded.isEmpty()) {
