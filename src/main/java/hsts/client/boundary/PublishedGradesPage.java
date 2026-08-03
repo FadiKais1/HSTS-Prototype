@@ -2,6 +2,9 @@ package hsts.client.boundary;
 
 import hsts.client.control.ExamExecutionClientController;
 import hsts.client.net.Client;
+import hsts.client.net.ServerEventBus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.LoginResult;
 import hsts.common.PublishedExamQuestionReviewDTO;
 import hsts.common.PublishedExamReviewDTO;
@@ -48,6 +51,9 @@ public class PublishedGradesPage {
     private PublishedGradeDTO currentGrade;
     private PublishedExamReviewDTO currentReview;
     private int currentQuestionIndex;
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
     private boolean disposed = true;
     private boolean listBusy;
     private boolean detailBusy;
@@ -131,6 +137,13 @@ public class PublishedGradesPage {
 
         this.executionController = new ExamExecutionClientController(client);
         this.disposed = false;
+        // A grade published by a teacher reaches this student without a manual
+        // refresh. The event carries no grade data; the reload asks the server,
+        // which applies the usual authorisation, so only her own results arrive.
+        closeEventSubscription();
+        this.eventSubscription = client.getServerEventBus().subscribe(
+                this::onServerEvent, ServerEventType.GRADES_PUBLISHED
+        );
         this.listBusy = false;
         this.detailBusy = false;
         this.reviewBusy = false;
@@ -284,11 +297,25 @@ public class PublishedGradesPage {
                 }));
     }
 
-    @FXML
-    private void handleRefresh() {
+    /**
+     * Reacts to a teacher publishing a grade. Runs on the JavaFX thread.
+     *
+     * <p>The reload keeps the currently selected result, so a student reading
+     * one paper is not thrown back to the top of the list when another grade
+     * arrives.</p>
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (disposed || event == null
+                || event.getType() != ServerEventType.GRADES_PUBLISHED) {
+            return;
+        }
         if (!isConfigured() || listBusy) {
             return;
         }
+        refreshPreservingSelection("A new grade was published.");
+    }
+
+    private void refreshPreservingSelection(String message) {
         PublishedGradeSummaryDTO selected =
                 gradeTable.getSelectionModel().getSelectedItem();
         Integer preferredSubmissionId = selected == null
@@ -296,7 +323,25 @@ public class PublishedGradesPage {
         listRequestGeneration++;
         detailRequestGeneration++;
         reviewRequestGeneration++;
+        if (message != null) {
+            setStatus(message);
+        }
         loadPublishedGrades(preferredSubmissionId);
+    }
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
+    }
+
+    @FXML
+    private void handleRefresh() {
+        if (!isConfigured() || listBusy) {
+            return;
+        }
+        refreshPreservingSelection(null);
     }
 
     @FXML
@@ -308,6 +353,7 @@ public class PublishedGradesPage {
 
         Runnable navigation = backHandler;
         disposed = true;
+        closeEventSubscription();
         listRequestGeneration++;
         detailRequestGeneration++;
         reviewRequestGeneration++;
