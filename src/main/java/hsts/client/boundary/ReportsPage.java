@@ -36,6 +36,7 @@ import javafx.stage.FileChooser;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.AccessDeniedException;
@@ -78,6 +79,30 @@ public class ReportsPage {
     @FXML private HBox principalControls;
     @FXML private ComboBox<String> comparisonModeComboBox;
     @FXML private ComboBox<ReportTargetOptionDTO> targetComboBox;
+
+    @FXML private ComboBox<ReportTargetOptionDTO> comparisonTargetComboBox;
+    @FXML private Button clearComparisonButton;
+    @FXML private HBox statisticsSplit;
+    @FXML private VBox comparisonContainer;
+    @FXML private VBox comparisonSummaryContainer;
+    @FXML private Label primaryReportLabel;
+    @FXML private Label comparisonReportLabel;
+    @FXML private Label comparisonSummaryLabel;
+    @FXML private TableView<ExamStatisticsDTO> comparisonTable;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonCodeColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonExamColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonCourseColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonPublishedColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonAverageColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonMedianColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonStartedColumn;
+    @FXML private TableColumn<ExamStatisticsDTO, String> comparisonSubmittedColumn;
+
+    private final ObservableList<ExamStatisticsDTO> comparisonRows =
+            FXCollections.observableArrayList();
+
+    /** The second report when comparing, or null when a single report is shown. */
+    private ReportSummaryDTO comparisonReport;
 
     /** Every target the Principal may report on, loaded once when the page opens. */
     private ReportTargetsDTO reportTargets;
@@ -147,6 +172,9 @@ public class ReportsPage {
                 (observable, previous, selected) -> populateTargets(selected)
         );
         configureTable();
+        configureComparisonTable();
+        comparisonTable.setItems(comparisonRows);
+        comparisonTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         executionTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         executionTable.setItems(executions);
         executionTable.getSelectionModel().selectedItemProperty().addListener(
@@ -355,20 +383,170 @@ public class ReportsPage {
         int targetId = target.getTargetId();
 
         String mode = comparisonModeComboBox.getValue();
-        CompletableFuture<ReportSummaryDTO> request = switch (mode) {
-            case "Teacher" -> reportClientController.getTeacherExamsReport(targetId);
-            case "Course" -> reportClientController.getCourseExamsReport(targetId);
-            case "Student" -> reportClientController.getStudentExamsReport(targetId);
-            case "Execution" -> reportClientController.getExamExecutionReport(targetId);
-            default -> throw new IllegalStateException("Report comparison type is required");
-        };
-        loadReport(request);
+        loadReport(requestFor(mode, targetId));
+
+        // A second target turns the page into a side by side comparison. Both
+        // sides are ordinary reports of the same type, loaded independently.
+        ReportTargetOptionDTO against = comparisonTargetComboBox.getValue();
+        if (against == null || against.getTargetId() == targetId) {
+            comparisonReport = null;
+            comparisonRows.clear();
+            showComparison(false);
+        } else {
+            loadComparisonReport(against, mode);
+        }
     }
 
     /**
      * Loads every target the Principal may report on, once, so the picker can
      * offer real names instead of asking for a numeric id.
      */
+    private void configureComparisonTable() {
+        comparisonCodeColumn.setCellValueFactory(cell ->
+                new ReadOnlyStringWrapper(cell.getValue().getExamCode()));
+        comparisonExamColumn.setCellValueFactory(cell ->
+                new ReadOnlyStringWrapper(cell.getValue().getExamTitle()));
+        comparisonCourseColumn.setCellValueFactory(cell ->
+                new ReadOnlyStringWrapper(cell.getValue().getCourseName()));
+        comparisonPublishedColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(
+                Integer.toString(cell.getValue().getPublishedSubmissionCount())
+        ));
+        comparisonAverageColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(
+                formatScore(cell.getValue().getAverageScore())
+        ));
+        comparisonMedianColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(
+                formatScore(cell.getValue().getMedianScore())
+        ));
+        comparisonStartedColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(
+                Integer.toString(cell.getValue().getStartedSubmissionCount())
+        ));
+        comparisonSubmittedColumn.setCellValueFactory(cell -> new ReadOnlyStringWrapper(
+                Integer.toString(cell.getValue().getSubmittedSubmissionCount())
+        ));
+    }
+
+    /** Drops the second report and returns the page to a single full width table. */
+    @FXML
+    private void handleClearComparison() {
+        comparisonTargetComboBox.getSelectionModel().clearSelection();
+        comparisonReport = null;
+        comparisonRows.clear();
+        showComparison(false);
+        setStatus("Comparison cleared.");
+    }
+
+    private void showComparison(boolean visible) {
+        comparisonContainer.setVisible(visible);
+        comparisonContainer.setManaged(visible);
+        comparisonSummaryContainer.setVisible(visible);
+        comparisonSummaryContainer.setManaged(visible);
+    }
+
+    /**
+     * Loads the second report and renders it beside the first.
+     *
+     * <p>Both sides use the same report routes, so a comparison is two ordinary
+     * reports shown together rather than a separate server capability.</p>
+     */
+    private void loadComparisonReport(ReportTargetOptionDTO target, String mode) {
+        CompletableFuture<ReportSummaryDTO> request = requestFor(mode, target.getTargetId());
+        request.whenComplete((report, error) ->
+                Platform.runLater(() -> {
+                    if (disposed) {
+                        return;
+                    }
+                    if (error != null) {
+                        setError("Unable to load the comparison report.");
+                        showComparison(false);
+                        return;
+                    }
+                    comparisonReport = report;
+                    comparisonRows.setAll(report.getExamStatistics());
+                    comparisonReportLabel.setText(
+                            "Comparison: " + report.getTargetDisplayName()
+                    );
+                    showComparison(true);
+                    updateComparisonSummary();
+                })
+        );
+    }
+
+    private CompletableFuture<ReportSummaryDTO> requestFor(String mode, int targetId) {
+        return switch (mode) {
+            case "Teacher" -> reportClientController.getTeacherExamsReport(targetId);
+            case "Course" -> reportClientController.getCourseExamsReport(targetId);
+            case "Student" -> reportClientController.getStudentExamsReport(targetId);
+            case "Execution" -> reportClientController.getExamExecutionReport(targetId);
+            default -> throw new IllegalStateException("Report comparison type is required");
+        };
+    }
+
+    /**
+     * Summarises the difference between the two sides: how many executions each
+     * covers, their mean average and median score, and how many students took
+     * part. Averages are unweighted means across each side's executions.
+     */
+    private void updateComparisonSummary() {
+        if (currentReport == null || comparisonReport == null) {
+            return;
+        }
+        List<ExamStatisticsDTO> left = currentReport.getExamStatistics();
+        List<ExamStatisticsDTO> right = comparisonReport.getExamStatistics();
+
+        String leftName = currentReport.getTargetDisplayName();
+        String rightName = comparisonReport.getTargetDisplayName();
+
+        BigDecimal leftAverage = meanOf(left, true);
+        BigDecimal rightAverage = meanOf(right, true);
+        BigDecimal leftMedian = meanOf(left, false);
+        BigDecimal rightMedian = meanOf(right, false);
+
+        StringBuilder summary = new StringBuilder();
+        summary.append(leftName).append(": ").append(left.size())
+                .append(" executions, average ").append(formatScore(leftAverage))
+                .append(", median ").append(formatScore(leftMedian))
+                .append(", ").append(submittedTotal(left)).append(" submissions.\n");
+        summary.append(rightName).append(": ").append(right.size())
+                .append(" executions, average ").append(formatScore(rightAverage))
+                .append(", median ").append(formatScore(rightMedian))
+                .append(", ").append(submittedTotal(right)).append(" submissions.");
+
+        if (leftAverage != null && rightAverage != null) {
+            BigDecimal difference = leftAverage.subtract(rightAverage);
+            int direction = difference.compareTo(BigDecimal.ZERO);
+            String phrase = direction == 0
+                    ? "The two averages are equal."
+                    : leftName + " averages " + formatScore(difference.abs())
+                            + (direction > 0 ? " higher than " : " lower than ") + rightName + ".";
+            summary.append("\n").append(phrase);
+        }
+        comparisonSummaryLabel.setText(summary.toString());
+    }
+
+    /** Unweighted mean of each execution's average, or median, ignoring absent values. */
+    static BigDecimal meanOf(List<ExamStatisticsDTO> statistics, boolean useAverage) {
+        BigDecimal total = BigDecimal.ZERO;
+        int counted = 0;
+        for (ExamStatisticsDTO row : statistics) {
+            BigDecimal value = useAverage ? row.getAverageScore() : row.getMedianScore();
+            if (value != null) {
+                total = total.add(value);
+                counted++;
+            }
+        }
+        return counted == 0
+                ? null
+                : total.divide(BigDecimal.valueOf(counted), 2, RoundingMode.HALF_UP);
+    }
+
+    static int submittedTotal(List<ExamStatisticsDTO> statistics) {
+        int total = 0;
+        for (ExamStatisticsDTO row : statistics) {
+            total += row.getSubmittedSubmissionCount();
+        }
+        return total;
+    }
+
     private void loadReportTargets() {
         if (reportClientController == null) {
             return;
@@ -403,6 +581,13 @@ public class ReportsPage {
         if (!options.isEmpty()) {
             targetComboBox.getSelectionModel().selectFirst();
         }
+        // The comparison side offers the same list, but starts unselected so a
+        // single report stays the default.
+        comparisonTargetComboBox.setItems(FXCollections.observableArrayList(options));
+        comparisonTargetComboBox.getSelectionModel().clearSelection();
+        comparisonReport = null;
+        comparisonRows.clear();
+        showComparison(false);
     }
 
     private void loadReport(CompletableFuture<ReportSummaryDTO> request) {
@@ -446,6 +631,14 @@ public class ReportsPage {
         generatedAtLabel.setText(DATE_TIME_FORMAT.format(report.getGeneratedAt()));
         executionCountLabel.setText(Integer.toString(report.getExamStatistics().size()));
         executions.setAll(report.getExamStatistics());
+        if (primaryReportLabel != null) {
+            primaryReportLabel.setText(report.getTargetDisplayName() == null
+                    ? "Execution Statistics"
+                    : "Execution Statistics: " + report.getTargetDisplayName());
+        }
+        if (comparisonReport != null) {
+            updateComparisonSummary();
+        }
         executionTable.getSelectionModel().clearSelection();
         clearExecutionDetail();
         setError("");
@@ -572,6 +765,12 @@ public class ReportsPage {
         boolean configured = isConfigured();
         boolean principal = configured && loginResult.getRole() == UserRole.PRINCIPAL;
         if (loadButton != null) loadButton.setDisable(!principal || loading);
+        if (comparisonTargetComboBox != null) {
+            comparisonTargetComboBox.setDisable(!principal || loading);
+        }
+        if (clearComparisonButton != null) {
+            clearComparisonButton.setDisable(!principal || loading);
+        }
         if (refreshButton != null) refreshButton.setDisable(!configured || loading);
         boolean exportDisabled = !configured || loading || exporting
                 || currentReport == null;

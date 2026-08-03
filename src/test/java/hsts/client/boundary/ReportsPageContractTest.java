@@ -339,12 +339,25 @@ public class ReportsPageContractTest {
         collectActions(document.getDocumentElement(), actions);
         assertEquals(Set.of(
                 "handleLoadReport", "handleRefresh", "handleBack",
-                "handleExportPdf", "handleExportExcel"
+                "handleExportPdf", "handleExportExcel",
+                // Drops the second report and returns to a single full width table.
+                "handleClearComparison"
         ), actions);
         for (String action : actions) {
             Method method = ReportsPage.class.getDeclaredMethod(action);
             assertTrue(method.isAnnotationPresent(FXML.class));
         }
+
+        // The Principal compares two targets side by side, so the split view and
+        // its summary must exist and start hidden.
+        for (String required : List.of(
+                "comparisonTargetComboBox", "statisticsSplit", "comparisonContainer",
+                "comparisonSummaryContainer", "comparisonTable", "comparisonSummaryLabel"
+        )) {
+            assertTrue("Missing comparison fx:id " + required, ids.containsKey(required));
+        }
+        assertEquals("false", ids.get("comparisonContainer").getAttribute("visible"));
+        assertEquals("false", ids.get("comparisonSummaryContainer").getAttribute("visible"));
 
         Element table = ids.get("executionTable");
         assertFalse(table.hasAttribute("placeholder"));

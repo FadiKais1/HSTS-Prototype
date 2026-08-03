@@ -62,6 +62,11 @@
                         <Label text="Target:" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
                         <ComboBox fx:id="targetComboBox" prefWidth="300"
                                   promptText="Choose a teacher, course, student or execution"/>
+                        <Label text="Compare with:" style="-fx-font-weight: bold; -fx-text-fill: #374151;"/>
+                        <ComboBox fx:id="comparisonTargetComboBox" prefWidth="260"
+                                  promptText="Optional second target"/>
+                        <Button fx:id="clearComparisonButton" text="Clear"
+                                onAction="#handleClearComparison"/>
                         <Button fx:id="loadButton" text="Load Report" onAction="#handleLoadReport"
                                 style="-fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 16;"/>
                     </HBox>
@@ -93,24 +98,55 @@
                                style="-fx-text-fill: #111827;"/>
                     </GridPane>
 
-                    <Label text="Execution Statistics"
-                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
-                    <TableView fx:id="executionTable" prefHeight="250">
-                        <placeholder><Label text="No execution statistics in this report"/></placeholder>
-                        <columns>
-                            <TableColumn fx:id="executionCodeColumn" text="Code" prefWidth="75"/>
-                            <TableColumn fx:id="examTitleColumn" text="Exam" prefWidth="145"/>
-                            <TableColumn fx:id="courseNameColumn" text="Course" prefWidth="115"/>
-                            <TableColumn fx:id="openingTimeColumn" text="Opening" prefWidth="135"/>
-                            <TableColumn fx:id="closingTimeColumn" text="Closing" prefWidth="135"/>
-                            <TableColumn fx:id="publishedCountColumn" text="Published" prefWidth="75"/>
-                            <TableColumn fx:id="averageScoreColumn" text="Average" prefWidth="70"/>
-                            <TableColumn fx:id="medianScoreColumn" text="Median" prefWidth="70"/>
-                            <TableColumn fx:id="startedCountColumn" text="Started" prefWidth="65"/>
-                            <TableColumn fx:id="submittedCountColumn" text="Submitted" prefWidth="75"/>
-                            <TableColumn fx:id="autoSubmittedCountColumn" text="Auto" prefWidth="60"/>
-                        </columns>
-                    </TableView>
+                    <VBox fx:id="comparisonSummaryContainer" spacing="6" visible="false" managed="false"
+                          style="-fx-background-color: #eef2ff; -fx-background-radius: 12; -fx-border-color: #c7d2fe; -fx-border-radius: 12; -fx-padding: 14;">
+                        <Label text="Comparison Summary"
+                               style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #1e3a8a;"/>
+                        <Label fx:id="comparisonSummaryLabel" text="" wrapText="true"
+                               style="-fx-text-fill: #1e293b;"/>
+                    </VBox>
+
+                    <HBox fx:id="statisticsSplit" spacing="12">
+                        <VBox HBox.hgrow="ALWAYS" spacing="6" minWidth="360">
+                            <Label fx:id="primaryReportLabel" text="Execution Statistics"
+                                   style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                            <TableView fx:id="executionTable" prefHeight="250">
+                                <placeholder><Label text="No execution statistics in this report"/></placeholder>
+                                <columns>
+                                    <TableColumn fx:id="executionCodeColumn" text="Code" prefWidth="75"/>
+                                    <TableColumn fx:id="examTitleColumn" text="Exam" prefWidth="145"/>
+                                    <TableColumn fx:id="courseNameColumn" text="Course" prefWidth="115"/>
+                                    <TableColumn fx:id="openingTimeColumn" text="Opening" prefWidth="135"/>
+                                    <TableColumn fx:id="closingTimeColumn" text="Closing" prefWidth="135"/>
+                                    <TableColumn fx:id="publishedCountColumn" text="Published" prefWidth="75"/>
+                                    <TableColumn fx:id="averageScoreColumn" text="Average" prefWidth="70"/>
+                                    <TableColumn fx:id="medianScoreColumn" text="Median" prefWidth="70"/>
+                                    <TableColumn fx:id="startedCountColumn" text="Started" prefWidth="65"/>
+                                    <TableColumn fx:id="submittedCountColumn" text="Submitted" prefWidth="75"/>
+                                    <TableColumn fx:id="autoSubmittedCountColumn" text="Auto" prefWidth="60"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+
+                        <VBox fx:id="comparisonContainer" HBox.hgrow="ALWAYS" spacing="6" minWidth="360"
+                              visible="false" managed="false">
+                            <Label fx:id="comparisonReportLabel" text="Comparison"
+                                   style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #111827;"/>
+                            <TableView fx:id="comparisonTable" prefHeight="250">
+                                <placeholder><Label text="No execution statistics in this report"/></placeholder>
+                                <columns>
+                                    <TableColumn fx:id="comparisonCodeColumn" text="Code" prefWidth="75"/>
+                                    <TableColumn fx:id="comparisonExamColumn" text="Exam" prefWidth="145"/>
+                                    <TableColumn fx:id="comparisonCourseColumn" text="Course" prefWidth="115"/>
+                                    <TableColumn fx:id="comparisonPublishedColumn" text="Published" prefWidth="75"/>
+                                    <TableColumn fx:id="comparisonAverageColumn" text="Average" prefWidth="70"/>
+                                    <TableColumn fx:id="comparisonMedianColumn" text="Median" prefWidth="70"/>
+                                    <TableColumn fx:id="comparisonStartedColumn" text="Started" prefWidth="65"/>
+                                    <TableColumn fx:id="comparisonSubmittedColumn" text="Submitted" prefWidth="75"/>
+                                </columns>
+                            </TableView>
+                        </VBox>
+                    </HBox>
 
                     <HBox spacing="16" alignment="TOP_LEFT">
                         <VBox fx:id="detailContainer" spacing="9" prefWidth="410" minWidth="350"
