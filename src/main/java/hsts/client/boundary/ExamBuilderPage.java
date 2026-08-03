@@ -54,8 +54,10 @@ import javafx.util.converter.DoubleStringConverter;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
@@ -109,7 +111,18 @@ public class ExamBuilderPage {
     private final ObservableList<SelectedQuestionItem> selectedQuestionItems =
             FXCollections.observableArrayList();
 
+    /**
+     * Narrows the course list to one subject. A teacher may hold courses across
+     * several subjects, so choosing the subject first keeps the course list
+     * short and unambiguous.
+     */
+    @FXML private ComboBox<CourseSummaryDTO> subjectComboBox;
+
     @FXML private ComboBox<CourseSummaryDTO> courseComboBox;
+
+    /** Courses for the selected subject, or every assigned course when none is chosen. */
+    private final ObservableList<CourseSummaryDTO> coursesForSubject =
+            FXCollections.observableArrayList();
     @FXML private ToggleGroup creationModeGroup;
     @FXML private RadioButton manualModeRadio;
     @FXML private RadioButton automaticModeRadio;
@@ -255,7 +268,21 @@ public class ExamBuilderPage {
     }
 
     private void configureCourseDisplay() {
-        courseComboBox.setItems(assignedCourses);
+        courseComboBox.setItems(coursesForSubject);
+        subjectComboBox.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(CourseSummaryDTO course) {
+                return course == null ? "All subjects" : course.getSubjectName();
+            }
+
+            @Override
+            public CourseSummaryDTO fromString(String text) {
+                return null;
+            }
+        });
+        subjectComboBox.valueProperty().addListener(
+                (observable, previous, subject) -> applySubjectFilter(subject)
+        );
         courseComboBox.setConverter(new StringConverter<>() {
             @Override
             public String toString(CourseSummaryDTO course) {
@@ -361,6 +388,9 @@ public class ExamBuilderPage {
                         return;
                     }
                     assignedCourses.setAll(courses);
+                    // Offer one entry per subject the teacher holds a course in.
+                    subjectComboBox.setItems(uniqueSubjects(courses));
+                    applySubjectFilter(subjectComboBox.getValue());
                     if (pendingEditorState != null) {
                         EditorState state = pendingEditorState;
                         pendingEditorState = null;
@@ -369,6 +399,7 @@ public class ExamBuilderPage {
                         return;
                     }
                     if (loadedExam != null) {
+                        selectSubjectForCourse(loadedExam.getCourseId());
                         courseComboBox.setValue(findCourse(loadedExam.getCourseId()));
                     } else if (courseComboBox.getValue() == null
                             && !assignedCourses.isEmpty()) {
@@ -1461,6 +1492,55 @@ public class ExamBuilderPage {
     private boolean isConfigured() {
         return !closed && client != null && examClientController != null
                 && questionClientController != null;
+    }
+
+    /**
+     * Rebuilds the course list for the chosen subject, keeping the current course
+     * selected when it still belongs to that subject.
+     */
+    private void applySubjectFilter(CourseSummaryDTO subject) {
+        CourseSummaryDTO selected = courseComboBox.getValue();
+        List<CourseSummaryDTO> visible = new ArrayList<>();
+        for (CourseSummaryDTO course : assignedCourses) {
+            if (subject == null || course.getSubjectId() == subject.getSubjectId()) {
+                visible.add(course);
+            }
+        }
+        coursesForSubject.setAll(visible);
+
+        if (selected != null && visible.contains(selected)) {
+            courseComboBox.setValue(selected);
+        } else if (!visible.isEmpty()) {
+            courseComboBox.setValue(visible.get(0));
+        } else {
+            courseComboBox.setValue(null);
+        }
+    }
+
+    /** One entry per subject the teacher holds a course in, plus an "all" option. */
+    private ObservableList<CourseSummaryDTO> uniqueSubjects(List<CourseSummaryDTO> courses) {
+        Map<Integer, CourseSummaryDTO> subjects = new LinkedHashMap<>();
+        for (CourseSummaryDTO course : courses) {
+            subjects.putIfAbsent(course.getSubjectId(), course);
+        }
+        ObservableList<CourseSummaryDTO> options = FXCollections.observableArrayList();
+        options.add(null);
+        options.addAll(subjects.values());
+        return options;
+    }
+
+    /** Points the subject box at the subject owning a course, without losing it. */
+    private void selectSubjectForCourse(int courseId) {
+        CourseSummaryDTO course = findCourse(courseId);
+        if (course == null) {
+            return;
+        }
+        for (CourseSummaryDTO option : subjectComboBox.getItems()) {
+            if (option != null && option.getSubjectId() == course.getSubjectId()) {
+                subjectComboBox.setValue(option);
+                return;
+            }
+        }
     }
 
     private CourseSummaryDTO findCourse(int courseId) {

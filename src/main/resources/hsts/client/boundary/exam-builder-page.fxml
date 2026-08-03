@@ -103,21 +103,26 @@
                                         <ColumnConstraints minWidth="150" prefWidth="170"/>
                                         <ColumnConstraints hgrow="ALWAYS"/>
                                     </columnConstraints>
-                                    <Label text="Assigned course *" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
-                                    <ComboBox fx:id="courseComboBox" maxWidth="Infinity"
+                                    <!-- Subject narrows the course list, so a teacher who
+                                         teaches across subjects picks the subject first. -->
+                                    <Label text="Subject" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                                    <ComboBox fx:id="subjectComboBox" maxWidth="Infinity"
                                               GridPane.rowIndex="0" GridPane.columnIndex="1"/>
                                     <Label text="Title *" GridPane.rowIndex="0" GridPane.columnIndex="2"/>
                                     <TextField fx:id="titleField" promptText="Exam title"
                                                GridPane.rowIndex="0" GridPane.columnIndex="3"/>
-                                    <Label text="Duration (minutes) *" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
-                                    <TextField fx:id="durationField" promptText="60"
-                                               GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+                                    <Label text="Assigned course *" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                                    <ComboBox fx:id="courseComboBox" maxWidth="Infinity"
+                                              GridPane.rowIndex="1" GridPane.columnIndex="1"/>
                                     <Label text="Teacher-only notes" GridPane.rowIndex="1" GridPane.columnIndex="2"/>
                                     <TextArea fx:id="teacherNotesArea" prefRowCount="2" wrapText="true"
                                               GridPane.rowIndex="1" GridPane.columnIndex="3"/>
-                                    <Label text="Student instructions *" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                                    <Label text="Duration (minutes) *" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                                    <TextField fx:id="durationField" promptText="60"
+                                               GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+                                    <Label text="Student instructions *" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
                                     <TextArea fx:id="studentInstructionsArea" prefRowCount="2" wrapText="true"
-                                              GridPane.rowIndex="2" GridPane.columnIndex="1"
+                                              GridPane.rowIndex="3" GridPane.columnIndex="1"
                                               GridPane.columnSpan="3"/>
                                 </GridPane>
                             </VBox>
