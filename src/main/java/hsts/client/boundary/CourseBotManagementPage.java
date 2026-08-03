@@ -8,6 +8,7 @@ import hsts.common.ServerEvent;
 import hsts.common.ServerEventType;
 import hsts.common.AddBotQuestionSourcesPayload;
 import hsts.common.AddBotTextSourcePayload;
+import hsts.common.EditBotSourcePayload;
 import hsts.common.BotQuestionVersionReference;
 import hsts.common.BotSourceDTO;
 import hsts.common.BotUsageSummaryDTO;
@@ -89,6 +90,13 @@ public final class CourseBotManagementPage {
     @FXML private ListView<BotSourceDTO> sourceList;
     @FXML private TextField textDisplayNameField;
     @FXML private TextArea sourceTextArea;
+    @FXML private Button editSourceButton;
+    @FXML private Button saveSourceButton;
+    @FXML private Button cancelEditButton;
+    @FXML private Label editingSourceLabel;
+
+    /** The source being revised, or null when the editor creates a new one. */
+    private Integer editingSourceId;
     @FXML private Button addTextButton;
     @FXML private Button uploadButton;
     @FXML private ListView<QuestionDTO> questionList;
@@ -365,6 +373,90 @@ public final class CourseBotManagementPage {
                 .toList();
         mutate(botController.addQuestionSources(new AddBotQuestionSourcesPayload(bot.getBotId(), references)),
                 "Question sources added", false);
+    }
+
+    /**
+     * Loads the selected source into the text editor so it can be revised.
+     *
+     * <p>The text is fetched on demand because source listings omit it.</p>
+     */
+    @FXML private void handleEditSource() {
+        CourseBotSummaryDTO bot = botBox.getValue();
+        BotSourceDTO source = sourceList.getSelectionModel().getSelectedItem();
+        if (bot == null) { showStatus("Select a Course Bot first"); return; }
+        if (source == null || source.getStatus() != BotSourceStatus.ACTIVE) {
+            showStatus("Select an active source first"); return;
+        }
+
+        showStatus("Loading source text...");
+        botController.getSourceText(
+                new RemoveBotSourcePayload(bot.getBotId(), source.getSourceId())
+        ).whenComplete((text, error) -> Platform.runLater(() -> {
+            if (disposed) return;
+            if (error != null) {
+                showStatus(message(error, "Could not load the source text"));
+                return;
+            }
+            editingSourceId = source.getSourceId();
+            textDisplayNameField.setText(source.getDisplayName());
+            sourceTextArea.setText(text);
+            showEditingState(source.getDisplayName());
+            showStatus("Editing “" + source.getDisplayName()
+                    + "”. Save changes to replace it.");
+        }));
+    }
+
+    /**
+     * Replaces the source being edited.
+     *
+     * <p>The server removes the current source and adds the revision, so the
+     * change is credited to this teacher and the previous text stays in the
+     * record. If a colleague edited the same source first the request fails and
+     * the typed text is left alone so it can be reapplied.</p>
+     */
+    @FXML private void handleSaveSource() {
+        CourseBotSummaryDTO bot = botBox.getValue();
+        if (bot == null) { showStatus("Select a Course Bot first"); return; }
+        if (editingSourceId == null) { showStatus("No source is being edited"); return; }
+
+        String name = textDisplayNameField.getText();
+        String text = sourceTextArea.getText();
+        if (name == null || name.isBlank()) { showStatus("Display name is required"); return; }
+        if (text == null || text.isBlank()) { showStatus("Source text is required"); return; }
+
+        mutate(botController.editSource(new EditBotSourcePayload(
+                        bot.getBotId(), editingSourceId, name, text)),
+                "Source updated", false, this::clearEditingState);
+    }
+
+    @FXML private void handleCancelEdit() {
+        clearEditingState();
+        showStatus("Edit cancelled.");
+    }
+
+    private void showEditingState(String displayName) {
+        editingSourceLabel.setText("Editing an existing source: " + displayName);
+        toggle(editingSourceLabel, true);
+        toggle(saveSourceButton, true);
+        toggle(cancelEditButton, true);
+        toggle(addTextButton, false);
+    }
+
+    private void clearEditingState() {
+        editingSourceId = null;
+        textDisplayNameField.clear();
+        sourceTextArea.clear();
+        toggle(editingSourceLabel, false);
+        toggle(saveSourceButton, false);
+        toggle(cancelEditButton, false);
+        toggle(addTextButton, true);
+        applyDeferredExternalRefresh();
+    }
+
+    private static void toggle(javafx.scene.Node node, boolean visible) {
+        if (node == null) return;
+        node.setManaged(visible);
+        node.setVisible(visible);
     }
 
     @FXML private void handleRemoveSource() {

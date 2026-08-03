@@ -2,6 +2,7 @@ package hsts.server.control;
 
 import hsts.common.AddBotQuestionSourcesPayload;
 import hsts.common.AddBotTextSourcePayload;
+import hsts.common.EditBotSourcePayload;
 import hsts.common.AskCourseBotPayload;
 import hsts.common.BotHistoryDTO;
 import hsts.common.BotMessageDTO;
@@ -67,6 +68,14 @@ public class CourseBotService {
      * nothing usable. Requirement 48 asks for a message whenever there is no
      * answer, and this is the student's wording of that.
      */
+    /**
+     * Shown when a colleague changed the same source first. The teacher's typed
+     * text is untouched, so she can review the new version and reapply.
+     */
+    private static final String SOURCE_CHANGED_ELSEWHERE =
+            "This source was changed by another teacher. Your text is unchanged; "
+                    + "review the updated source and apply your change again.";
+
     private static final String STUDENT_PROVIDER_FAILURE =
             "The study bot could not answer right now. Please try again in a moment.";
 
@@ -248,6 +257,81 @@ public class CourseBotService {
         return toSourceDto(courseBotRepository.persistSourceRemoval(
                 authenticatedUserId, source
         ));
+    }
+
+    /**
+     * Replaces a source's content.
+     *
+     * <p>The current source is removed and a new one added in its place, so the
+     * revision is credited to whoever made it and the previous text stays in the
+     * record. This mirrors how removal already works, and means the uniqueness
+     * rule on active content applies only to the version now in use.</p>
+     *
+     * <p>If a colleague edited or removed the same source first, the removal
+     * matches no active row and fails, so a simultaneous edit is reported rather
+     * than silently overwriting the other teacher's work.</p>
+     */
+    /**
+     * The full text of one source.
+     *
+     * <p>Source listings omit the text because it is stored as MEDIUMTEXT and
+     * would dominate every response, so the management screen asks for it only
+     * when a teacher opens a source to edit it.</p>
+     */
+    public String getSourceText(int authenticatedUserId, RemoveBotSourcePayload payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Bot source reference is required");
+        }
+        requireTeacher(authenticatedUserId);
+        requireDependencies();
+        assignedBot(authenticatedUserId, payload.getBotId());
+
+        return courseBotRepository.findSourcesForTeacher(
+                        authenticatedUserId, payload.getBotId()
+                ).stream()
+                .filter(candidate -> candidate.getSourceId() == payload.getSourceId())
+                .findFirst()
+                .map(BotSource::getExtractedText)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Bot source not found or access denied"
+                ));
+    }
+
+    public BotSourceDTO editSource(
+            int authenticatedUserId, EditBotSourcePayload payload
+    ) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Bot source edit data is required");
+        }
+        requireTeacher(authenticatedUserId);
+        requireDependencies();
+        CourseBot bot = assignedBot(authenticatedUserId, payload.getBotId());
+
+        BotSource existing = courseBotRepository.findSourcesForTeacher(
+                        authenticatedUserId, payload.getBotId()
+                ).stream()
+                .filter(candidate -> candidate.getSourceId() == payload.getSourceId())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Bot source not found or access denied"
+                ));
+
+        if (existing.getStatus() != BotSourceStatus.ACTIVE) {
+            throw new IllegalStateException(SOURCE_CHANGED_ELSEWHERE);
+        }
+
+        ExtractedBotSource extracted = sourceExtractor.extractFreeText(
+                payload.getDisplayName(), payload.getText()
+        );
+
+        try {
+            existing.remove(now());
+            courseBotRepository.persistSourceRemoval(authenticatedUserId, existing);
+        } catch (IllegalStateException exception) {
+            throw new IllegalStateException(SOURCE_CHANGED_ELSEWHERE, exception);
+        }
+
+        return persistExtractedSource(authenticatedUserId, bot, extracted, null, null);
     }
 
     public BotUsageSummaryDTO getBotUsage(int authenticatedUserId, int botId) {

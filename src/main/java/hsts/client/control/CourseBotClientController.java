@@ -3,6 +3,7 @@ package hsts.client.control;
 import hsts.client.net.Client;
 import hsts.common.AddBotQuestionSourcesPayload;
 import hsts.common.AddBotTextSourcePayload;
+import hsts.common.EditBotSourcePayload;
 import hsts.common.AskCourseBotPayload;
 import hsts.common.BotHistoryDTO;
 import hsts.common.BotQuestionResultDTO;
@@ -107,6 +108,29 @@ public final class CourseBotClientController {
         return sendMutation(
                 payload, "Bot text source payload is required",
                 RequestType.ADD_BOT_TEXT_SOURCE,
+                response -> requireType(response, BotSourceDTO.class, INVALID_SOURCE)
+        );
+    }
+
+    /**
+     * Replaces a source's content. The server removes the current source and
+     * adds the revision, so the returned source carries a new identifier.
+     */
+    /** The full text of one source, which list responses omit. */
+    public CompletableFuture<String> getSourceText(RemoveBotSourcePayload payload) {
+        return sendMutation(
+                payload, "Bot source reference payload is required",
+                RequestType.GET_BOT_SOURCE_TEXT,
+                response -> requireType(response, String.class, "Invalid source text response")
+        );
+    }
+
+    public CompletableFuture<BotSourceDTO> editSource(
+            EditBotSourcePayload payload
+    ) {
+        return sendMutation(
+                payload, "Bot source edit payload is required",
+                RequestType.EDIT_BOT_SOURCE,
                 response -> requireType(response, BotSourceDTO.class, INVALID_SOURCE)
         );
     }

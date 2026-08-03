@@ -30,13 +30,25 @@
                     <tabs>
                         <Tab text="Sources"><VBox spacing="8" style="-fx-padding: 10;">
                             <ListView fx:id="sourceList" VBox.vgrow="ALWAYS"/>
-                            <Button fx:id="removeSourceButton" text="Remove selected active source" onAction="#handleRemoveSource"/>
+                            <HBox spacing="8">
+                                <Button fx:id="editSourceButton" text="Edit selected source" onAction="#handleEditSource"/>
+                                <Button fx:id="removeSourceButton" text="Remove selected active source" onAction="#handleRemoveSource"/>
+                            </HBox>
                         </VBox></Tab>
                         <Tab text="Add text"><VBox spacing="8" style="-fx-padding: 10;">
                             <Label text="Display name" style="-fx-text-fill: #374151;"/><TextField fx:id="textDisplayNameField"/>
                             <Label text="Course material" style="-fx-text-fill: #374151;"/>
                             <TextArea fx:id="sourceTextArea" wrapText="true" VBox.vgrow="ALWAYS"/>
-                            <Button fx:id="addTextButton" text="Add Text Source" onAction="#handleAddText"/>
+                            <Label fx:id="editingSourceLabel" text="" wrapText="true"
+                                   managed="false" visible="false"
+                                   style="-fx-text-fill: #1e40af; -fx-font-weight: bold;"/>
+                            <HBox spacing="8">
+                                <Button fx:id="addTextButton" text="Add Text Source" onAction="#handleAddText"/>
+                                <Button fx:id="saveSourceButton" text="Save changes" onAction="#handleSaveSource"
+                                        managed="false" visible="false"/>
+                                <Button fx:id="cancelEditButton" text="Cancel edit" onAction="#handleCancelEdit"
+                                        managed="false" visible="false"/>
+                            </HBox>
                         </VBox></Tab>
                         <Tab text="Upload file"><VBox spacing="10" alignment="TOP_LEFT" style="-fx-padding: 14;">
                             <Label text="Upload one TXT, PDF, or DOCX file (maximum 5 MiB)." wrapText="true" style="-fx-text-fill: #374151;"/>

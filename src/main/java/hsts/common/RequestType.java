@@ -78,5 +78,11 @@ public enum RequestType implements Serializable {
     LIST_REPORT_TARGETS,
 
     /** Approved exams a teacher may schedule, including colleagues' exams. */
-    LIST_SCHEDULABLE_EXAMS
+    LIST_SCHEDULABLE_EXAMS,
+
+    /** Replaces a Course Bot source's content, keeping the previous version. */
+    EDIT_BOT_SOURCE,
+
+    /** Fetches one source's full text, which the list responses omit. */
+    GET_BOT_SOURCE_TEXT
 }

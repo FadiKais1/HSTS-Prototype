@@ -104,7 +104,9 @@ public class ExecutionLifecycleTypeTest {
                         RequestType.GET_MY_PUBLISHED_EXAM_REVIEW,
                         RequestType.DELETE_QUESTION,
                         RequestType.LIST_REPORT_TARGETS,
-                        RequestType.LIST_SCHEDULABLE_EXAMS
+                        RequestType.LIST_SCHEDULABLE_EXAMS,
+                        RequestType.EDIT_BOT_SOURCE,
+                        RequestType.GET_BOT_SOURCE_TEXT
                 },
                 RequestType.values()
         );

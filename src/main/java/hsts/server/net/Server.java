@@ -2,6 +2,7 @@ package hsts.server.net;
 
 import hsts.common.AddBotQuestionSourcesPayload;
 import hsts.common.AddBotTextSourcePayload;
+import hsts.common.EditBotSourcePayload;
 import hsts.common.AskCourseBotPayload;
 import hsts.common.CourseBotIdPayload;
 import hsts.common.CourseIdPayload;
@@ -201,7 +202,8 @@ public class Server extends AbstractServer {
                      LIST_MY_NOTIFICATIONS, GET_UNREAD_NOTIFICATION_COUNT,
                      MARK_NOTIFICATION_READ, LIST_MY_COURSE_BOTS,
                      CREATE_COURSE_BOT, UPDATE_COURSE_BOT, GET_BOT_SOURCES,
-                     ADD_BOT_TEXT_SOURCE, UPLOAD_BOT_SOURCE,
+                     ADD_BOT_TEXT_SOURCE, UPLOAD_BOT_SOURCE, EDIT_BOT_SOURCE,
+                     GET_BOT_SOURCE_TEXT,
                      ADD_BOT_QUESTION_SOURCES, REMOVE_BOT_SOURCE, GET_BOT_USAGE,
                      LIST_MY_AVAILABLE_BOTS, GET_MY_BOT_HISTORY, ASK_COURSE_BOT,
                      LIST_ALL_QUESTIONS, LIST_QUESTION_VERSIONS_FOR_PRINCIPAL,
@@ -899,6 +901,33 @@ public class Server extends AbstractServer {
                     );
                     publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
                     yield Response.success("Bot question sources added", questionSources);
+                }
+
+                case GET_BOT_SOURCE_TEXT -> {
+                    if (!(request.getPayload() instanceof RemoveBotSourcePayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Bot source reference payload is required"
+                        );
+                    }
+                    yield Response.success(
+                            "Bot source text loaded",
+                            requireCourseBotService().getSourceText(
+                                    authenticatedUserId, payload
+                            )
+                    );
+                }
+
+                case EDIT_BOT_SOURCE -> {
+                    if (!(request.getPayload() instanceof EditBotSourcePayload payload)) {
+                        throw new IllegalArgumentException(
+                                "Bot source edit payload is required"
+                        );
+                    }
+                    Object editedSource = requireCourseBotService().editSource(
+                            authenticatedUserId, payload
+                    );
+                    publishEvent(new ServerEvent(ServerEventType.COURSE_BOT_CHANGED, 0));
+                    yield Response.success("Bot source updated", editedSource);
                 }
 
                 case REMOVE_BOT_SOURCE -> {
