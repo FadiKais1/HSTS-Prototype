@@ -92,6 +92,7 @@ public final class CourseBotManagementPage {
     @FXML private TextArea sourceTextArea;
     @FXML private Button editSourceButton;
     @FXML private Button saveSourceButton;
+    @FXML private Button saveAsNewSourceButton;
     @FXML private Button cancelEditButton;
     @FXML private Label editingSourceLabel;
 
@@ -429,15 +430,37 @@ public final class CourseBotManagementPage {
                 "Source updated", false, this::clearEditingState);
     }
 
+    /**
+     * Keeps the source being edited exactly as it is and adds the revised text
+     * as an independent new source, so both stand in the bot's material.
+     */
+    @FXML private void handleSaveAsNewSource() {
+        CourseBotSummaryDTO bot = botBox.getValue();
+        if (bot == null) { showStatus("Select a Course Bot first"); return; }
+
+        String name = textDisplayNameField.getText();
+        String text = sourceTextArea.getText();
+        if (name == null || name.isBlank()) { showStatus("Display name is required"); return; }
+        if (text == null || text.isBlank()) { showStatus("Source text is required"); return; }
+
+        mutate(botController.addTextSource(
+                        new AddBotTextSourcePayload(bot.getBotId(), name, text)),
+                "New source added; the original is unchanged", false,
+                this::clearEditingState);
+    }
+
     @FXML private void handleCancelEdit() {
         clearEditingState();
         showStatus("Edit cancelled.");
     }
 
     private void showEditingState(String displayName) {
-        editingSourceLabel.setText("Editing an existing source: " + displayName);
+        editingSourceLabel.setText("Editing “" + displayName
+                + "”. Save changes revises it and keeps its history; "
+                + "Save as new source leaves it untouched.");
         toggle(editingSourceLabel, true);
         toggle(saveSourceButton, true);
+        toggle(saveAsNewSourceButton, true);
         toggle(cancelEditButton, true);
         toggle(addTextButton, false);
     }
@@ -448,6 +471,7 @@ public final class CourseBotManagementPage {
         sourceTextArea.clear();
         toggle(editingSourceLabel, false);
         toggle(saveSourceButton, false);
+        toggle(saveAsNewSourceButton, false);
         toggle(cancelEditButton, false);
         toggle(addTextButton, true);
         applyDeferredExternalRefresh();

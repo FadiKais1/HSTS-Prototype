@@ -102,6 +102,18 @@ public final class BotSource {
     public int getBotId() { return botId; }
     public BotSourceType getSourceType() { return sourceType; }
     public String getDisplayName() { return displayName; }
+    /** Which revision of this source is in use; 1 until it is first edited. */
+    private int currentVersionNo = 1;
+
+    public int getCurrentVersionNo() { return currentVersionNo; }
+
+    public void setCurrentVersionNo(int currentVersionNo) {
+        if (currentVersionNo <= 0) {
+            throw new IllegalArgumentException("Bot source version must be positive");
+        }
+        this.currentVersionNo = currentVersionNo;
+    }
+
     public String getExtractedText() { return extractedText; }
     public String getContentSha256() { return contentSha256; }
     public Integer getQuestionId() { return questionId; }

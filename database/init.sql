@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS bot_sources (
     external_source_id VARCHAR(255) NULL,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     removed_at DATETIME(6) NULL,
+    current_version_no INT NOT NULL DEFAULT 1,
     active_content_sha256 CHAR(64)
         GENERATED ALWAYS AS (
             CASE WHEN status = 'ACTIVE' THEN content_sha256 ELSE NULL END
@@ -233,6 +234,28 @@ CREATE TABLE IF NOT EXISTS bot_sources (
         CHECK (CHAR_LENGTH(TRIM(display_name)) > 0),
     CONSTRAINT chk_bot_sources_extracted_text
         CHECK (CHAR_LENGTH(TRIM(extracted_text)) > 0)
+) ENGINE=InnoDB;
+
+-- Superseded versions of a bot source. bot_sources always holds the version in
+-- use, so every read of a source is unchanged by versioning; this table keeps
+-- what each earlier version said and who wrote it.
+CREATE TABLE IF NOT EXISTS bot_source_versions (
+    source_id INT NOT NULL,
+    version_no INT NOT NULL,
+    display_name VARCHAR(255) NOT NULL,
+    extracted_text MEDIUMTEXT NOT NULL,
+    content_sha256 CHAR(64) NOT NULL,
+    created_by_user_id INT NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (source_id, version_no),
+    KEY idx_bot_source_versions_created_by (created_by_user_id),
+    CONSTRAINT fk_bot_source_versions_source
+        FOREIGN KEY (source_id) REFERENCES bot_sources (source_id) ON DELETE CASCADE,
+    CONSTRAINT fk_bot_source_versions_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id) ON DELETE RESTRICT,
+    CONSTRAINT chk_bot_source_versions_no CHECK (version_no > 0),
+    CONSTRAINT chk_bot_source_versions_checksum
+        CHECK (content_sha256 REGEXP '^[0-9a-f]{64}$')
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS bot_conversations (

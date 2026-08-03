@@ -297,6 +297,19 @@ public class CourseBotService {
                 ));
     }
 
+    /**
+     * Revises a source in place, keeping its identity and adding a version.
+     *
+     * <p>A source behaves like a question: editing keeps one identifier and
+     * records a new version, while the previous text stays in
+     * bot_source_versions. A teacher who wants an independent copy instead adds
+     * a new source with the revised text, which the management screen also
+     * offers.</p>
+     *
+     * <p>The update is guarded by the version the teacher was editing, so if a
+     * colleague saved first it matches nothing and the conflict is reported
+     * rather than silently overwriting her work.</p>
+     */
     public BotSourceDTO editSource(
             int authenticatedUserId, EditBotSourcePayload payload
     ) {
@@ -305,7 +318,7 @@ public class CourseBotService {
         }
         requireTeacher(authenticatedUserId);
         requireDependencies();
-        CourseBot bot = assignedBot(authenticatedUserId, payload.getBotId());
+        assignedBot(authenticatedUserId, payload.getBotId());
 
         BotSource existing = courseBotRepository.findSourcesForTeacher(
                         authenticatedUserId, payload.getBotId()
@@ -325,13 +338,22 @@ public class CourseBotService {
         );
 
         try {
-            existing.remove(now());
-            courseBotRepository.persistSourceRemoval(authenticatedUserId, existing);
+            return toSourceDto(courseBotRepository.persistSourceRevision(
+                    authenticatedUserId,
+                    payload.getBotId(),
+                    payload.getSourceId(),
+                    existing.getCurrentVersionNo(),
+                    extracted.getDisplayName(),
+                    extracted.getExtractedText(),
+                    extracted.getContentSha256()
+            ));
         } catch (IllegalStateException exception) {
-            throw new IllegalStateException(SOURCE_CHANGED_ELSEWHERE, exception);
+            String message = exception.getMessage();
+            if (message != null && message.contains("changed by another teacher")) {
+                throw new IllegalStateException(SOURCE_CHANGED_ELSEWHERE, exception);
+            }
+            throw exception;
         }
-
-        return persistExtractedSource(authenticatedUserId, bot, extracted, null, null);
     }
 
     public BotUsageSummaryDTO getBotUsage(int authenticatedUserId, int botId) {

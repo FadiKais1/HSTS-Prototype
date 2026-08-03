@@ -2,6 +2,9 @@ package hsts.client.boundary;
 
 import hsts.client.control.CourseBotClientController;
 import hsts.client.net.Client;
+import hsts.client.net.ServerEventBus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.AskCourseBotPayload;
 import hsts.common.BotHistoryDTO;
 import hsts.common.BotMessageDTO;
@@ -37,6 +40,9 @@ public class CourseBotPage {
     private LoginResult loginResult;
     private CourseBotClientController controller;
     private Runnable backHandler;
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
     private boolean disposed = true;
     private boolean sending;
     private boolean lockedOut;
@@ -61,6 +67,12 @@ public class CourseBotPage {
         }
         controller = new CourseBotClientController(sharedClient);
         disposed = false;
+        // A teacher changing this course's bot, or activating a new one, changes
+        // which bots this student may use.
+        closeEventSubscription();
+        eventSubscription = sharedClient.getServerEventBus().subscribe(
+                this::onServerEvent, ServerEventType.COURSE_BOT_CHANGED
+        );
         identityLabel.setText(loginResult.getFullName() + " · STUDENT");
         refreshBots();
     }
@@ -125,6 +137,28 @@ public class CourseBotPage {
                     questionArea.clear();
                     loadSelectedHistory();
                 }));
+    }
+
+    /**
+     * Reacts to a teacher changing this course's bot.
+     *
+     * <p>Only the list of available bots is reloaded. The conversation is left
+     * alone, since it belongs to this student and no teacher action changes
+     * it.</p>
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (disposed || event == null
+                || event.getType() != ServerEventType.COURSE_BOT_CHANGED) {
+            return;
+        }
+        refreshBots();
+    }
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
     }
 
     private void refreshBots() {
@@ -216,6 +250,7 @@ public class CourseBotPage {
 
     public void dispose() {
         disposed = true;
+        closeEventSubscription();
         botGeneration.incrementAndGet();
         historyGeneration.incrementAndGet();
     }

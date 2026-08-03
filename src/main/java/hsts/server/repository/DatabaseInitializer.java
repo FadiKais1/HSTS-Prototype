@@ -237,12 +237,42 @@ public class DatabaseInitializer {
         try (Connection connection = DatabaseConnection.getConnection()) {
             createCourseBotsTable(connection);
             createBotSourcesTable(connection);
+            createBotSourceVersionsTable(connection);
             createBotConversationsTable(connection);
             createBotMessagesTable(connection);
             repairCourseBotParentTimestamps(connection);
         } catch (SQLException | RuntimeException e) {
             throw new IllegalStateException("Failed to migrate course Bot schema", e);
         }
+    }
+
+    /**
+     * History of superseded source versions. bot_sources always holds the
+     * version in use, so this table only records what earlier versions said.
+     */
+    private void createBotSourceVersionsTable(Connection connection) throws SQLException {
+        executeSchemaStatement(connection, """
+                CREATE TABLE IF NOT EXISTS bot_source_versions (
+                    source_id INT NOT NULL,
+                    version_no INT NOT NULL,
+                    display_name VARCHAR(255) NOT NULL,
+                    extracted_text MEDIUMTEXT NOT NULL,
+                    content_sha256 CHAR(64) NOT NULL,
+                    created_by_user_id INT NOT NULL,
+                    created_at DATETIME(6) NOT NULL,
+                    PRIMARY KEY (source_id, version_no),
+                    KEY idx_bot_source_versions_created_by (created_by_user_id),
+                    CONSTRAINT fk_bot_source_versions_source
+                        FOREIGN KEY (source_id) REFERENCES bot_sources (source_id)
+                        ON DELETE CASCADE,
+                    CONSTRAINT fk_bot_source_versions_user
+                        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+                        ON DELETE RESTRICT,
+                    CONSTRAINT chk_bot_source_versions_no CHECK (version_no > 0),
+                    CONSTRAINT chk_bot_source_versions_checksum
+                        CHECK (content_sha256 REGEXP '^[0-9a-f]{64}$')
+                ) ENGINE=InnoDB
+                """);
     }
 
     private void repairCourseBotParentTimestamps(Connection connection) throws SQLException {
@@ -2554,6 +2584,10 @@ public class DatabaseInitializer {
             );
             addColumnIfMissing(
                     connection, "questions", "deleted_at", "DATETIME(6) NULL"
+            );
+            addColumnIfMissing(
+                    connection, "bot_sources", "current_version_no",
+                    "INT NOT NULL DEFAULT 1"
             );
 
             backfillOrganisationNumbers(connection, "subjects", "subject_id", "subject_number");

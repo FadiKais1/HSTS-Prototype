@@ -46,6 +46,8 @@
                                 <Button fx:id="addTextButton" text="Add Text Source" onAction="#handleAddText"/>
                                 <Button fx:id="saveSourceButton" text="Save changes" onAction="#handleSaveSource"
                                         managed="false" visible="false"/>
+                                <Button fx:id="saveAsNewSourceButton" text="Save as new source" onAction="#handleSaveAsNewSource"
+                                        managed="false" visible="false"/>
                                 <Button fx:id="cancelEditButton" text="Cancel edit" onAction="#handleCancelEdit"
                                         managed="false" visible="false"/>
                             </HBox>

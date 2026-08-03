@@ -28,11 +28,16 @@ public class CourseBotRepository {
             cb.created_at, cb.updated_at
             """;
 
+    /** Reported when a colleague changed the same source first. */
+    static final String SOURCE_MOVED_ON =
+            "This source was changed by another teacher";
+
     private static final String SOURCE_COLUMNS = """
             bs.source_id, bs.bot_id, bs.source_type, bs.display_name,
             bs.extracted_text, bs.content_sha256, bs.question_id,
             bs.question_version_no, bs.added_by_user_id, bs.status,
-            bs.external_source_id, bs.created_at, bs.removed_at
+            bs.external_source_id, bs.created_at, bs.removed_at,
+            bs.current_version_no
             """;
 
     private static final String TEACHER_BOTS_SQL = """
@@ -172,6 +177,38 @@ public class CourseBotRepository {
             WHERE bs.source_id = ?
             FOR UPDATE
             """.formatted(SOURCE_COLUMNS);
+
+    /** Preserves the outgoing version before the source is overwritten. */
+    private static final String ARCHIVE_SOURCE_VERSION_SQL = """
+            INSERT INTO bot_source_versions (
+                source_id, version_no, display_name, extracted_text,
+                content_sha256, created_by_user_id, created_at
+            )
+            SELECT source_id, current_version_no, display_name, extracted_text,
+                   content_sha256, added_by_user_id, created_at
+            FROM bot_sources
+            WHERE source_id = ?
+            """;
+
+    /**
+     * Replaces a source's content in place.
+     *
+     * <p>The version guard is what makes a simultaneous edit safe: if a
+     * colleague saved first the stored version has moved on, this update matches
+     * no row, and the caller reports the conflict rather than overwriting her
+     * work. This is the same optimistic lock the question bank uses.</p>
+     */
+    private static final String UPDATE_SOURCE_CONTENT_SQL = """
+            UPDATE bot_sources
+            SET display_name = ?,
+                extracted_text = ?,
+                content_sha256 = ?,
+                added_by_user_id = ?,
+                current_version_no = ?
+            WHERE source_id = ?
+              AND status = 'ACTIVE'
+              AND current_version_no = ?
+            """;
 
     private static final String REMOVE_SOURCE_SQL = """
             UPDATE bot_sources
@@ -426,6 +463,73 @@ public class CourseBotRepository {
         });
     }
 
+    /**
+     * Replaces a source's content, keeping the outgoing version as history.
+     *
+     * <p>The source keeps its identity and gains a version, exactly as a
+     * question does. The previous text is archived first, then the row is
+     * overwritten under a version guard, so a colleague who saved first causes
+     * this update to match nothing and the conflict is reported.</p>
+     *
+     * @param expectedVersionNo the version this teacher was editing
+     * @return the source as it now stands
+     */
+    public BotSource persistSourceRevision(
+            int authenticatedTeacherUserId,
+            int botId,
+            int sourceId,
+            int expectedVersionNo,
+            String displayName,
+            String extractedText,
+            String contentSha256
+    ) {
+        requirePositive(authenticatedTeacherUserId, "Teacher user ID must be positive");
+        requirePositive(sourceId, "Bot source ID must be positive");
+        requirePositive(expectedVersionNo, "Bot source version must be positive");
+
+        return inTransaction("Failed to update Bot source", connection -> {
+            findOneBot(connection, LOCK_ASSIGNED_BOT_SQL, authenticatedTeacherUserId, botId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Course Bot not found or access denied"
+                    ));
+
+            BotSource current = findLockedAssignedSource(
+                    connection, authenticatedTeacherUserId, sourceId
+            ).orElseThrow(() -> new IllegalStateException(
+                    "Bot source not found or access denied"
+            ));
+            if (current.getStatus() != BotSourceStatus.ACTIVE) {
+                throw new IllegalStateException(SOURCE_MOVED_ON);
+            }
+
+            try (PreparedStatement statement =
+                         connection.prepareStatement(ARCHIVE_SOURCE_VERSION_SQL)) {
+                statement.setInt(1, sourceId);
+                statement.executeUpdate();
+            }
+
+            try (PreparedStatement statement =
+                         connection.prepareStatement(UPDATE_SOURCE_CONTENT_SQL)) {
+                statement.setString(1, displayName);
+                statement.setString(2, extractedText);
+                statement.setString(3, contentSha256);
+                statement.setInt(4, authenticatedTeacherUserId);
+                statement.setInt(5, expectedVersionNo + 1);
+                statement.setInt(6, sourceId);
+                statement.setInt(7, expectedVersionNo);
+                if (statement.executeUpdate() != 1) {
+                    throw new IllegalStateException(SOURCE_MOVED_ON);
+                }
+            }
+
+            return findLockedAssignedSource(
+                    connection, authenticatedTeacherUserId, sourceId
+            ).orElseThrow(() -> new IllegalStateException(
+                    "Bot source not found after update"
+            ));
+        });
+    }
+
     public BotSource persistSourceRemoval(
             int authenticatedTeacherUserId, BotSource source
     ) {
@@ -621,6 +725,13 @@ public class CourseBotRepository {
     }
 
     private BotSource mapSource(ResultSet resultSet) throws SQLException {
+        BotSource source = mapSourceRow(resultSet);
+        int version = resultSet.getInt("current_version_no");
+        source.setCurrentVersionNo(version <= 0 ? 1 : version);
+        return source;
+    }
+
+    private BotSource mapSourceRow(ResultSet resultSet) throws SQLException {
         return BotSource.rehydrate(
                 resultSet.getInt("source_id"), resultSet.getInt("bot_id"),
                 parseEnum(resultSet.getString("source_type"), BotSourceType.class,
