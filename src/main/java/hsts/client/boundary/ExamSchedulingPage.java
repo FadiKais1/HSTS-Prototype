@@ -769,17 +769,34 @@ public class ExamSchedulingPage {
             return;
         }
         ServerEventType type = event.getType();
-        if (type != ServerEventType.ATTEMPT_STARTED
-                && type != ServerEventType.SUBMISSION_RECEIVED
-                && type != ServerEventType.EXAM_TIME_EXTENDED
-                && type != ServerEventType.EXAM_SCHEDULE_CHANGED) {
+
+        // A colleague's exam becoming approved, or an approved exam being
+        // edited, changes what this teacher may schedule. Those events refresh
+        // the exam dropdown rather than the execution table.
+        boolean schedulableExamsChanged =
+                type == ServerEventType.EXAM_APPROVAL_CHANGED
+                        || type == ServerEventType.EXAM_CHANGED;
+
+        boolean executionsChanged =
+                type == ServerEventType.ATTEMPT_STARTED
+                        || type == ServerEventType.SUBMISSION_RECEIVED
+                        || type == ServerEventType.EXAM_TIME_EXTENDED
+                        || type == ServerEventType.EXAM_SCHEDULE_CHANGED;
+
+        if (!schedulableExamsChanged && !executionsChanged) {
             return;
         }
+
         Platform.runLater(() -> {
             if (closed) {
                 return;
             }
-            reloadPreservingSelection();
+            if (schedulableExamsChanged) {
+                loadApprovedExams();
+            }
+            if (executionsChanged) {
+                reloadPreservingSelection();
+            }
         });
     }
 
