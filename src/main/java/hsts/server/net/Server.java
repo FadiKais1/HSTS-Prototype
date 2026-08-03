@@ -79,6 +79,9 @@ public class Server extends AbstractServer {
     // COMPATIBILITY-ONLY: Runs internal automatic submission while the server is active.
     private ScheduledExecutorService autoSubmissionScheduler;
 
+    /** Keeps a repeating cycle failure from filling the console. */
+    private volatile boolean autoSubmissionFailureReported;
+
     public Server(int port, ExamManagementService examManagementService, AuthService authService) {
         this(port, examManagementService, authService, null, null);
     }
@@ -1360,6 +1363,7 @@ public class Server extends AbstractServer {
         try {
             // Advance stored statuses first, so an execution that has just opened
             // is OPEN everywhere before anything else in this cycle reads it.
+            autoSubmissionFailureReported = false;
             if (examExecutionService.refreshExecutionStatuses() > 0) {
                 publishEvent(new ServerEvent(ServerEventType.EXAM_SCHEDULE_CHANGED, 0));
             }
@@ -1369,7 +1373,17 @@ public class Server extends AbstractServer {
         try {
             examExecutionService.autoSubmitExpired();
         } catch (RuntimeException exception) {
-            System.out.println("Automatic exam submission cycle failed");
+            // This runs every second, so print the cause once and then stay
+            // quiet. A bare repeated line says a cycle failed without saying
+            // why, and drowns everything else in the window.
+            if (!autoSubmissionFailureReported) {
+                autoSubmissionFailureReported = true;
+                logRequestFailure(null, exception);
+                System.err.println(
+                        "Automatic exam submission cycle failed. Further failures "
+                                + "will be silent until one succeeds."
+                );
+            }
         }
     }
 
