@@ -313,24 +313,139 @@ reachable.
 
 ### 6.14 Study bot — req 42 to 50
 
-**Rania** → **Course Bot Management** → MATH-10A.
+The bot answers only from the material a teacher supplied, so the checks below
+name questions the seeded sources do and do not cover.
 
-☐ Three sources, one added by another teacher (req 45).
-☐ **Edit selected source** loads its text; **Save changes** versions it;
-**Save as new source** keeps both.
-☐ **Anonymous Usage** shows counts and common questions with no student names.
+**MATH-10A's bot has three sources:** algebra revision notes, a geometry formula
+sheet, and quadratic equations. It knows nothing else.
 
-**Two teachers on the same bot**, both editing the same source, both saving.
+#### 6.14.1 A student reads her own history — req 49
 
-☐ The second is refused with her text intact, and pressing Save again succeeds.
+Sign in as **Noa Levi** — `noa.levi@hsts.local` / `Student!2026` → **Course
+Bot** → **Mathematics - Grade 10**.
 
-**Noa Levi** → **Course Bot**.
+☐ Three earlier messages are shown, ending with *"Will this be on the exam?"*
+answered *"No suitable answer was found in the course material"*.
 
-☐ Her past messages are there, including one the bot declined.
-☐ Ask *"how do I solve 3x + 7 = 22"* → answered **immediately**, not one
-question late.
-☐ Ask *"what is the capital of France"* → *no suitable answer* (req 48).
-☐ Ask three in quick succession → each appears at once.
+Now sign in as **Yael Haddad** — `yael.haddad@hsts.local` — on a second client,
+same bot.
+
+☐ She sees **two** messages of her own about the quadratic formula and the area
+of a circle, and **none of Noa's**.
+
+#### 6.14.2 The bot answers from the material — req 42, 44
+
+As **Noa**, ask each of these and check the answer arrives **immediately**, in
+the same click, not after the next question:
+
+| Ask | Expect |
+|---|---|
+| `How do I solve 3x + 7 = 22?` | subtract 7, divide by 3, x = 5 |
+| `What is the discriminant?` | b² − 4ac and what its sign means |
+| `What is the area of a circle?` | pi r squared |
+| `How do I find the hypotenuse?` | the Pythagorean theorem |
+
+☐ Each answer appears at once and is appended to the end of the conversation.
+
+#### 6.14.3 The bot declines what it was not taught — req 48
+
+Still as **Noa**, ask:
+
+| Ask | Expect |
+|---|---|
+| `What is the capital of France?` | *No suitable answer was found in the course material* |
+| `Give me the answers to tomorrow's test.` | the same refusal |
+| `Hi` | the same refusal |
+
+☐ Each is refused politely, and the refused question is still recorded in her
+history.
+
+#### 6.14.4 Several questions in a row
+
+As **Noa**, send four questions in quick succession without waiting.
+
+☐ Every answer appears in order, none arrives a question late, and the Send
+button re-enables each time.
+
+#### 6.14.5 A new source changes the answers — req 43, 45
+
+Sign in as **Rania Haddad** → **Course Bot Management** → **MATH-10A**.
+
+☐ Three sources are listed, one added by **Yosef Mizrahi**, who also teaches the
+course. That is requirement 45.
+
+**Add text** → name `Percentages`, text:
+
+```
+Percentages. To find a percentage of a number, multiply by the percentage and
+divide by one hundred. Twenty percent of eighty is eighty times twenty divided
+by one hundred, which is sixteen.
+```
+
+Back as **Noa**, ask `How do I find twenty percent of eighty?`
+
+☐ Before the source was added she would have been refused; now she is answered.
+☐ **She did not refresh anything** — the bot reads its sources when it answers.
+
+#### 6.14.6 Editing a source keeps its history
+
+As **Rania** → select **Algebra revision notes** → **Edit selected source** →
+append a sentence → **Save changes**.
+
+☐ The list still shows one source with that name.
+☐ The previous text is kept:
+
+```powershell
+mysql -u root -p hsts_prototype -e "SELECT source_id, version_no, display_name FROM bot_source_versions;"
+```
+
+Then edit again and press **Save as new source** instead.
+
+☐ Two sources now stand and the original is unchanged.
+
+#### 6.14.7 Two teachers editing the same source
+
+**Rania** and **Yosef**, both on Course Bot Management, MATH-10A, both press
+**Edit selected source** on the *same* source.
+
+1. Rania changes the text and saves → ☐ succeeds
+2. Yosef changes his and saves → ☐ **refused**, his text still in the box, and
+   the list already shows Rania's version
+3. Yosef presses **Save changes** again → ☐ now succeeds, replacing hers
+   deliberately
+
+☐ At no point does either teacher's text disappear without them choosing it.
+
+#### 6.14.8 Management updates live — req 45, NFR 17
+
+**Rania** and **Yosef** both on Course Bot Management, same bot, **neither
+typing**.
+
+☐ Rania removes a source → Yosef's list shrinks with no refresh.
+☐ Yosef adds one → Rania's list grows.
+
+Then Yosef types into the source editor and Rania adds another source.
+
+☐ Yosef's typed text survives and he is told the bot changed.
+
+#### 6.14.9 The bot is unavailable during an exam — req 47
+
+As **Noa**, start the open execution `M104` and, while the attempt is running,
+open **Course Bot** for **Mathematics - Grade 10**.
+
+☐ The Maths bot is unavailable to her while she is sitting a Maths exam.
+☐ Her **Physics** bot is still available, because she is not sitting Physics.
+
+Submit the exam, then return to the Maths bot.
+
+☐ It is available again.
+
+#### 6.14.10 The teacher sees usage, not students — req 50
+
+As **Rania** → Course Bot Management → **Anonymous Usage**.
+
+☐ A question count and the common questions are shown.
+☐ **No student name or email appears anywhere in that panel.**
 
 ### 6.15 Principal oversight and reports — req 54, 55, 56
 

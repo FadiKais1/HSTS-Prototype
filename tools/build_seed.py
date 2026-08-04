@@ -798,27 +798,42 @@ def build():
     add(",\n".join(source_rows) + ";")
     add("")
 
-    conversations = [
-        (501, 301, 2101, [
+    # A conversation must belong to a student who takes that bot's course, or
+    # the bot would never appear for her and the history would be unreachable.
+    bot_course = {bot_id: course for bot_id, course, _name, _author in bot_defs}
+    conversation_plan = [
+        (301, 0, [
             ("How do I solve 3x + 7 = 22?", True),
             ("What is the discriminant used for?", True),
             ("Will this be on the exam?", False),
         ]),
-        (502, 301, 2102, [
+        (301, 1, [
             ("Explain the quadratic formula step by step.", True),
             ("What is the area of a circle with radius 4?", True),
         ]),
-        (503, 301, 2106, [("Do the angles in a triangle always add to 180?", True)]),
-        (504, 302, 2104, [
+        (301, 2, [("Do the angles in a triangle always add to 180?", True)]),
+        (302, 0, [
             ("What does F = ma actually mean?", True),
             ("Can you tell me my grade for the midterm?", False),
         ]),
-        (505, 302, 2107, [("What is Newton's third law?", True)]),
-        (506, 303, 2103, [
+        (302, 1, [("What is Newton's third law?", True)]),
+        (303, 0, [
             ("When do I add an s to a verb?", True),
             ("Give me the answers to tomorrow's test.", False),
         ]),
     ]
+
+    conversations = []
+    conversation_id = 501
+    for bot, position, messages in conversation_plan:
+        class_list = students_in(bot_course[bot], enrolled)
+        if position >= len(class_list):
+            raise SystemExit(
+                f"Seed error: course {bot_course[bot]} has fewer than "
+                f"{position + 1} students, so bot {bot} cannot have that conversation."
+            )
+        conversations.append((conversation_id, bot, class_list[position], messages))
+        conversation_id += 1
     add("-- ---------- Bot conversations (requirement 49) ----------")
     add("-- A student sees only her own conversation, and the provider subject id")
     add("-- is a pseudonym so the external bot never receives her identity.")
