@@ -223,6 +223,42 @@ public class ReportServiceTest {
                 "Report comparison requires principal role");
     }
 
+    @Test
+    public void principalComparisonExportRebuildsBothAuthorizedTargets() {
+        RecordingReportRepository reports = new RecordingReportRepository();
+        reports.byAuthor.put(8101, List.of(statistics(72, "81.00", "81.00")));
+        reports.byAuthor.put(8102, List.of(statistics(73, "76.50", "76.50")));
+        ReportService service = service(reports, users(
+                principal(8100, "Principal", UserStatus.ACTIVE),
+                teacher(8101, "Primary Teacher", UserStatus.ACTIVE),
+                teacher(8102, "Comparison Teacher", UserStatus.ACTIVE)
+        ), new RecordingCourseRepository());
+
+        ReportExportResult result = service.exportReport(
+                8100,
+                new ReportExportPayload(
+                        ReportType.TEACHER_EXAMS,
+                        8101,
+                        8102,
+                        ReportExportFormat.XLSX
+                )
+        );
+
+        assertTrue(result.getSuggestedFilename().contains("comparison"));
+        assertTrue(result.getSuggestedFilename().endsWith(".xlsx"));
+        assertEquals(List.of(8101, 8102), reports.authorRequests);
+
+        assertMessage(() -> service.exportReport(
+                        8101,
+                        new ReportExportPayload(
+                                ReportType.TEACHER_EXAMS,
+                                null,
+                                8102,
+                                ReportExportFormat.PDF
+                        )),
+                "Report comparison requires principal role");
+    }
+
     private static ReportService service(RecordingReportRepository reports,
                                          RecordingUserRepository users,
                                          RecordingCourseRepository courses) {

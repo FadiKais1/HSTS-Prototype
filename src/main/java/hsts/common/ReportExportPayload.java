@@ -10,16 +10,26 @@ public final class ReportExportPayload implements Serializable {
 
     private final ReportType reportType;
     private final Integer targetId;
+    private final Integer comparisonTargetId;
     private final ReportExportFormat format;
 
     public ReportExportPayload(ReportType reportType, Integer targetId,
                                ReportExportFormat format) {
+        this(reportType, targetId, null, format);
+    }
+
+    public ReportExportPayload(ReportType reportType, Integer targetId,
+                               Integer comparisonTargetId,
+                               ReportExportFormat format) {
         this.reportType = reportType;
         this.targetId = targetId;
+        this.comparisonTargetId = comparisonTargetId;
         this.format = format;
     }
 
     public ReportType getReportType() { return reportType; }
     public Integer getTargetId() { return targetId; }
+    public Integer getComparisonTargetId() { return comparisonTargetId; }
+    public boolean isComparison() { return comparisonTargetId != null; }
     public ReportExportFormat getFormat() { return format; }
 }

@@ -30,6 +30,10 @@ public class FinalFunctionalContractTest {
         ReportExportPayload export = new ReportExportPayload(
                 ReportType.COURSE_EXAMS, 7, ReportExportFormat.XLSX
         );
+        ReportExportPayload comparisonExport = new ReportExportPayload(
+                ReportType.TEACHER_EXAMS, 1101, 1102,
+                ReportExportFormat.PDF
+        );
         NotificationIdPayload notification = new NotificationIdPayload(45);
 
         assertEquals(81, extension.getExecutionId());
@@ -37,7 +41,11 @@ public class FinalFunctionalContractTest {
         assertEquals("Accessibility accommodation", extension.getReason());
         assertEquals(ReportType.COURSE_EXAMS, export.getReportType());
         assertEquals(Integer.valueOf(7), export.getTargetId());
+        assertFalse(export.isComparison());
         assertEquals(ReportExportFormat.XLSX, export.getFormat());
+        assertTrue(comparisonExport.isComparison());
+        assertEquals(Integer.valueOf(1102),
+                comparisonExport.getComparisonTargetId());
         assertEquals(45, notification.getNotificationId());
 
         Set<String> fieldNames = Arrays.stream(ExtendExecutionTimePayload.class

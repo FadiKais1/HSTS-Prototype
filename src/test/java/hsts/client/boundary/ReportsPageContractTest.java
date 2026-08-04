@@ -218,7 +218,7 @@ public class ReportsPageContractTest {
     @Test
     public void exportRetryReusesGeneratedBytesAndCancelWritesNothing() throws Exception {
         String source = Files.readString(SOURCE);
-        String exportMethod = methodSource(source, "private void exportCurrentReport(");
+        String exportMethod = methodSource(source, "private void exportReport(");
         String chooserMethod = methodSource(source, "private void chooseExportDestination(");
         assertTrue(exportMethod.indexOf("pendingExport != null")
                 < exportMethod.indexOf("exportReport(payload)"));
@@ -322,7 +322,8 @@ public class ReportsPageContractTest {
                 "detailStartedCaption", "detailSubmittedCaption",
                 "detailAutoSubmittedCaption",
                 "scoreBandAxis", "submissionCountAxis", "exportPdfButton",
-                "exportExcelButton"
+                "exportExcelButton", "exportComparisonPdfButton",
+                "exportComparisonExcelButton"
         )) {
             assertTrue("Missing fx:id " + required, ids.containsKey(required));
         }
@@ -340,6 +341,7 @@ public class ReportsPageContractTest {
         assertEquals(Set.of(
                 "handleLoadReport", "handleRefresh", "handleBack",
                 "handleExportPdf", "handleExportExcel",
+                "handleExportComparisonPdf", "handleExportComparisonExcel",
                 // Drops the second report and returns to a single full width table.
                 "handleClearComparison"
         ), actions);
@@ -358,6 +360,10 @@ public class ReportsPageContractTest {
         }
         assertEquals("false", ids.get("comparisonContainer").getAttribute("visible"));
         assertEquals("false", ids.get("comparisonSummaryContainer").getAttribute("visible"));
+        assertEquals("false", ids.get("exportComparisonPdfButton")
+                .getAttribute("visible"));
+        assertEquals("false", ids.get("exportComparisonExcelButton")
+                .getAttribute("visible"));
 
         Element table = ids.get("executionTable");
         assertFalse(table.hasAttribute("placeholder"));

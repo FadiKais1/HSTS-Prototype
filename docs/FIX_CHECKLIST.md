@@ -1,6 +1,6 @@
 # HSTS — Complete Fix Checklist
 
-Branch `final-polish` · 923 tests passing · 53 commits
+Branch `final-polish` · 928 tests passing · 53 commits
 
 Everything below was implemented, built green, and confirmed working in the
 running application.
@@ -38,6 +38,7 @@ running application.
 | Student's grade appears the moment it is published | NFR 18 | ☑ |
 | Student told why her exam time changed, privately | SUC-9 | ☑ |
 | Edit a Course Bot source, with versions | 43, 45 | ☑ |
+| Separate Principal target/comparison PDF and Excel exports, with comparison summary | 55 | ☑ |
 | Keep both versions of a source, or replace | 43 | ☑ |
 | Simultaneous source edits detected and recoverable | 45 | ☑ |
 | Course Bot management updates live for a colleague | 45, NFR 18 | ☑ |

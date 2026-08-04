@@ -74,6 +74,7 @@ public class ReportsPage {
     private boolean exporting;
     private ReportExportResult pendingExport;
     private ReportExportFormat pendingExportFormat;
+    private boolean pendingExportComparison;
 
     @FXML private Label roleContextLabel;
     @FXML private HBox principalControls;
@@ -111,6 +112,8 @@ public class ReportsPage {
     @FXML private Button backButton;
     @FXML private Button exportPdfButton;
     @FXML private Button exportExcelButton;
+    @FXML private Button exportComparisonPdfButton;
+    @FXML private Button exportComparisonExcelButton;
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private Label statusLabel;
     @FXML private Label errorLabel;
@@ -209,6 +212,10 @@ public class ReportsPage {
         boolean principal = role == UserRole.PRINCIPAL;
         principalControls.setManaged(principal);
         principalControls.setVisible(principal);
+        exportComparisonPdfButton.setManaged(principal);
+        exportComparisonPdfButton.setVisible(principal);
+        exportComparisonExcelButton.setManaged(principal);
+        exportComparisonExcelButton.setVisible(principal);
         targetComboBox.setDisable(!principal);
         comparisonModeComboBox.setDisable(!principal);
         setError("");
@@ -257,9 +264,33 @@ public class ReportsPage {
         exportCurrentReport(ReportExportFormat.XLSX);
     }
 
+    @FXML
+    private void handleExportComparisonPdf() {
+        exportComparisonReport(ReportExportFormat.PDF);
+    }
+
+    @FXML
+    private void handleExportComparisonExcel() {
+        exportComparisonReport(ReportExportFormat.XLSX);
+    }
+
     private void exportCurrentReport(ReportExportFormat format) {
+        exportReport(format, false);
+    }
+
+    private void exportComparisonReport(ReportExportFormat format) {
+        exportReport(format, true);
+    }
+
+    private void exportReport(ReportExportFormat format, boolean comparison) {
         if (!isConfigured() || currentReport == null || exporting) return;
-        if (pendingExport != null && pendingExportFormat == format) {
+        if (comparison && (loginResult.getRole() != UserRole.PRINCIPAL
+                || comparisonReport == null)) {
+            setError("Load a second target before exporting a comparison.");
+            return;
+        }
+        if (pendingExport != null && pendingExportFormat == format
+                && pendingExportComparison == comparison) {
             chooseExportDestination(pendingExport, format);
             return;
         }
@@ -275,14 +306,20 @@ public class ReportsPage {
                         == hsts.common.type.ReportType.EXAM_EXECUTION
                         ? currentReport.getTargetId()
                         : null,
+                comparison ? comparisonReport.getTargetId() : null,
                 format
         );
         reportClientController.exportReport(payload).whenComplete((result, failure) ->
-                Platform.runLater(() -> finishExport(result, format, failure)));
+                Platform.runLater(() -> finishExport(
+                        result,
+                        format,
+                        comparison,
+                        failure
+                )));
     }
 
     private void finishExport(ReportExportResult result, ReportExportFormat format,
-                              Throwable failure) {
+                              boolean comparison, Throwable failure) {
         if (disposed) return;
         if (failure != null || result == null) {
             exporting = false;
@@ -293,6 +330,7 @@ public class ReportsPage {
         }
         pendingExport = result;
         pendingExportFormat = format;
+        pendingExportComparison = comparison;
         chooseExportDestination(result, format);
     }
 
@@ -334,6 +372,7 @@ public class ReportsPage {
             } else {
                 pendingExport = null;
                 pendingExportFormat = null;
+                pendingExportComparison = false;
                 setError("");
                 setStatus("Report exported successfully.");
             }
@@ -391,6 +430,7 @@ public class ReportsPage {
         if (against == null || against.getTargetId() == targetId) {
             comparisonReport = null;
             comparisonRows.clear();
+            clearPendingExport();
             showComparison(false);
         } else {
             loadComparisonReport(against, mode);
@@ -431,8 +471,10 @@ public class ReportsPage {
         comparisonTargetComboBox.getSelectionModel().clearSelection();
         comparisonReport = null;
         comparisonRows.clear();
+        clearPendingExport();
         showComparison(false);
         setStatus("Comparison cleared.");
+        updateControlState();
     }
 
     private void showComparison(boolean visible) {
@@ -460,6 +502,7 @@ public class ReportsPage {
                         showComparison(false);
                         return;
                     }
+                    clearPendingExport();
                     comparisonReport = report;
                     comparisonRows.setAll(report.getExamStatistics());
                     comparisonReportLabel.setText(
@@ -467,6 +510,7 @@ public class ReportsPage {
                     );
                     showComparison(true);
                     updateComparisonSummary();
+                    updateControlState();
                 })
         );
     }
@@ -587,6 +631,7 @@ public class ReportsPage {
         comparisonTargetComboBox.getSelectionModel().clearSelection();
         comparisonReport = null;
         comparisonRows.clear();
+        clearPendingExport();
         showComparison(false);
     }
 
@@ -622,8 +667,7 @@ public class ReportsPage {
     }
 
     private void showReport(ReportSummaryDTO report) {
-        pendingExport = null;
-        pendingExportFormat = null;
+        clearPendingExport();
         currentReport = report;
         reportTitleLabel.setText(report.getTitle());
         targetNameLabel.setText(report.getTargetDisplayName() == null
@@ -776,6 +820,14 @@ public class ReportsPage {
                 || currentReport == null;
         if (exportPdfButton != null) exportPdfButton.setDisable(exportDisabled);
         if (exportExcelButton != null) exportExcelButton.setDisable(exportDisabled);
+        boolean comparisonExportDisabled = exportDisabled || !principal
+                || comparisonReport == null;
+        if (exportComparisonPdfButton != null) {
+            exportComparisonPdfButton.setDisable(comparisonExportDisabled);
+        }
+        if (exportComparisonExcelButton != null) {
+            exportComparisonExcelButton.setDisable(comparisonExportDisabled);
+        }
         if (comparisonModeComboBox != null) {
             comparisonModeComboBox.setDisable(!principal || loading);
         }
@@ -789,6 +841,12 @@ public class ReportsPage {
     private boolean isConfigured() {
         return !disposed && stage != null && client != null && loginResult != null
                 && backHandler != null && reportClientController != null;
+    }
+
+    private void clearPendingExport() {
+        pendingExport = null;
+        pendingExportFormat = null;
+        pendingExportComparison = false;
     }
 
     static int parseTargetId(String text) {

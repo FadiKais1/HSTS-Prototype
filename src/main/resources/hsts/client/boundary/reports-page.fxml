@@ -37,10 +37,16 @@
             <Region HBox.hgrow="ALWAYS"/>
             <ProgressIndicator fx:id="loadingIndicator" managed="false" visible="false"
                                prefWidth="28" prefHeight="28" maxWidth="28" maxHeight="28"/>
-            <Button fx:id="exportPdfButton" text="Export PDF" onAction="#handleExportPdf"
+            <Button fx:id="exportPdfButton" text="Target PDF" onAction="#handleExportPdf"
                     style="-fx-background-color: #dc2626; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 15;"/>
-            <Button fx:id="exportExcelButton" text="Export Excel" onAction="#handleExportExcel"
+            <Button fx:id="exportExcelButton" text="Target Excel" onAction="#handleExportExcel"
                     style="-fx-background-color: #15803d; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 15;"/>
+            <Button fx:id="exportComparisonPdfButton" text="Comparison PDF"
+                    onAction="#handleExportComparisonPdf" managed="false" visible="false"
+                    style="-fx-background-color: #7c3aed; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 15;"/>
+            <Button fx:id="exportComparisonExcelButton" text="Comparison Excel"
+                    onAction="#handleExportComparisonExcel" managed="false" visible="false"
+                    style="-fx-background-color: #0369a1; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 15;"/>
             <Button fx:id="refreshButton" text="Refresh" onAction="#handleRefresh"
                     style="-fx-background-color: #e0f2fe; -fx-text-fill: #075985; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 9 15;"/>
             <Button fx:id="backButton" text="Back" onAction="#handleBack"

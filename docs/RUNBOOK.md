@@ -1,6 +1,6 @@
 # HSTS — Runbook and Verification Guide
 
-Group 7 · branch `final-polish` · 926 tests
+Group 7 · branch `final-polish` · 928 tests
 
 One document: how to run the system, what the demo data contains, and a
 verification pass that exercises every fix with named accounts and exact steps.
@@ -460,6 +460,10 @@ counters unaided.
 ☐ Targets are chosen **by name**, not a typed id.
 ☐ The type list offers Teacher, Course, Student and **Execution**.
 ☐ Choosing a second target shows two tables side by side with a summary above.
+☐ **Target PDF** and **Target Excel** export only the selected target report.
+☐ **Comparison PDF** and **Comparison Excel** export both target reports and
+the visible comparison summary, including the target names, execution counts,
+average, median, submissions and their differences.
 ☐ **Clear** returns to a single table.
 
 ### 6.16 A teacher's own statistics — §7.2

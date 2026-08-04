@@ -149,8 +149,33 @@ public class ReportService {
         if (payload.getFormat() == null) {
             throw new IllegalArgumentException("Report export format is required");
         }
-        Integer targetId = payload.getTargetId();
-        ReportSummaryDTO report = switch (payload.getReportType()) {
+        if (payload.isComparison()) {
+            requirePrincipal(authenticatedUserId);
+        }
+        ReportSummaryDTO report = loadExportReport(
+                authenticatedUserId,
+                payload.getReportType(),
+                payload.getTargetId()
+        );
+        if (!payload.isComparison()) {
+            return exportGenerator.generate(report, payload.getFormat());
+        }
+        ReportSummaryDTO comparison = loadExportReport(
+                authenticatedUserId,
+                payload.getReportType(),
+                requireExportTarget(payload.getComparisonTargetId())
+        );
+        return exportGenerator.generateComparison(
+                report,
+                comparison,
+                payload.getFormat()
+        );
+    }
+
+    private ReportSummaryDTO loadExportReport(int authenticatedUserId,
+                                              ReportType reportType,
+                                              Integer targetId) {
+        return switch (reportType) {
             case TEACHER_EXAMS -> targetId == null
                     ? getMyAuthoredExamsReport(authenticatedUserId)
                     : getTeacherExamsReport(authenticatedUserId, targetId);
@@ -167,7 +192,6 @@ public class ReportService {
                     requireExportTarget(targetId)
             );
         };
-        return exportGenerator.generate(report, payload.getFormat());
     }
 
     public Report generateTeacherExamsReport(int teacherId) {

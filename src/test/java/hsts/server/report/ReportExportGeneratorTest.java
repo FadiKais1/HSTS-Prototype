@@ -97,6 +97,76 @@ public class ReportExportGeneratorTest {
     }
 
     @Test
+    public void comparisonExportContainsBothTargetsInPdfAndSeparateExcelSheets()
+            throws Exception {
+        ReportSummaryDTO primary = report(List.of(statistics()));
+        ReportSummaryDTO comparison = new ReportSummaryDTO(
+                ReportType.TEACHER_EXAMS,
+                "Teacher Exam Results",
+                LocalDateTime.of(2026, 8, 5, 12, 31),
+                1102,
+                "Second Teacher",
+                List.of(statistics())
+        );
+        ReportExportGenerator generator = new ReportExportGenerator();
+
+        ReportExportResult pdf = generator.generateComparison(
+                primary,
+                comparison,
+                ReportExportFormat.PDF
+        );
+        assertTrue(pdf.getSuggestedFilename().contains("comparison"));
+        try (PDDocument document = Loader.loadPDF(pdf.getBytes())) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("Comparison Summary"));
+            assertTrue(text.contains("Development Teacher"));
+            assertTrue(text.contains("Second Teacher"));
+            assertTrue(text.contains(
+                    "Development Teacher: 1 executions, average 82.50, "
+                            + "median 82.50, 1 submissions."
+            ));
+            assertTrue(text.contains("The two averages are equal."));
+            assertTrue(text.contains("HSTS Report Comparison"));
+            assertTrue(document.getNumberOfPages() >= 3);
+        }
+
+        ReportExportResult xlsx = generator.generateComparison(
+                primary,
+                comparison,
+                ReportExportFormat.XLSX
+        );
+        assertTrue(xlsx.getSuggestedFilename().contains("comparison"));
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(xlsx.getBytes()))) {
+            assertEquals(5, workbook.getNumberOfSheets());
+            assertEquals("Comparison Overview", workbook.getSheetAt(0).getSheetName());
+            assertEquals("Primary Statistics", workbook.getSheetAt(1).getSheetName());
+            assertEquals("Primary Distribution", workbook.getSheetAt(2).getSheetName());
+            assertEquals("Comparison Statistics", workbook.getSheetAt(3).getSheetName());
+            assertEquals("Comparison Distribution", workbook.getSheetAt(4).getSheetName());
+            assertEquals("Development Teacher",
+                    workbook.getSheetAt(0).getRow(3).getCell(2).getStringCellValue());
+            assertEquals("Second Teacher",
+                    workbook.getSheetAt(0).getRow(4).getCell(2).getStringCellValue());
+            assertEquals("Comparison Summary",
+                    workbook.getSheetAt(0).getRow(6).getCell(0).getStringCellValue());
+            assertTrue(workbook.getSheetAt(0).getRow(7).getCell(0)
+                    .getStringCellValue().contains(
+                            "Development Teacher: 1 executions, average 82.50"
+                    ));
+            assertEquals("The two averages are equal.",
+                    workbook.getSheetAt(0).getRow(9).getCell(0)
+                            .getStringCellValue());
+            assertEquals(11,
+                    workbook.getSheet("Primary Distribution")
+                            .getPhysicalNumberOfRows());
+            assertEquals(11,
+                    workbook.getSheet("Comparison Distribution")
+                            .getPhysicalNumberOfRows());
+        }
+    }
+
+    @Test
     public void nullStatisticsAreExportedAsNaInBothFormats() throws Exception {
         ExamStatisticsDTO empty = new ExamStatisticsDTO(
                 82, 41, 1, "NONE", "Empty Exam", 7, "Legacy Course",
