@@ -2,6 +2,9 @@ package hsts.client.boundary;
 
 import hsts.client.control.PrincipalOversightClientController;
 import hsts.client.net.Client;
+import hsts.client.net.ServerEventBus;
+import hsts.common.ServerEvent;
+import hsts.common.ServerEventType;
 import hsts.common.ExamDTO;
 import hsts.common.ExamExecutionSummaryDTO;
 import hsts.common.ExamQuestionDTO;
@@ -57,6 +60,9 @@ public class PrincipalOversightPage {
     private LoginResult loginResult;
     private Runnable backHandler;
     private PrincipalOversightClientController controller;
+    /** This screen's own push registration; closing it affects no other screen. */
+    private ServerEventBus.Subscription eventSubscription;
+
     private boolean disposed;
     private boolean refreshing;
     private long questionGeneration;
@@ -179,8 +185,48 @@ public class PrincipalOversightPage {
         this.controller = new PrincipalOversightClientController(client);
         this.disposed = false;
         this.refreshing = false;
+        // Oversight is read only, but what it oversees changes constantly, so
+        // the Principal should not have to press Refresh to see it (NFR 17).
+        closeEventSubscription();
+        this.eventSubscription = client.getServerEventBus().subscribe(
+                this::onServerEvent,
+                ServerEventType.QUESTION_CHANGED,
+                ServerEventType.EXAM_CHANGED,
+                ServerEventType.EXAM_APPROVAL_CHANGED,
+                ServerEventType.EXAM_SCHEDULE_CHANGED,
+                ServerEventType.ATTEMPT_STARTED,
+                ServerEventType.SUBMISSION_RECEIVED,
+                ServerEventType.GRADES_PUBLISHED
+        );
         identityLabel.setText(loginResult.getFullName() + " · PRINCIPAL");
         refreshAll();
+    }
+
+    /**
+     * Reacts to anything the Principal oversees changing.
+     *
+     * <p>A reload that arrives while a row is selected would move the detail
+     * pane out from under whoever is reading it, so the refresh is held back
+     * until nothing is selected. The Refresh button remains for a Principal who
+     * wants the current picture immediately.</p>
+     */
+    private void onServerEvent(ServerEvent event) {
+        if (disposed || event == null || controller == null || refreshing) {
+            return;
+        }
+        if (questionTable.getSelectionModel().getSelectedItem() != null
+                || examTable.getSelectionModel().getSelectedItem() != null
+                || executionTable.getSelectionModel().getSelectedItem() != null) {
+            return;
+        }
+        refreshAll();
+    }
+
+    private void closeEventSubscription() {
+        if (eventSubscription != null) {
+            eventSubscription.close();
+            eventSubscription = null;
+        }
     }
 
     @FXML
@@ -200,6 +246,7 @@ public class PrincipalOversightPage {
             return;
         }
         disposed = true;
+        closeEventSubscription();
         backButton.setDisable(true);
         questionGeneration++;
         examGeneration++;
