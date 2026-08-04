@@ -7,3 +7,6 @@ data/*.db
 .DS_Store
 reset-db.ps1
 commandsforme.txt
+*.patch
+mvn_output.txt
+server_output.txt
